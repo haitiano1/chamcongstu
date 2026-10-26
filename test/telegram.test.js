@@ -1,0 +1,54 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {createTelegramService,dueReminders} from '../telegram-service.js';import {authorizeEmployeeEdit} from '../employee-service.js';
+const at=s=>Date.parse('2026-10-20T'+s+':00+07:00'),schedule={enabled:1,weekdays:'[2]',shifts:'["day_first","day_second"]',excluded_dates:'[]'};
+test('Telegram reminders respect assigned shifts, grace times, days off, existing attendance and checkout next day',()=>{
+ assert.deepEqual(dueReminders({schedule,events:[],now:at('09:09')}),[]);assert.deepEqual(dueReminders({schedule,events:[],now:at('09:10')}),[{day:'2026-10-20',shift:'day_first',kind:'in'}]);assert.deepEqual(dueReminders({schedule:{...schedule,excluded_dates:'["2026-10-20"]'},events:[],now:at('09:10')}),[]);assert.deepEqual(dueReminders({schedule:{...schedule,weekdays:'[1]'},events:[],now:at('09:10')}),[]);assert.deepEqual(dueReminders({schedule:{...schedule,enabled:0},events:[],now:at('09:10')}),[]);
+ const entry={shift:'day_first',type:'in',work_date:'2026-10-20',time:at('09:00')};assert.deepEqual(dueReminders({schedule,events:[entry],now:at('09:10')}),[]);assert.equal(dueReminders({schedule,events:[entry],now:at('14:04')}).some(r=>r.kind==='out'),false);assert.equal(dueReminders({schedule,events:[entry],now:at('14:05')}).some(r=>r.kind==='out'),true);assert.deepEqual(dueReminders({schedule,events:[entry,{...entry,type:'out'}],now:at('14:05')}).map(r=>r.kind),[]);assert.deepEqual(dueReminders({schedule,events:[entry],now:Date.parse('2026-10-21T01:00:00+07:00')}),[{day:'2026-10-20',shift:'day_first',kind:'out'}]);
+});
+function fixture(){const db=new DatabaseSync(':memory:');db.exec("CREATE TABLE users(id INTEGER PRIMARY KEY,name TEXT,role TEXT,status TEXT DEFAULT 'active',archived INTEGER DEFAULT 0); INSERT INTO users(id,name,role) VALUES(1,'Admin','admin'),(2,'Manager','manager'),(3,'Staff','employee'),(4,'Other','employee'); CREATE TABLE events(user_id INTEGER,type TEXT,time INTEGER,shift TEXT,work_date TEXT);");return db;}
+function mock(){const calls=[],updates=[];let failure=null;return {calls,updates,setFailure:v=>failure=v,request:async(url,options)=>{const method=url.split('/').at(-1),b=JSON.parse(options.body);calls.push({method,b});if(failure===method)return {ok:false,status:403,json:async()=>({ok:false,error_code:403})};const result=method==='getMe'?{id:12345,is_bot:true,username:'AnhGauTestBot',first_name:'Test'}:method==='getUpdates'?updates.splice(0):{message_id:123};return {ok:true,json:async()=>({ok:true,result})};}};}
+async function route(service,path,method,user,b={}){let result;await service.handle({path:'/api/telegram/'+path,req:{method},user,b,res:{},send:(_,status,data)=>result={status,data}});return result;}
+const staff={id:3,role:'employee'},admin={id:1,role:'admin'},manager={id:2,role:'manager'},token='12345:abcdefghijklmnopqrstuvwxyz12345';
+test('Telegram linking uses expiring single-use private links; schedule permissions and /stop are enforced',async()=>{
+ const db=fixture(),m=mock();let now=at('08:00');const svc=createTelegramService(db,{token,webUrl:'https://studio.example.com',request:m.request,authorizeEmployeeEdit,now:()=>now});try{
+ await assert.rejects(route(svc,'schedules','POST',staff,{user_id:4}),e=>e.status===403);await assert.rejects(route(svc,'schedules','POST',manager,{user_id:1}),e=>e.status===403);
+ const config={user_id:3,enabled:true,weekdays:[2],shifts:['day_first'],excluded_dates:[]};assert.equal((await route(svc,'schedules','POST',manager,config)).status,200);await assert.rejects(route(svc,'schedules','POST',manager,{...config,weekdays:[]}),/Chọn ngày/);await assert.rejects(route(svc,'schedules','POST',manager,{...config,shifts:['ot']}),/không hợp lệ/);
+ const first=await route(svc,'link','POST',staff);assert.ok(first.data.url.startsWith('https://t.me/AnhGauTestBot?start='));const code=first.data.url.split('start=')[1];assert.equal(db.prepare('SELECT code_hash FROM telegram_link_codes').get().code_hash.includes(code),false);
+ m.updates.push({update_id:1,message:{chat:{id:-100,type:'group'},from:{id:333},text:'/start '+code}});await svc.tick();assert.equal((await route(svc,'me','GET',staff)).data.linked,false);
+ m.updates.push({update_id:2,message:{chat:{id:333,type:'private'},from:{id:333},text:'/start '+code}});await svc.tick();assert.equal((await route(svc,'me','GET',staff)).data.linked,true);assert.equal(db.prepare('SELECT count(*) n FROM telegram_link_codes').get().n,0);
+ assert.equal((await route(svc,'test','POST',staff)).status,200);await assert.rejects(route(svc,'test','POST',staff),e=>e.status===429);
+ const other=await route(svc,'link','POST',{id:4,role:'employee'});m.updates.push({update_id:3,message:{chat:{id:333,type:'private'},from:{id:333},text:'/start '+other.data.url.split('start=')[1]}});await svc.tick();assert.equal((await route(svc,'me','GET',{id:4,role:'employee'})).data.linked,false);
+ const expired=await route(svc,'link','POST',staff);now+=16*60000;m.updates.push({update_id:4,message:{chat:{id:444,type:'private'},from:{id:444},text:'/start '+expired.data.url.split('start=')[1]}});await svc.tick();assert.equal(db.prepare('SELECT chat_id FROM telegram_links WHERE user_id=3').get().chat_id,'333');
+ m.updates.push({update_id:5,message:{chat:{id:333,type:'private'},from:{id:333},text:'/stop'}});await svc.tick();assert.equal((await route(svc,'me','GET',staff)).data.linked,false);assert.ok(m.calls.filter(c=>c.method==='getUpdates').at(-1).b.offset>=5);assert.equal(Object.hasOwn((await route(svc,'status','GET',admin)).data,'token'),false);
+ }finally{db.close();}
+});
+test('Telegram persists one send attempt per reminder, suppresses inactive staff, and exposes delivery failures without token',async()=>{
+ const db=fixture(),m=mock();let now=at('09:10');const opts={token,webUrl:'https://studio.example.com',request:m.request,authorizeEmployeeEdit,now:()=>now};let svc=createTelegramService(db,opts);try{await route(svc,'schedules','POST',manager,{user_id:3,enabled:true,weekdays:[2],shifts:['day_first'],excluded_dates:[]});db.prepare('INSERT INTO telegram_links VALUES(?,?,?)').run(3,'333',now);await Promise.all([svc.tick(),svc.tick()]);assert.equal(m.calls.filter(c=>c.method==='sendMessage').length,1);const sent=m.calls.find(c=>c.method==='sendMessage').b;assert.match(sent.text,/checkin/);assert.equal(sent.chat_id,'333');assert.equal(sent.reply_markup.inline_keyboard[0][0].url,'https://studio.example.com/');assert.equal(/lương|latitude|photo/i.test(sent.text),false);
+ svc=createTelegramService(db,opts);await svc.tick();assert.equal(m.calls.filter(c=>c.method==='sendMessage').length,1);db.prepare('INSERT INTO events VALUES(?,?,?,?,?)').run(3,'in',at('09:00'),'day_first','2026-10-20');now=at('14:05');m.setFailure('sendMessage');await svc.tick();assert.equal(db.prepare("SELECT state FROM telegram_deliveries WHERE kind='out'").get().state,'failed');assert.equal(svc.status().lastError.includes(token),false);await svc.tick();assert.equal(m.calls.filter(c=>c.method==='sendMessage').length,2);
+ now=Date.parse('2026-10-27T09:10:00+07:00');db.exec("UPDATE users SET status='inactive' WHERE id=3");await svc.tick();assert.equal(m.calls.filter(c=>c.method==='sendMessage').length,2);
+ }finally{db.close();}
+});
+test('Telegram disabled without credentials, links allowed before HTTPS but automatic reminders stay disabled',async()=>{
+ const db=fixture(),m=mock();try{let svc=createTelegramService(db,{token:'',request:m.request,authorizeEmployeeEdit});await svc.tick();assert.equal(m.calls.length,0);assert.equal((await route(svc,'me','GET',staff)).data.configured,false);svc=createTelegramService(db,{token,webUrl:'http://localhost:3000',request:m.request,authorizeEmployeeEdit,now:()=>at('09:10')});await route(svc,'schedules','POST',manager,{user_id:3,enabled:true,weekdays:[2],shifts:['day_first'],excluded_dates:[]});db.prepare('INSERT INTO telegram_links VALUES(?,?,?)').run(3,'333',at('08:00'));await svc.tick();assert.equal(m.calls.filter(c=>c.method==='sendMessage').length,0);assert.match(svc.status().lastError,/HTTPS/);assert.equal(svc.status().ready,false);}finally{db.close();}
+});
+test('checkout reminders follow actual open regular shifts without schedule, even on disabled or excluded days',()=>{
+ const entry={shift:'day_first',type:'in',work_date:'2026-10-20',time:at('09:00')},due=[{day:'2026-10-20',shift:'day_first',kind:'out'}];
+ for(const config of [undefined,null,{...schedule,enabled:0},{...schedule,weekdays:'[1]',shifts:'["day_second"]',excluded_dates:'["2026-10-20"]'}]){
+ assert.deepEqual(dueReminders({schedule:config,events:[entry],now:at('14:04')}),[]);
+ assert.deepEqual(dueReminders({schedule:config,events:[entry],now:at('14:05')}),due);
+ assert.deepEqual(dueReminders({schedule:config,events:[entry,{...entry,type:'out',time:at('14:04')}],now:at('14:05')}),[]);
+ }
+ assert.deepEqual(dueReminders({events:[],now:at('14:05')}),[]);
+ assert.deepEqual(dueReminders({events:[{...entry,shift:'ot',time:at('19:00')}],now:at('19:05')}),[]);
+ assert.deepEqual(dueReminders({events:[entry],now:Date.parse('2026-10-21T14:00:00+07:00')}),[]);
+});
+test('bot queries linked staff without schedules, sends checkout for both shifts once, skips inactive or unlinked staff',async()=>{
+ const db=fixture(),m=mock();let now=at('14:04');const options={token,webUrl:'https://studio.example.com',request:m.request,authorizeEmployeeEdit,now:()=>now};let svc=createTelegramService(db,options);
+ try{for(const id of [1,3,4])db.prepare('INSERT INTO telegram_links VALUES(?,?,?)').run(id,String(id*111),now);
+ db.exec("UPDATE users SET status='inactive' WHERE id=1; INSERT INTO telegram_schedules VALUES(4,0,'[]','[]','[]');");
+ for(const id of [1,2,3,4])db.prepare('INSERT INTO events VALUES(?,?,?,?,?)').run(id,'in',at('09:00'),'day_first','2026-10-20');
+ await svc.tick();assert.equal(m.calls.filter(c=>c.method==='sendMessage').length,0);now=at('14:05');await svc.tick();let messages=m.calls.filter(c=>c.method==='sendMessage');assert.equal(messages.length,2);assert.deepEqual(messages.map(c=>c.b.chat_id).sort(),['333','444']);assert.ok(messages.every(c=>c.b.text.includes('Nhắc checkout')&&c.b.text.includes('Ca 1')));
+ svc=createTelegramService(db,options);await svc.tick();assert.equal(m.calls.filter(c=>c.method==='sendMessage').length,2);
+ for(const id of [3,4])db.prepare('INSERT INTO events VALUES(?,?,?,?,?)').run(id,'in',at('14:30'),'day_second','2026-10-20');
+ db.prepare('INSERT INTO events VALUES(?,?,?,?,?)').run(4,'out',at('19:00'),'day_second','2026-10-20');now=at('19:05');await svc.tick();messages=m.calls.filter(c=>c.method==='sendMessage');assert.equal(messages.length,3);assert.equal(messages.at(-1).b.chat_id,'333');assert.match(messages.at(-1).b.text,/Ca 2/);await svc.tick();assert.equal(m.calls.filter(c=>c.method==='sendMessage').length,3);
+ }finally{db.close();}
+});

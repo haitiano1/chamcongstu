@@ -1,0 +1,9 @@
+// Run with Node >=22.13 in the OLD app directory. No sessions or bot tokens exported.
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {gzipSync} from 'node:zlib';
+import {createHash} from 'node:crypto';
+const source=resolve(process.argv[2]||'.data/studio.sqlite'), output=resolve(process.argv[3]||'nhansu-transfer.json.gz');
+const names=['users','settings','events','salaries','commissions','employee_audit','attendance_requests','payroll_closures','shift_assignments','roster_audit','roster_meta','telegram_links','telegram_schedules','telegram_deliveries'];
+try{if(existsSync(output))throw Error('Tệp đích đã tồn tại. Đổi tên tệp đích để tránh ghi đè.');const db=new DatabaseSync(source,{readOnly:true});const tables={};db.exec('BEGIN');try{if(db.prepare('PRAGMA integrity_check').get().integrity_check!=='ok')throw Error('SQLite không vượt qua kiểm tra dữ liệu.');for(const name of names){tables[name]=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name)?db.prepare('SELECT * FROM '+name).all():[];if(name==='events')for(const row of tables[name])if(row.photo_jpeg)row.photo_jpeg=Buffer.from(row.photo_jpeg).toString('base64');}db.exec('COMMIT');}finally{db.close();}if(!tables.users.length)throw Error('Dữ liệu chưa có tài khoản.');const payload=JSON.stringify({format:'anhgau-transfer-v1',exported_at:Date.now(),tables});const envelope={format:'anhgau-envelope-v1',sha256:createHash('sha256').update(payload).digest('hex'),payload:Buffer.from(payload).toString('base64')};writeFileSync(output,gzipSync(JSON.stringify(envelope)),{mode:0o600,flag:'wx'});console.log(`Đã xuất ${tables.users.length} tài khoản, ${tables.events.length} lượt chấm công và ${tables.shift_assignments.length} phân ca. Tệp: ${output}`);}catch(e){console.error(e.message);process.exitCode=1;}

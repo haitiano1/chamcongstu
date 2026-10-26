@@ -1,0 +1,5 @@
+import test from 'node:test';import assert from 'node:assert/strict';import jpeg from 'jpeg-js';import {normalizeAttendancePhoto} from '../photo-proof.js';
+const image=(w=160,h=160)=>'data:image/jpeg;base64,'+jpeg.encode({width:w,height:h,data:Buffer.alloc(w*h*4,200)},75).data.toString('base64');
+test('normalizes a real JPEG for private storage',()=>{const p=normalizeAttendancePhoto(image());assert.ok(Buffer.isBuffer(p));assert.equal(jpeg.decode(p).width,160);});
+test('rejects missing, forged, oversized and undersized photos',()=>{for(const data of [undefined,'data:image/png;base64,AAAA','data:image/jpeg;base64,AAAA','data:image/jpeg;base64,'+'A'.repeat(400000),image(80,80)])assert.throws(()=>normalizeAttendancePhoto(data));});
+test('missing photo and oversize photo report different actionable errors',()=>{assert.throws(()=>normalizeAttendancePhoto(undefined),/Chưa nhận được ảnh/);assert.throws(()=>normalizeAttendancePhoto('data:image/jpeg;base64,'+Buffer.alloc(250001).toString('base64')),/vượt 250 KB/);assert.throws(()=>normalizeAttendancePhoto('data:image/png;base64,AAAA'),/định dạng JPEG/);});

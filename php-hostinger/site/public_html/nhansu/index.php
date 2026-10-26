@@ -1,0 +1,5 @@
+<?php
+$base=rtrim(str_replace('\\','/',dirname($_SERVER['SCRIPT_NAME'])),'/');
+header('X-Content-Type-Options: nosniff');header('X-Frame-Options: DENY');header('Referrer-Policy: strict-origin-when-cross-origin');header('Cache-Control: no-store');
+?>
+<!doctype html><html lang="vi"><head><meta name="app-base" content="<?= htmlspecialchars($base, ENT_QUOTES, 'UTF-8') ?>"><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#293246"><title>Anh Gấu Studio</title><link rel="stylesheet" href="./assets/vendor/leaflet.css"><link rel="stylesheet" href="./assets/style.css?v=20261025-shared4"><link rel="stylesheet" href="./assets/people-finance.css?v=20261025-shared4"><link rel="stylesheet" href="./assets/studio-journal.css?v=20261025-shared4"></head><body><div id="app"><p class="loading">Đang mở studio…</p></div><div id="toast" role="status" aria-live="polite"></div><script src="./assets/vendor/leaflet.js"></script><script type="module" src="./assets/app.js?v=20261025-shared4"></script></body></html>

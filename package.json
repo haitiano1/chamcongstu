@@ -1,0 +1,19 @@
+{
+  "name": "studio-cham-cong",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "node --env-file-if-exists=.env --watch server.js",
+    "test": "node --test",
+    "restore": "node scripts/restore.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "leaflet": "^1.9.4"
+  }
+}
