@@ -4,7 +4,7 @@
 
 - Mã nguồn đã được commit tại local. Commit ban đầu: `0565649`; commit tiếp theo bổ sung hai file bàn giao này.
 - Remote: https://github.com/haitiano1/chamcongstu.git. Nhánh làm việc local: `work`; dự định push lên `main`.
-- **Chưa push thành công**: phiên GitHub trong môi trường Codex báo GH_TOKEN không hợp lệ. Người dùng đã cho phép push tới repository trên; cần xác thực GitHub trên máy mới trước khi push. Không yêu cầu người dùng gửi token trong chat.
+- Chủ dự án đã đưa gói mã nguồn lên GitHub: nhánh main có commit `3dae54b`. Mã PHP tại commit đó khớp v1.2.3. Các lỗi token/push trong các trao đổi cũ là lịch sử; kiểm tra `git status` và remote trước khi kết luận trạng thái hiện tại. Bản chỉnh mới chuyển lệnh khởi động mặc định sang PHP để tránh mở nhầm Node cũ.
 - Bản PHP gần nhất v1.2.3 (25/10/2026): đã sửa lỗi nhân viên không thấy lịch 22/10 vì ngày đó chưa gán thợ. Nay mọi role xem lịch chung, có bộ lọc lịch của tôi; danh sách/dấu chấm/thống kê dùng cùng scope.
 - Không mặc định Hostinger đã chạy đúng phiên bản local: các bản trước được chủ dự án upload thủ công qua File Manager.
 
@@ -40,9 +40,11 @@ ZIP mã nguồn là lựa chọn dễ mở; bundle là lựa chọn giữ lịch
 
 ## Chạy thử
 
+**Đã xử lý mở nhầm:** `npm start` và `npm run dev` hiện khởi động PHP mới nhất bằng Docker. Bản Node cũ chỉ chạy khi chọn `npm run start:legacy`. Nếu PHP mở được nhưng thiếu lịch/nhân sự/log, kiểm tra database thử và cấu hình Sheet; repo không tự mang theo dữ liệu production.
+
 Xem `php-hostinger/README.md`. Node >=22.13 (khuyến nghị 24), Docker + Bash cho môi trường PHP cục bộ. Máy Windows có thể dùng WSL / Git Bash và Docker Desktop; Claude có thể kiểm tra môi trường rồi thiết lập theo README.
 
-- Bản Node cũ: `npm ci` và `npm test`.
+- Khởi động bản hiện tại: `npm start` hoặc `bash php-hostinger/dev.sh start`; bản Node cũ: `npm run start:legacy`.
 - Bản PHP: `bash php-hostinger/dev.sh start`, cổng local 8184; dùng database Docker riêng, không kết nối database production để test.
 - Một số script đóng gói/kiểm thử dùng đường dẫn `/workspace` và `/tmp` của môi trường Codex, cần chỉnh đường dẫn fixture/runtime khi chạy máy khác.
 - Các kiểm thử log/PDF lịch sử cần fixture riêng không có trong Git. Không tự tạo dữ liệu giả rồi đưa lên hosting để làm tests đạt.

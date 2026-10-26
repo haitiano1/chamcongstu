@@ -1,13 +1,15 @@
 {
   "name": "studio-cham-cong",
-  "version": "1.0.0",
+  "version": "1.2.3",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --env-file-if-exists=.env server.js",
-    "dev": "node --env-file-if-exists=.env --watch server.js",
+    "start": "node scripts/start-current.js",
+    "dev": "node scripts/start-current.js",
     "test": "node --test",
-    "restore": "node scripts/restore.js"
+    "restore": "node scripts/restore.js",
+    "start:legacy": "node --env-file-if-exists=.env server.js",
+    "dev:legacy": "node --env-file-if-exists=.env --watch server.js"
   },
   "engines": {
     "node": ">=22.13"
@@ -15,5 +17,6 @@
   "dependencies": {
     "jpeg-js": "^0.4.4",
     "leaflet": "^1.9.4"
-  }
+  },
+  "description": "Anh Gau Studio: current Hostinger PHP/MySQL application; legacy Node runtime is opt-in."
 }

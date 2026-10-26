@@ -7,7 +7,7 @@
 - **Bản production Hostinger: PHP/MySQL**, không phải server Node ở root.
 - Frontend: `php-hostinger/site/public_html/nhansu/assets/`; entrypoint `index.php`, API `api.php?route=/...`.
 - Backend: `php-hostinger/site/nhansu-private/lib/`; cron `bin/cron.php`.
-- `public/` và `server.js` ở root là bản Node/SQLite trước đây. Không chỉ sửa bản Node rồi coi như đã sửa bản trên hosting.
+- `npm start` / `npm run dev` ở root hiện khởi động PHP mới nhất qua Docker (`scripts/start-current.js`). `public/` và `server.js` là Node cũ, chỉ chạy rõ ràng bằng `npm run start:legacy`. Tài liệu cũ chuyển vào `docs/LEGACY-NODE.md`. Không chỉ sửa Node rồi coi như đã sửa hosting.
 - Xem `BAN-GIAO-CLAUDE.md`, `php-hostinger/README.md` và các file `UPDATE-*.md` để biết lịch sử thay đổi.
 
 ## Quy tắc vận hành đã chốt
