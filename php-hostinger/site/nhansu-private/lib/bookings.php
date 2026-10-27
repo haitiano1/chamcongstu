@@ -110,7 +110,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $a->requireManager();$key=input_text($b['source_key']??null,'Mã sự việc',5,150);$month=valid_month($b['month']??null);$issue=null;
   foreach(attendance_issues($a,$month) as $r)if($r['source_key']===$key){$issue=$r;break;}if(!$issue)fail('Sự cố không còn trong dữ liệu đối soát. Tải lại.',409);
   if($issue['event_log_id'])return [200,['id'=>$issue['event_log_id'],'already_saved'=>true]];
-  $note=input_text($b['description']??null,'Nội dung xác nhận',5,2000);$id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$issue['id'],'event_date'=>$issue['day'],'category'=>$issue['kind']==='late'?'late':'missing_punch','description'=>$note,'deduction'=>$b['deduction']??0],'POST');
+  $note=input_text($b['description']??null,'Nội dung xác nhận',5,2000);$id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$issue['id'],'event_date'=>$issue['day'],'category'=>$issue['kind']==='late'?'late':'missing_punch','description'=>$note,'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null],'POST');
   $a->run('INSERT INTO {{attendance_issue_links}} VALUES(?,?)',[$key,$id]);return $result;
  }
  if($path==='/sheet-sync/status'&&$method==='GET'){$a->requireManager();$last=json_decode($a->meta('sheet_sync_last')??'null',true);$aliases=$a->all('SELECT m.*,u.name FROM {{booking_aliases}} m JOIN {{users}} u ON u.id=m.user_id ORDER BY m.alias_label');return [200,['sheet_id'=>$a->meta('sheet_sync_id')??'1JCyjUuLzCJy05yRvjWMKEGmwbvCEAiSjnyi1cNcuZow','configured'=>is_file($a->storage.'/sheet-sync-key'),'last_sync'=>$last,'aliases'=>$aliases,'people'=>finance_people($a),'can_configure'=>$a->user['role']==='admin']];}

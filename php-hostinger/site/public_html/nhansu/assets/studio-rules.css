@@ -1,0 +1,26 @@
+/* Luật Studio */
+.rules-board{margin:0}
+.rules-search input{width:100%;box-sizing:border-box}
+.rules-cats{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:12px 0 4px;padding-bottom:2px}
+.rules-cats::-webkit-scrollbar{display:none}
+.rules-cats button{flex:none;white-space:nowrap;border:1px solid #dfe7f1;background:#fff;color:#52627a;border-radius:20px;padding:8px 14px;font-size:13px;min-height:38px}
+.rules-cats button.active{background:#1d64d8;border-color:#1d64d8;color:#fff;font-weight:600}
+.rules-list{display:grid;gap:12px;margin-top:8px}
+.rule-card{border:1px solid #e3e9f2;border-left:4px solid #d92d20;border-radius:14px;padding:14px 16px;background:#fff;overflow-wrap:anywhere}
+.rule-card.archived{opacity:.6;border-left-color:#9fb3cf}
+.rule-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.rule-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:700;font-size:13px;background:#14233a;color:#fff;padding:4px 9px;border-radius:7px;letter-spacing:.5px}
+.rule-cat{font-size:12px;background:#eef4ff;color:#3b5b8f;padding:4px 10px;border-radius:20px}
+.rule-points{margin-left:auto;font-weight:700;font-size:14px;color:#b42318;background:#fff0f0;padding:4px 10px;border-radius:20px;white-space:nowrap}
+.rule-points.zero{color:#52627a;background:#f1f5f9;font-weight:600}
+.rule-card h3{margin:10px 0 6px;font-size:17px;color:#14233a}
+.rule-content{margin:0;white-space:pre-wrap;line-height:1.65;color:#33445c;font-size:14px}
+.rule-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid #eef2f7}
+.rule-foot small{color:#7a879b}.rule-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.rule-form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rule-audit{padding-left:18px;line-height:1.6;font-size:14px}.rule-audit ul{padding-left:16px;margin:4px 0 10px;color:#52627a}.rule-audit s{color:#b42318}
+@media(min-width:801px){.rules-page .finance-heading>.primary{width:auto;flex:none;margin:0}.rules-page{max-width:900px}}
+@media(max-width:800px){.rule-points{margin-left:0}.rule-foot{flex-direction:column;align-items:stretch}.rule-actions .secondary{flex:1}}
+.log-rule-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;font-weight:700;background:#14233a;color:#fff;padding:3px 7px;border-radius:6px}
+.log-rule-line{margin:4px 0 8px;font-size:13px;color:#52627a}
+.rule-pick-hint{display:block;margin-top:6px;color:#b42318;font-weight:600;font-size:12px}

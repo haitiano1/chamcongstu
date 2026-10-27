@@ -101,7 +101,7 @@ function availability_routes(App $a,string $path,array $b,string $method): ?arra
   $cid=$b['id']??null;if(!is_int($cid))fail('Dữ liệu không hợp lệ.');$c=$a->one('SELECT user_id,day FROM {{shift_cancellations}} WHERE id=?',[$cid]);if(!$c)fail('Không còn lượt nghỉ gấp này. Tải lại.',409);
   $user=$c['user_id'];$key='cancel_'.$cid;$row=null;foreach(avail_cancel_rows($a,$c['day'],$c['day'],$user) as $r)if($r['id']===$cid)$row=$r;
   if(!$row)fail('Không còn lượt nghỉ gấp này. Tải lại.',409);if($row['event_log_id'])return [200,['id'=>$row['event_log_id'],'already_saved'=>true]];
-  $id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$user,'event_date'=>local_day($row['cancelled_at']),'category'=>'absence','description'=>input_text($b['description']??null,'Nội dung ghi nhận',5,2000),'deduction'=>$b['deduction']??0],'POST');
+  $id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$user,'event_date'=>local_day($row['cancelled_at']),'category'=>'absence','description'=>input_text($b['description']??null,'Nội dung ghi nhận',5,2000),'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null],'POST');
   $a->run('INSERT INTO {{attendance_issue_links}} VALUES(?,?)',[$key,$id]);return $result;
  }
  fail('Không tìm thấy chức năng Đăng ký ca.',404);
