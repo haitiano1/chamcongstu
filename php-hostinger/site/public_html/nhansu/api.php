@@ -43,7 +43,7 @@ register_shutdown_function(function(){
 if(PHP_VERSION_ID<80200)nhansu_api_error('Ứng dụng cần PHP từ 8.2. Kiểm tra phiên bản PHP của riêng ứng dụng; không đổi cấu hình WordPress để thử.',503);
 $private=getenv('APP_PRIVATE_DIR')?:dirname(__DIR__,2).'/nhansu-private';
 try {
- $libraries=array('rules.php','schema.php','bootstrap.php','api.php','workflows.php','telegram.php','transfer.php','people-finance.php','bookings.php','tasks.php');
+ $libraries=array('rules.php','schema.php','bootstrap.php','api.php','workflows.php','telegram.php','transfer.php','people-finance.php','bookings.php','tasks.php','availability.php');
  foreach($libraries as $library) {
   if(!is_file($private.'/lib/'.$library)||!is_readable($private.'/lib/'.$library))nhansu_api_error('Thiếu hoặc không đọc được lib/'.$library.'. Giải nén lại gói PRIVATE bên trong nhansu-private, gộp thư mục lib và thay file trùng.',503);
  }
@@ -51,7 +51,7 @@ try {
   $nhansuStage='loading';$nhansuLibrary='lib/'.$library;
   require_once $private.'/lib/'.$library;
  }
- $functions=array('rules.php'=>array('text_length','attendance_decision'),'schema.php'=>array('schema'),'bootstrap.php'=>array('headers_private','json_response'),'api.php'=>array('auth_routes','main_routes','management_routes'),'workflows.php'=>array('workflow_routes','roster_routes'),'telegram.php'=>array('telegram_routes'),'transfer.php'=>array('transfer_routes'),'people-finance.php'=>array('people_finance_routes'),'bookings.php'=>array('sheet_receiver','booking_routes'),'tasks.php'=>array('task_routes','task_telegram_tick'));
+ $functions=array('rules.php'=>array('text_length','attendance_decision'),'schema.php'=>array('schema'),'bootstrap.php'=>array('headers_private','json_response'),'api.php'=>array('auth_routes','main_routes','management_routes'),'workflows.php'=>array('workflow_routes','roster_routes'),'telegram.php'=>array('telegram_routes'),'transfer.php'=>array('transfer_routes'),'people-finance.php'=>array('people_finance_routes'),'bookings.php'=>array('sheet_receiver','booking_routes'),'tasks.php'=>array('task_routes','task_telegram_tick'),'availability.php'=>array('availability_routes'));
  foreach($functions as $library=>$names)foreach($names as $name)if(!function_exists($name))nhansu_api_error('Gói PRIVATE chưa đồng bộ: lib/'.$library.' chưa đầy đủ. Hãy thay file trùng bằng gói sửa mới.',503);
  if(ob_get_length()>0)nhansu_api_error('Có nội dung thừa khi nạp file PHP. Upload lại đầy đủ gói PRIVATE và kiểm tra trang kiemtra-capnhat.php.',503);
  $nhansuStage='initializing';$nhansuLibrary='';
@@ -67,7 +67,7 @@ try {
   if(!$multipart){if(!str_starts_with($_SERVER['CONTENT_TYPE']??'','application/json'))fail('Cần gửi dữ liệu JSON.',415);$raw=file_get_contents('php://input',false,null,0,$limit+1);if(strlen($raw)>$limit)fail('Yêu cầu quá lớn.',413);$b=json_decode($raw,true,32,JSON_THROW_ON_ERROR);if(!is_array($b)||array_is_list($b)&&$b!==[])fail('Dữ liệu không hợp lệ.');}else{$b=$_POST;}
  }
  $dispatch=function()use($a,$path,$b,$method){$r=sheet_receiver($a,$path,$b,$method);if($r!==null)return $r;$r=auth_routes($a,$path,$b,$method);if($r!==null)return $r;$a->authenticate();if($method==='POST'&&!hash_equals($a->csrf,$_SERVER['HTTP_X_NHANSU_CSRF']??''))fail('Phiên thao tác đã cũ. Vui lòng tải lại trang.',403);
-  foreach(['booking_routes','task_routes','people_finance_routes','main_routes','workflow_routes','roster_routes','telegram_routes','transfer_routes'] as $handler){$r=$handler($a,$path,$b,$method);if($r!==null)return $r;}
+  foreach(['booking_routes','task_routes','availability_routes','people_finance_routes','main_routes','workflow_routes','roster_routes','telegram_routes','transfer_routes'] as $handler){$r=$handler($a,$path,$b,$method);if($r!==null)return $r;}
   $r=location_routes($a,$path,$method);if($r!==null)return $r;$r=management_routes($a,$path,$b,$method);if($r!==null)return $r;fail('Không tìm thấy chức năng.',404);
  };
  $nhansuStage='request';$result=$method==='POST'?$a->tx($dispatch):$dispatch();json_response($result[1],$result[0]);
