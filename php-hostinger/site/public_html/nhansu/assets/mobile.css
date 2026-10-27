@@ -1,0 +1,114 @@
+/* Giao diện điện thoại (≤ 800px). Máy tính giữ nguyên style.css. Nạp sau cùng để ghi đè. */
+.bottom-nav,.sidebar-user,.sidebar-logout{display:none}
+@media(max-width:800px){
+:root{--m-bg:#f2f4f8;--m-card:#fff;--m-text:#14233a;--m-muted:#6b7a90;--m-line:#e6ebf2;--m-primary:#1d64d8;--m-primary-soft:#e9f1ff;--m-radius:16px;--m-shadow:0 1px 2px #1018280d,0 1px 3px #1018280f;--m-nav:64px}
+body{background:var(--m-bg);color:var(--m-text);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+
+/* Header gọn: logo + tên trang + avatar */
+.topbar{height:56px;padding:0 14px;gap:10px;padding-top:env(safe-area-inset-top,0px);box-sizing:content-box}
+.topbar .brand{width:auto!important;min-width:0!important;flex:none}
+.topbar .studio-brand-name{display:none}
+.topbar .studio-brand-image{height:30px;width:auto}
+.topbar .menu-toggle,.topbar .account>span,.topbar #logout,.topbar .role-badge{display:none!important}
+.topbar .page-title{position:static!important;transform:none!important;width:auto!important;max-width:none!important;text-align:left!important;font-size:17px;font-weight:700;letter-spacing:-.2px;color:#fff;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .account{margin-left:0}
+.topbar .avatar{width:34px;height:34px;font-size:14px}
+.workspace{margin-top:calc(56px + env(safe-area-inset-top,0px))!important;padding:14px 14px calc(var(--m-nav) + 24px + env(safe-area-inset-bottom,0px))!important;min-height:auto}
+.mobile-quick-nav{display:none!important}
+
+/* Thanh điều hướng đáy */
+.bottom-nav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:35;background:#fffffff2;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--m-line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));box-shadow:0 -4px 16px #10182810}
+.bottom-nav button{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:52px;border:0;background:none;color:#7a879b;font-size:11px;font-weight:500;padding:4px 2px;border-radius:12px}
+.bottom-nav button svg{width:22px;height:22px;padding:3px 14px;border-radius:14px;box-sizing:content-box;transition:background .15s}
+.bottom-nav button.active{color:var(--m-primary);font-weight:700}
+.bottom-nav button.active svg{background:var(--m-primary-soft)}
+.bottom-nav button:active svg{background:#eef2f7}
+.bottom-nav .task-count{position:absolute;top:2px;left:calc(50% + 6px);margin:0}
+.menu-open .bottom-nav #bottom-more{color:var(--m-primary)}
+
+/* Menu "Thêm" dạng ngăn kéo */
+.sidebar{top:calc(56px + env(safe-area-inset-top,0px))!important;bottom:calc(var(--m-nav) + env(safe-area-inset-bottom,0px))!important;width:min(300px,84vw)!important;padding:16px 12px!important;border-radius:0 18px 18px 0;box-shadow:none!important}
+.menu-open .sidebar{box-shadow:8px 0 30px #10182822!important}
+.menu-open .sidebar-backdrop{inset:calc(56px + env(safe-area-inset-top,0px)) 0 0!important}
+.sidebar-user{display:flex;align-items:center;gap:12px;padding:6px 10px 18px;margin-bottom:10px;border-bottom:1px solid var(--m-line)}
+.sidebar-user .avatar{width:42px;height:42px;font-size:16px;flex:none}
+.sidebar-user strong{display:block;font-size:15px}.sidebar-user small{color:var(--m-muted);font-size:12px}
+.sidebar .nav-item{font-size:15px;padding:14px 12px;margin-bottom:2px;border-radius:12px;color:#33445c}
+.sidebar .nav-item svg{width:20px;height:20px}
+.sidebar .nav-item.active{background:var(--m-primary-soft);color:var(--m-primary)}
+.sidebar-logout{display:block;width:100%;margin:0 0 12px;padding:13px;border:1px solid #f1d4d4;background:#fff6f6;color:#b42318;border-radius:12px;font-size:14px;font-weight:600}
+.sidebar-studio,.sidebar-label{display:none}
+
+/* Bỏ khối tiêu đề lớn trùng với header, giữ nút thao tác */
+.finance-heading .eyebrow,.finance-heading h1,.finance-heading>div>p,.roster-heading .eyebrow,.roster-heading h1,.roster-heading p,.employee-heading .eyebrow,.employee-heading h1,.employee-heading p,.overview-heading,section[data-page="attendance"].heading,div.heading[data-page="attendance"]{display:none!important}
+.finance-heading:not(:has(button,a,.primary)),.roster-heading:not(:has(button,a)),.employee-heading:not(:has(button)){display:none!important}
+.finance-heading,.roster-heading,.employee-heading{margin:0!important;gap:10px}
+.finance-heading>.primary,.finance-heading .log-heading-actions,.employee-heading>.primary{width:100%}
+.finance-page,.roster-page{gap:14px!important}
+
+/* Thẻ, chữ, nút */
+.card,.finance-page>.card{border:0!important;border-radius:var(--m-radius)!important;box-shadow:var(--m-shadow)!important;padding:16px!important;margin:0 0 14px!important}
+.workspace h2{font-size:17px;letter-spacing:-.2px}
+.workspace p,.hint{font-size:13px}
+.primary{min-height:48px;border-radius:12px!important;font-size:15px!important;font-weight:600}
+.secondary{min-height:42px;border-radius:12px!important;font-size:14px!important}
+.text-button{min-height:40px;font-size:14px!important}
+/* 16px để iPhone không tự phóng to khi bấm vào ô nhập */
+input:not([type=checkbox]):not([type=radio]),select,textarea{font-size:16px!important;border-radius:12px!important;min-height:46px;box-sizing:border-box}
+textarea{min-height:90px}
+
+/* Popup dạng tấm trượt từ đáy */
+dialog.workflow-dialog,dialog.finance-dialog{width:100%!important;max-width:100%!important;margin:auto 0 0!important;border-radius:22px 22px 0 0!important;max-height:92dvh!important;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px))!important;box-sizing:border-box;overflow-y:auto}
+dialog.workflow-dialog::before,dialog.finance-dialog::before{content:'';display:block;width:40px;height:4px;border-radius:2px;background:#d5dce6;margin:-6px auto 12px}
+dialog .dialog-heading{position:sticky;top:-18px;background:#fff;z-index:1;padding:4px 0 10px!important;margin:0 0 6px!important}
+dialog .dialog-heading h2{font-size:18px!important}
+
+#toast{bottom:calc(var(--m-nav) + 18px + env(safe-area-inset-bottom,0px))!important;max-width:calc(100% - 32px);border-radius:12px;font-size:14px}
+
+/* Bảng thành thẻ: mỗi dòng một thẻ, mỗi ô "Nhãn — giá trị" */
+.table-wrap{overflow:visible!important}
+.table-wrap table.stackable,.table-wrap table.stackable tbody{display:block;width:100%;min-width:0!important}
+.table-wrap table.stackable thead{display:none}
+.table-wrap table.stackable tr{display:block;background:#fff;border:1px solid var(--m-line);border-radius:14px;padding:6px 14px;margin:0 0 10px}
+.table-wrap table.stackable td{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:9px 0!important;border:0!important;border-bottom:1px solid #f0f3f7!important;text-align:right;font-size:14px;min-width:0;white-space:normal!important}
+.table-wrap table.stackable td:last-child{border-bottom:0!important}
+.table-wrap table.stackable td[data-label]::before{content:attr(data-label);flex:none;max-width:45%;text-align:left;color:var(--m-muted);font-size:12px;font-weight:600;text-transform:none;letter-spacing:0;padding-top:2px}
+.table-wrap table.stackable td:first-child{font-weight:600;font-size:15px}
+.table-wrap table.stackable td[colspan]{display:block;text-align:center}
+.table-wrap table.stackable td[colspan]::before{display:none}
+
+/* Lịch làm việc: lưới tuần thành danh sách theo ngày */
+.roster-calendar{overflow:visible!important;border:0!important;background:none!important;box-shadow:none!important}
+.roster-grid{grid-template-columns:1fr!important;min-width:0!important;gap:10px;background:none}
+.roster-weekday{display:none!important}
+.roster-day{min-height:0!important;border:0!important;border-radius:14px;background:#fff;box-shadow:var(--m-shadow);padding:12px!important}
+.roster-day.outside{display:none}
+.roster-day.today{outline:2px solid var(--m-primary);outline-offset:-2px}
+.roster-day-number{font-size:15px!important;font-weight:700;margin-bottom:8px;justify-content:flex-start!important;gap:4px}
+.roster-day-number small{margin-left:auto}
+.roster-day-number small{font-size:12px!important}
+.roster-grid:not(.one-day)>.roster-day:nth-child(7n+8) .roster-day-number::before{content:'Thứ 2 · '}
+.roster-grid:not(.one-day)>.roster-day:nth-child(7n+9) .roster-day-number::before{content:'Thứ 3 · '}
+.roster-grid:not(.one-day)>.roster-day:nth-child(7n+10) .roster-day-number::before{content:'Thứ 4 · '}
+.roster-grid:not(.one-day)>.roster-day:nth-child(7n+11) .roster-day-number::before{content:'Thứ 5 · '}
+.roster-grid:not(.one-day)>.roster-day:nth-child(7n+12) .roster-day-number::before{content:'Thứ 6 · '}
+.roster-grid:not(.one-day)>.roster-day:nth-child(7n+13) .roster-day-number::before{content:'Thứ 7 · '}
+.roster-grid:not(.one-day)>.roster-day:nth-child(7n+14) .roster-day-number::before{content:'Chủ nhật · '}
+.roster-day-number::before{color:var(--m-muted);font-weight:600}
+
+/* Tổng quan: bỏ hình minh họa, bộ lọc gọn */
+.studio-art{display:none!important}
+.filterbar{display:grid!important;grid-template-columns:1fr auto auto;gap:8px!important;align-items:center}
+.filterbar .branch{display:none!important}
+.filterbar .primary{min-height:46px;padding:0 16px}
+.filterbar input[type=date]{grid-column:1;grid-row:1;width:100%!important}.filterbar .primary{grid-column:2;grid-row:1}.filterbar .refresh-button{grid-column:3;grid-row:1}
+.text-button{white-space:nowrap}
+
+/* Nhóm nút lọc dạng tab cuộn ngang, không xuống dòng */
+.log-status-tabs,.task-tabs{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none}
+.log-status-tabs::-webkit-scrollbar,.task-tabs::-webkit-scrollbar{display:none}
+.log-status-tabs button,.task-tabs button{white-space:nowrap;flex:none!important;min-height:40px}
+
+footer{display:none!important}
+}
+@media(max-width:800px) and (prefers-reduced-motion:no-preference){.sidebar{transition:transform .22s cubic-bezier(.2,.8,.2,1)!important}}

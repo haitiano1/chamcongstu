@@ -2,8 +2,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 case "${1:-start}" in start) ;; *) echo 'Use: bash php-hostinger/dev.sh start'; exit 1;; esac
-runtime_dir="${NHANSU_DEV_DIR:-/tmp/anhgau-php-development}"
+runtime_dir="${NHANSU_DEV_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/anhgau-php-development}"
+if [ -e "$runtime_dir" ] && [ ! -O "$runtime_dir" ]; then echo "Runtime dir $runtime_dir not owned by $(id -un); set NHANSU_DEV_DIR or remove it." >&2; exit 1; fi
 mkdir -p "$runtime_dir/private"
+# Secret env lost but DB volume kept: recover from existing DB container so passwords stay in sync.
+if [ ! -f "$runtime_dir/dev.env" ] && docker container inspect anhgau-dev-db >/dev/null 2>&1; then
+ (umask 077; docker inspect anhgau-dev-db --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -E '^(MARIADB_(ROOT_PASSWORD|DATABASE|USER|PASSWORD)|NHANSU_[A-Z_]+|APP_PRIVATE_DIR)=' >"$runtime_dir/dev.env")
+fi
 chmod 755 "$runtime_dir" "$runtime_dir/private"
 python3 - "$PWD" "$runtime_dir" <<'PY'
 import sys,shutil,secrets
@@ -23,6 +28,9 @@ docker image inspect anhgau-php-test:local >/dev/null 2>&1 || docker build -t an
 docker network inspect anhgau-dev >/dev/null 2>&1 || docker network create anhgau-dev >/dev/null
 if docker container inspect anhgau-dev-db >/dev/null 2>&1; then docker start anhgau-dev-db >/dev/null; else
  docker run -d --name anhgau-dev-db --network anhgau-dev --env-file "$runtime_dir/dev.env" -v anhgau-dev-mysql:/var/lib/mysql mariadb:11.4 >/dev/null
+fi
+if docker container inspect anhgau-dev-web >/dev/null 2>&1 && [ "$(docker inspect anhgau-dev-web --format '{{range .Mounts}}{{if eq .Destination "/var/nhansu-private"}}{{.Source}}{{end}}{{end}}')" != "$runtime_dir/private" ]; then
+ docker rm -f anhgau-dev-web >/dev/null
 fi
 if docker container inspect anhgau-dev-web >/dev/null 2>&1; then docker start anhgau-dev-web >/dev/null; else
  docker run -d --name anhgau-dev-web --network anhgau-dev --env-file "$runtime_dir/dev.env" -p 127.0.0.1:8184:80 -v "$PWD/php-hostinger/site/public_html/nhansu:/var/www/html/nhansu:ro" -v "$runtime_dir/private:/var/nhansu-private" anhgau-php-test:local >/dev/null
