@@ -1,3 +1,4 @@
+import {resetRules} from './rule-picker.js?v=20261027-rules2';
 // Luật Studio: mọi người xem luật đang áp dụng; Admin thêm/sửa/ngừng áp dụng, xem lịch sử thay đổi.
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stamp=v=>v?new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}).format(v):'—';
@@ -34,7 +35,7 @@ export function bindStudioRules({api,user,toast}){
  async function archive(r,off){const d=dialog(off?'Ngừng áp dụng luật':'Áp dụng lại luật',`<form><p><b>${esc(r.code)}</b> · ${esc(r.name)}</p><p class="hint">${off?'Luật được ẩn khỏi danh sách của nhân viên nhưng vẫn giữ lại cùng lịch sử. Có thể áp dụng lại bất cứ lúc nào.':'Luật sẽ hiện lại cho mọi người.'}</p><label>Ghi chú (không bắt buộc)<input name="note" maxlength="500"></label><p class="error" role="alert"></p><button class="primary${off?' danger':''}" type="submit">${off?'Ngừng áp dụng':'Áp dụng lại'}</button></form>`);
   d.querySelector('form').onsubmit=async e=>{e.preventDefault();try{await api(`studio-rules/${r.id}/${off?'archive':'restore'}`,{version:r.version,note:new FormData(e.target).get('note')||''});d.close();toast(off?'Đã ngừng áp dụng.':'Đã áp dụng lại.');load();}catch(err){d.querySelector('.error').textContent=err.message;}};}
  async function audit(r){const d=dialog('Lịch sử · '+r.code,'<p class="hint">Đang tải…</p>');try{const data=await api(`studio-rules/${r.id}/audit`);const diff=(b,a)=>{b=JSON.parse(b||'null')||{};a=JSON.parse(a||'null')||{};return Object.keys(FIELD).filter(k=>k in a&&String(b[k]??'')!==String(a[k]??'')).map(k=>`<li><b>${FIELD[k]}:</b> ${k in b?`<s>${esc(b[k])}</s> → `:''}${esc(a[k])}</li>`).join('');};d.querySelector('.hint').outerHTML=`<ul class="rule-audit">${data.rows.map(x=>`<li><strong>${AUDIT[x.action]||x.action}</strong> · ${esc(x.actor_name)} · ${stamp(x.time)}${x.note?`<br><i>${esc(x.note)}</i>`:''}<ul>${diff(x.before_json,x.after_json)}</ul></li>`).join('')}</ul>`;}catch(e){d.querySelector('.hint').textContent=e.message;}}
- async function load(){try{const data=await api('studio-rules');rows=data.rows;cats=data.categories;canEdit=data.can_edit;if(cat&&!cats.includes(cat))cat='';render();}catch(e){$('#rule-status').textContent=e.message;}}
+ async function load(){resetRules();try{const data=await api('studio-rules');rows=data.rows;cats=data.categories;canEdit=data.can_edit;if(cat&&!cats.includes(cat))cat='';render();}catch(e){$('#rule-status').textContent=e.message;}}
  $('#rule-search').oninput=render;
  const create=$('#rule-create');if(create)create.onclick=()=>form(null);
  page.addEventListener('refresh',load);if(!page.hidden)load();

@@ -5,7 +5,7 @@ files=[]
 for f in sorted((private/'lib').iterdir()):
  if f.is_file() and f.suffix in ['.php','.json','.pdf']:files.append(('private','lib/'+f.name,hashlib.sha256(f.read_bytes()).hexdigest()))
 files.append(('private','bin/cron.php',hashlib.sha256((private/'bin/cron.php').read_bytes()).hexdigest()))
-for name in ['api.php','index.php','assets/app.js','assets/api-response.js','assets/people-finance.js','assets/bookings.js','assets/studio-journal.css','assets/roster.js','assets/tasks.js','assets/tasks.css','assets/camera.js','assets/mobile.css','assets/availability.js','assets/availability.css','assets/roster.js','assets/studio-rules.js','assets/studio-rules.css']:
+for name in ['api.php','index.php','assets/app.js','assets/api-response.js','assets/people-finance.js','assets/bookings.js','assets/studio-journal.css','assets/roster.js','assets/tasks.js','assets/tasks.css','assets/camera.js','assets/mobile.css','assets/availability.js','assets/availability.css','assets/roster.js','assets/studio-rules.js','assets/studio-rules.css','assets/rule-picker.js']:
  files.append(('public',name,hashlib.sha256((public/name).read_bytes()).hexdigest()))
 data=json.dumps(files,ensure_ascii=True,separators=(',',':'))
 code=r'''<?php

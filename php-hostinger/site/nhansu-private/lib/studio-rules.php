@@ -7,6 +7,11 @@ function studio_rule_input(array $b): array {
  $points=$b['points']??null;if(!is_int($points)||$points<0||$points>10000)fail('Điểm KPI trừ là số từ 0 đến 10000.');
  return ['code'=>$code,'name'=>input_text($b['name']??null,'Tên lỗi',2,200),'category'=>input_text($b['category']??null,'Loại luật',2,100),'content'=>input_text($b['content']??'','Nội dung',0,5000),'points'=>$points];
 }
+// Chọn luật khi ghi Event log: điểm lấy đúng theo luật (luật đang áp dụng), lưu kèm mã và tên lúc ghi.
+function studio_rule_pick(App $a,array $b): ?array {
+ $id=$b['rule_id']??null;if($id===null||$id==='')return null;
+ $r=$a->one("SELECT id,code,name,points FROM {{studio_rules}} WHERE id=? AND status='active'",[entry_uuid($id)]);if(!$r)fail('Luật đã chọn không còn áp dụng. Tải lại.',409);return $r;
+}
 function studio_rule_audit(App $a,string $id,string $action,?array $before,?array $after,string $note=''): void {
  $a->run('INSERT INTO {{studio_rule_audit}}(rule_id,actor_id,action,before_json,after_json,note,time) VALUES(?,?,?,?,?,?,?)',[$id,$a->user['id'],$action,$before===null?null:json_encode($before,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$after===null?null:json_encode($after,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$note,now_ms()]);
 }

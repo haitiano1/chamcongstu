@@ -1,9 +1,9 @@
 import {readApiResponse} from './api-response.js?v=20261024-fix1';
-import {bookingsPage,bindBookings} from './bookings.js?v=20261025-shared4';
-import {advancesPage,bindAdvances,eventLogPage,bindEventLog} from './people-finance.js?v=20261027-tasks4';
+import {bookingsPage,bindBookings} from './bookings.js?v=20261027-rules2';
+import {advancesPage,bindAdvances,eventLogPage,bindEventLog} from './people-finance.js?v=20261027-rules2';
 import {BASE,apiUrl} from './paths.js';
-import {studioRulesPage,bindStudioRules} from './studio-rules.js?v=20261027-rules1';
-import {availabilityPage,bindAvailability} from './availability.js?v=20261027-avail2';
+import {studioRulesPage,bindStudioRules} from './studio-rules.js?v=20261027-rules2';
+import {availabilityPage,bindAvailability} from './availability.js?v=20261027-rules2';
 import {tasksPage,bindTasks} from './tasks.js?v=20261027-tasks3';
 import { rosterPage,bindRoster } from './roster.js?v=20261027-avail2';
 import { ATTENDANCE_CLIENT_VERSION,jpegDataBytes,PHOTO_TARGET_BYTES } from './photo-upload.js?v=20261020-photo2';

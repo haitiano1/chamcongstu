@@ -113,11 +113,12 @@ function log_routes(App $a,string $path,array $b,string $method): ?array {
   if(!$perms['can_record'])fail('Bạn chưa được cấp quyền ghi Event log.',403);
   $id=entry_uuid($b['id']??null);$day=valid_day($b['event_date']??null);if($day<'2020-01-01'||$day>local_day(now_ms()))fail('Ngày sự việc không được ở tương lai.');
   $subject=$b['user_id']??null;if($subject!==null){if(!is_int($subject))fail('Nhân viên không hợp lệ.');$target=$a->one("SELECT id,role FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive'",[$subject]);if(!$target)fail('Nhân viên không tồn tại hoặc đã nghỉ.');}
-  $deduction=$b['deduction']??0;if(!is_int($deduction)||!in_array($deduction,[0,20,100,300],true)||($subject===null&&$deduction!==0))fail('Điểm KPI cần là 0, 20, 100 hoặc 300; nhật ký chung không trừ điểm.');
+  $rule=function_exists('studio_rule_pick')?studio_rule_pick($a,$b):null;
+  $deduction=$rule?$rule['points']:($b['deduction']??0);if($rule?($subject===null&&$deduction!==0):(!is_int($deduction)||!in_array($deduction,[0,20,100,300],true)||($subject===null&&$deduction!==0)))fail($rule?'Nhật ký chung studio không trừ điểm. Chọn nhân viên liên quan để áp luật '.$rule['code'].'.':'Điểm KPI cần là 0, 20, 100 hoặc 300; nhật ký chung không trừ điểm.');
   $category=$b['category']??'';if(!in_array($category,LOG_CATEGORIES,true))fail('Loại sự việc không hợp lệ.');
   $description=input_text($b['description']??null,'Nội dung sự việc',5,2000);$existing=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$id]);
   if($existing){if($existing['created_by']===$a->user['id']&&$existing['user_id']===$subject&&$existing['event_date']===$day&&$existing['category']===$category&&$existing['points']===-$deduction&&$existing['description']===$description)return [200,['id'=>$id,'already_saved'=>true]];fail('Mã sự việc đã được sử dụng.',409);}
-  $status=$manage?'confirmed':'pending';$a->run("INSERT INTO {{event_log}}(id,user_id,event_date,category,description,points,status,created_by,created_at,updated_by,updated_at,resolution) VALUES(?,?,?,?,?,?,?,?,?,?,?,'')",[$id,$subject,$day,$category,$description,-$deduction,$status,$a->user['id'],now_ms(),$a->user['id'],now_ms()]);
+  $status=$manage?'confirmed':'pending';$a->run("INSERT INTO {{event_log}}(id,user_id,event_date,category,description,rule_id,rule_code,rule_name,points,status,created_by,created_at,updated_by,updated_at,resolution) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'')",[$id,$subject,$day,$category,$description,$rule['id']??null,$rule['code']??'',$rule['name']??'',-$deduction,$status,$a->user['id'],now_ms(),$a->user['id'],now_ms()]);
   finance_audit($a,'log',$id,'created','Ghi nhận bởi người được cấp quyền chỉnh sửa Event log.');return [201,['id'=>$id,'status'=>$status]];
  }
  if($path==='/event-log'&&$method==='GET'){
@@ -148,7 +149,10 @@ function log_routes(App $a,string $path,array $b,string $method): ?array {
    if(!in_array($status,$allowed,true))fail('Trạng thái sự việc đã thay đổi hoặc thao tác không hợp lệ.',409);
    if($row['created_by']===$a->user['id']&&$row['status']==='pending')fail('Không được tự xác nhận nhật ký đã gửi của mình.',403);
    $note=input_text($b['note']??null,'Ghi chú xử lý',5,2000);
-   $points=$row['points'];if($status==='confirmed'&&array_key_exists('deduction',$b)){if(!is_int($b['deduction'])||!in_array($b['deduction'],[0,20,100,300],true)||($row['user_id']===null&&$b['deduction']!==0))fail('Điểm xác nhận không hợp lệ.');$points=-$b['deduction'];} $a->run('UPDATE {{event_log}} SET status=?,points=?,resolution=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$status,$points,$note,$a->user['id'],now_ms(),$id]);finance_audit($a,'log',$id,$status,$note.($points!==$row['points']?' | Điểm: '.$row['points'].' → '.$points:''));return [200,['ok'=>true]];
+   $points=$row['points'];$rule=null;if($status==='confirmed'&&function_exists('studio_rule_pick'))$rule=studio_rule_pick($a,$b);
+   if($rule){if($row['user_id']===null&&$rule['points']!==0)fail('Nhật ký chung studio không trừ điểm.');$points=-$rule['points'];}
+   elseif($status==='confirmed'&&array_key_exists('deduction',$b)){if(!is_int($b['deduction'])||!in_array($b['deduction'],[0,20,100,300],true)||($row['user_id']===null&&$b['deduction']!==0))fail('Điểm xác nhận không hợp lệ.');$points=-$b['deduction'];}
+   $a->run('UPDATE {{event_log}} SET status=?,points=?,resolution=?,rule_id=COALESCE(?,rule_id),rule_code=COALESCE(?,rule_code),rule_name=COALESCE(?,rule_name),updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$status,$points,$note,$rule['id']??null,$rule['code']??null,$rule['name']??null,$a->user['id'],now_ms(),$id]);finance_audit($a,'log',$id,$status,$note.($rule?' | Luật: '.$rule['code'].' · '.$rule['name']:'').($points!==$row['points']?' | Điểm: '.$row['points'].' → '.$points:''));return [200,['ok'=>true]];
   }
  }
  fail('Không tìm thấy chức năng Event log.',404);
