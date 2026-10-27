@@ -9,6 +9,7 @@
 - F5 / tải lại trang giữ nguyên mục đang xem (địa chỉ có dạng `#tasks`, `#bookings`…).
 - Event log: mỗi trang 10 sự việc (chọn 10/20/50), nút số trang, thẻ gọn tối đa 3 dòng; bấm thẻ để xem đầy đủ. Xuất CSV vẫn lấy đủ dữ liệu.
 - Giao diện điện thoại mới: thanh điều hướng cố định ở đáy (Chấm công · Lịch chụp · Việc · Bảng công · Thêm), header gọn, bỏ khối tiêu đề trùng, bảng hiển thị dạng thẻ, Lịch làm dạng danh sách theo ngày, popup trượt từ đáy, ô nhập 16px để iPhone không tự phóng to. Đăng xuất nằm trong menu Thêm. Giao diện máy tính giữ nguyên.
+- Giao việc từ nhóm Telegram: thêm bot vào nhóm rồi gõ `/task Huy, Cường | Dọn phòng chụp 2 | 18:00` hoặc `/nhacnho all | Mai họp 8h30` (thêm `#anh` để bắt buộc ảnh; `/viec` xem hướng dẫn). Chỉ Telegram đã liên kết tài khoản Admin/Quản lý mới giao được; tên nhận theo tên gọi, tên đầy đủ, mã NV hoặc tên trên Sheet. Bot trả lời trong nhóm trong vòng 1 phút (theo cron), việc hiện trên web và người nhận được nhắn riêng.
 - Telegram: cron mỗi phút nhắn người nhận đã liên kết bot, kèm nút mở mục Việc. Việc tạo quá 24 giờ chưa gửi được thì bỏ qua, không nhắn dồn.
 - Database tự tạo 3 bảng mới (và tự thêm cột nếu đã có bảng từ bản thử trước) `tasks`, `task_recipients`, `task_audit` khi mở web lần đầu; không đổi dữ liệu cũ.
 
@@ -18,7 +19,7 @@ Giải nén từng ZIP trên máy, upload **các file bên trong** vào đúng t
 
 | Gói | Thư mục trên hosting |
 | --- | --- |
-| 1-private-lib.zip | nhansu-private/lib (tasks.php, schema.php, transfer.php, bootstrap.php, people-finance.php) |
+| 1-private-lib.zip | nhansu-private/lib (tasks.php, telegram.php, schema.php, transfer.php, bootstrap.php, people-finance.php) |
 | 2-private-bin.zip | nhansu-private/bin |
 | 3-public-assets.zip | public_html/nhansu/assets (có file mới mobile.css) |
 | 4-public-root.zip | public_html/nhansu |
