@@ -13,7 +13,7 @@ docker build -t anhgau-php-test:local php-hostinger
 bash php-hostinger/dev.sh start
 ```
 
-Script development dùng cổng 8184, database Docker volume `anhgau-dev-mysql`, config/mật khẩu thử tự sinh trong `/tmp/anhgau-php-development` (không in ra). Script chạy lại được và giữ volume. Chỉ dùng localhost để xác minh nội bộ, không coi đó là link preview công khai. Giữ runtime dir khi restart; không xóa secret env rồi gắn lại volume DB cũ vì sẽ lệch mật khẩu. Không dùng dữ liệu nhân viên thật trong test. Sau khi sửa lib, chạy lại dev.sh để đồng bộ code private. Assets mount từ source.
+Script development dùng cổng 8184, database Docker volume `anhgau-dev-mysql`, config/mật khẩu thử tự sinh trong `~/.local/state/anhgau-php-development` (đổi bằng `NHANSU_DEV_DIR`; không in ra; không dùng `/tmp` vì WSL xóa khi khởi động lại và Docker tạo lại thư mục mount dưới quyền root). Script chạy lại được và giữ volume. Chỉ dùng localhost để xác minh nội bộ, không coi đó là link preview công khai. Giữ runtime dir khi restart; không xóa secret env rồi gắn lại volume DB cũ vì sẽ lệch mật khẩu. Không dùng dữ liệu nhân viên thật trong test. Sau khi sửa lib, chạy lại dev.sh để đồng bộ code private. Assets mount từ source.
 
 Kiểm tra nội bộ `GET /nhansu/api.php?route=%2Fstatus`. Dùng mã riêng trong private/storage/setup-token cho Admin development, không in vào log. Có thể dừng bằng `docker stop anhgau-dev-web anhgau-dev-db`. Không dùng lệnh xóa volume để restart.
 
