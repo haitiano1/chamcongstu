@@ -37,7 +37,13 @@ if docker container inspect anhgau-dev-web >/dev/null 2>&1; then docker start an
 fi
 docker exec anhgau-dev-web sh -c 'mkdir -p /var/nhansu-private/storage && chown www-data:www-data /var/nhansu-private/storage'
 for attempt in $(seq 1 20); do
- if docker exec anhgau-dev-web curl --fail -s 'http://127.0.0.1/nhansu/api.php?route=%2Fstatus' >/dev/null; then echo 'PHP/MySQL development runtime ready (port 8184; validate internally).'; exit 0; fi
+ if docker exec anhgau-dev-web curl --fail -s 'http://127.0.0.1/nhansu/api.php?route=%2Fstatus' >/dev/null; then
+  # Có token bot test thì chạy cron mỗi 20 giây (hosting chạy mỗi phút) để nhận lệnh Telegram và gửi nhắc.
+  if grep -q '^NHANSU_TELEGRAM_TOKEN=' "$runtime_dir/dev.env" && ! docker exec anhgau-dev-web sh -c 'test -f /tmp/cron-loop.pid && kill -0 "$(cat /tmp/cron-loop.pid)" 2>/dev/null'; then
+   docker exec -d -u www-data anhgau-dev-web sh -c 'echo $$ > /tmp/cron-loop.pid; while :; do php /var/nhansu-private/bin/cron.php >/dev/null 2>&1; sleep 20; done'
+   echo 'Telegram test bot: cron loop started (every 20s).'
+  fi
+  echo 'PHP/MySQL development runtime ready (port 8184; validate internally).'; exit 0; fi
  sleep 1
 done
 echo 'Runtime not ready. Inspect docker logs anhgau-dev-web and anhgau-dev-db.' >&2
