@@ -54,3 +54,5 @@
 @media(min-width:801px){.avail-page{max-width:760px}.avail-grid{gap:4px}}
 @media(max-width:380px){.avail-day{grid-template-columns:1fr}.avail-shift{min-height:52px}}
 .avail-popup p{color:#33445c}.avail-popup p strong{color:#14233a}
+.avail-lock{display:block;font-style:normal;font-size:11px;font-weight:600;color:#b42318;margin-top:1px}
+.avail-lock{white-space:nowrap;font-size:10.5px}

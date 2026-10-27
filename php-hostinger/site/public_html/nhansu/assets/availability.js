@@ -20,12 +20,14 @@ export function bindAvailability({api,user,toast}){
  const page=document.querySelector('[data-page="availability"]');if(!page)return;
  let week=null,data=null,busy=false;
  const $=s=>page.querySelector(s);
+ // Còn ≤ urgent_days ngày tới ngày của ca (tính theo ngày Việt Nam) thì bỏ ca là nghỉ gấp.
+ const isUrgent=day=>(Date.parse(day+'T00:00:00Z')-Date.parse(new Date(data.now+7*3600000).toISOString().slice(0,10)+'T00:00:00Z'))/86400000<=data.urgent_days;
  function renderMine(){
   const grid=$('#avail-grid');if(!grid)return;const m=data.mine,on=new Set(m.shifts.map(s=>s.day+'|'+s.shift)),cancelled=new Set(m.cancels.map(c=>c.day+'|'+c.shift)),count=m.shifts.length,min=data.min,today=new Date(data.now+7*3600000).toISOString().slice(0,10);
   $('#avail-badge').className='avail-badge '+(m.committed?'done':'draft');$('#avail-badge').textContent=m.committed?(m.auto?'Đã khóa (tuần đã bắt đầu)':'Đã chốt'):'Chưa chốt';
   $('#avail-count').innerHTML=`<strong>${count}</strong> / ${min} ca tối thiểu`;$('#avail-progress').style.width=Math.min(100,count/min*100)+'%';$('#avail-progress').classList.toggle('ok',count>=min);
-  $('#avail-hint').textContent=m.committed?'Đã chốt: thêm ca thoải mái. Bỏ ca đã chốt là nghỉ gấp và bị ghi nhận.':`Chọn tối thiểu ${min} ca rồi bấm Chốt. Trước khi chốt có thể đổi thoải mái.`;
-  grid.innerHTML=data.days.map((day,i)=>`<div class="avail-day${day===today?' today':''}"><div class="avail-day-label"><strong>${WEEKDAY[i]}</strong><span>${dm(day)}${day===today?' · Hôm nay':''}</span></div><div class="avail-shifts">${Object.keys(SHIFT).map(s=>{const key=day+'|'+s,past=shiftStart(day,s)<=data.now,sel=on.has(key),cx=!sel&&cancelled.has(key);return `<button type="button" class="avail-shift${sel?' on':''}${cx?' cancelled':''}" data-day="${day}" data-shift="${s}" aria-pressed="${sel}" ${past?'disabled':''}><span class="avail-check" aria-hidden="true">${sel?'✓':cx?'!':''}</span><span><b>${SHIFT[s].name}</b><small>${cx?'Nghỉ gấp':SHIFT[s].time}</small></span></button>`;}).join('')}</div></div>`).join('');
+  $('#avail-hint').textContent=m.committed?`Đã chốt. Bỏ ca trước từ ${data.urgent_days+1} ngày trở lên: không bị tính (vẫn giữ tối thiểu ${min} ca). Bỏ ca trong vòng ${data.urgent_days} ngày: tính là nghỉ gấp.`:`Chọn tối thiểu ${min} ca rồi bấm Chốt. Trước khi chốt có thể đổi thoải mái.`;
+  grid.innerHTML=data.days.map((day,i)=>`<div class="avail-day${day===today?' today':''}"><div class="avail-day-label"><strong>${WEEKDAY[i]}</strong><span>${dm(day)}${day===today?' · Hôm nay':''}</span></div><div class="avail-shifts">${Object.keys(SHIFT).map(s=>{const key=day+'|'+s,past=shiftStart(day,s)<=data.now,sel=on.has(key),cx=!sel&&cancelled.has(key),locked=sel&&m.committed&&!past&&isUrgent(day);return `<button type="button" class="avail-shift${sel?' on':''}${cx?' cancelled':''}" data-day="${day}" data-shift="${s}" aria-pressed="${sel}" ${past?'disabled':''}><span class="avail-check" aria-hidden="true">${sel?'✓':cx?'!':''}</span><span><b>${SHIFT[s].name}</b><small>${cx?'Nghỉ gấp':SHIFT[s].time}</small>${locked?'<em class="avail-lock">Bỏ = nghỉ gấp</em>':''}</span></button>`;}).join('')}</div></div>`).join('');
   const commit=$('#avail-commit');commit.hidden=m.committed;commit.disabled=count<min;commit.textContent=count<min?`Chọn thêm ${min-count} ca để chốt`:`Chốt đăng ký tuần (${count} ca)`;
   for(const b of grid.querySelectorAll('.avail-shift'))b.onclick=()=>toggle(b.dataset.day,b.dataset.shift,b.getAttribute('aria-pressed')!=='true');
  }
@@ -45,7 +47,7 @@ export function bindAvailability({api,user,toast}){
   d.querySelector('form').onsubmit=e=>{e.preventDefault();const reason=new FormData(e.target).get('reason').trim();if(reason.length<5){d.querySelector('.error').textContent='Ghi lý do tối thiểu 5 ký tự.';return;}done=true;d.close();resolve(reason);};});}
  async function toggle(day,shift,on){
   if(busy)return;let body={day,shift,on};
-  if(!on&&data.mine.committed){const reason=await urgentDialog(day,shift);if(!reason)return;body={...body,confirm_urgent:true,reason};}
+  if(!on&&data.mine.committed&&isUrgent(day)){const reason=await urgentDialog(day,shift);if(!reason)return;body={...body,confirm_urgent:true,reason};}
   busy=true;try{const r=await api('availability/toggle',body);if(r.urgent)toast('Đã ghi nhận nghỉ gấp và báo quản lý.');await load();}catch(e){toast(e.message);}finally{busy=false;}
  }
  async function load(){

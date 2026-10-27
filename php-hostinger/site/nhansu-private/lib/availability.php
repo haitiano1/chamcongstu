@@ -4,6 +4,8 @@ declare(strict_types=1);
 // Sau khi chốt (hoặc khi tuần đã bắt đầu) bỏ tick là "nghỉ gấp": bắt buộc lý do, lưu lại, báo quản lý,
 // hệ thống chỉ ĐỀ XUẤT điểm KPI 100 (tái phạm trong tháng 300); người có quyền Event log mới ghi nhận.
 const AVAIL_MIN_SHIFTS=5;
+// Bỏ ca đã chốt khi còn ≤ 2 ngày tới ngày của ca là nghỉ gấp; từ 3 ngày trở lên là báo trước, không tính.
+const AVAIL_URGENT_DAYS=2;
 const AVAIL_SHIFTS=['day_first','day_second'];
 function avail_week(mixed $value): string {
  $day=valid_day($value);if(date('N',strtotime($day.'T00:00:00Z'))!=='1')fail('Tuần cần bắt đầu từ thứ Hai.');return $day;
@@ -15,6 +17,13 @@ function avail_week_of(string $day): string {return date('Y-m-d',strtotime($day.
 function avail_committed(App $a,int $user,string $week,int $now): array {
  $row=$a->one('SELECT committed_at FROM {{availability_weeks}} WHERE user_id=? AND week_start=?',[$user,$week]);
  return ['committed'=>$row!==null||$now>=day_time($week),'committed_at'=>$row['committed_at']??null,'auto'=>$row===null&&$now>=day_time($week)];
+}
+function avail_days_ahead(string $day,int $now): int {return intdiv(strtotime($day.'T00:00:00Z')-strtotime(local_day($now).'T00:00:00Z'),86400);}
+// Ca đã đăng ký hiện trong Lịch làm việc (chỉ để xem; đối soát chấm công vẫn theo lịch khách).
+function avail_roster(App $a,string $start,string $end,?int $user,array $existing): array {
+ $have=[];foreach($existing as $e)$have[$e['user_id'].'_'.$e['day'].'_'.$e['shift']]=true;
+ $out=[];foreach($a->all("SELECT s.user_id,s.day,s.shift,u.name,u.role,u.status,u.archived,u.employee_code FROM {{shift_availability}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.day>=? AND s.day<=? AND u.archived=0 AND u.status!='inactive'".($user?' AND s.user_id=?':'').' ORDER BY s.day,s.shift,u.name',$user?[$start,$end,$user]:[$start,$end]) as $r){$k=$r['user_id'].'_'.$r['day'].'_'.$r['shift'];if(isset($have[$k]))continue;$out[]=$r+['id'=>'reg_'.$k,'source'=>'registered','from_registration'=>true];}
+ return $out;
 }
 function avail_shift_start(string $day,string $shift): int {return bounds($day,$shift)['start'];}
 function avail_audit(App $a,int $user,string $day,string $shift,string $action,string $note=''): void {
@@ -42,7 +51,7 @@ function availability_routes(App $a,string $path,array $b,string $method): ?arra
   $week=avail_week($_GET['week']??$thisWeek);$days=avail_days($week);
   $mine=$a->all('SELECT day,shift,created_at FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$me,$days[0],$days[6]]);
   $myCancels=$a->all('SELECT day,shift,cancelled_at,reason FROM {{shift_cancellations}} WHERE user_id=? AND day>=? AND day<=? ORDER BY cancelled_at',[$me,$days[0],$days[6]]);
-  $out=['week_start'=>$week,'days'=>$days,'this_week'=>$thisWeek,'now'=>$now,'min'=>AVAIL_MIN_SHIFTS,'mine'=>['shifts'=>$mine,'cancels'=>$myCancels]+avail_committed($a,$me,$week,$now),'can_manage'=>$manager];
+  $out=['week_start'=>$week,'days'=>$days,'this_week'=>$thisWeek,'now'=>$now,'min'=>AVAIL_MIN_SHIFTS,'urgent_days'=>AVAIL_URGENT_DAYS,'mine'=>['shifts'=>$mine,'cancels'=>$myCancels]+avail_committed($a,$me,$week,$now),'can_manage'=>$manager];
   if($manager){
    $people=$a->all("SELECT id,name,employee_code,role FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='admin' ORDER BY name");
    $all=$a->all('SELECT user_id,day,shift FROM {{shift_availability}} WHERE day>=? AND day<=?',[$days[0],$days[6]]);$cancels=avail_cancel_rows($a,$days[0],$days[6]);
@@ -64,7 +73,12 @@ function availability_routes(App $a,string $path,array $b,string $method): ?arra
   }
   if(!$active)return [200,['ok'=>true]];
   if(!avail_committed($a,$me,$week,$now)['committed']){$a->run('DELETE FROM {{shift_availability}} WHERE user_id=? AND day=? AND shift=?',[$me,$day,$shift]);avail_audit($a,$me,$day,$shift,'removed_draft');return [200,['ok'=>true]];}
-  if(($b['confirm_urgent']??false)!==true)fail('Ca đã chốt. Bỏ ca lúc này là nghỉ gấp, cần xác nhận.',409);
+  if(avail_days_ahead($day,$now)>AVAIL_URGENT_DAYS){
+   $count=(int)$a->scalar('SELECT COUNT(*) FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$me,$week,avail_days($week)[6]]);
+   if($count<=AVAIL_MIN_SHIFTS)fail('Tuần đã chốt cần giữ tối thiểu '.AVAIL_MIN_SHIFTS.' ca. Hãy chọn ca khác thay thế trước rồi mới bỏ ca này.',409);
+   $a->run('DELETE FROM {{shift_availability}} WHERE user_id=? AND day=? AND shift=?',[$me,$day,$shift]);avail_audit($a,$me,$day,$shift,'removed_notice');return [200,['ok'=>true]];
+  }
+  if(($b['confirm_urgent']??false)!==true)fail('Ca còn trong vòng '.AVAIL_URGENT_DAYS.' ngày. Bỏ ca lúc này là nghỉ gấp, cần xác nhận.',409);
   $reason=input_text($b['reason']??'','Lý do nghỉ gấp',5,500);
   $a->run('DELETE FROM {{shift_availability}} WHERE user_id=? AND day=? AND shift=?',[$me,$day,$shift]);
   $a->run('INSERT INTO {{shift_cancellations}}(user_id,day,shift,cancelled_at,reason) VALUES(?,?,?,?,?)',[$me,$day,$shift,$now,$reason]);

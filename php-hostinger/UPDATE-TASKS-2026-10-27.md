@@ -10,7 +10,7 @@
 - Event log: mỗi trang 10 sự việc (chọn 10/20/50), nút số trang, thẻ gọn tối đa 3 dòng; bấm thẻ để xem đầy đủ. Xuất CSV vẫn lấy đủ dữ liệu.
 - Giao diện điện thoại mới: thanh điều hướng cố định ở đáy (Chấm công · Lịch chụp · Việc · Bảng công · Thêm), header gọn, bỏ khối tiêu đề trùng, bảng hiển thị dạng thẻ, Lịch làm dạng danh sách theo ngày, popup trượt từ đáy, ô nhập 16px để iPhone không tự phóng to. Đăng xuất nằm trong menu Thêm. Giao diện máy tính giữ nguyên.
 - Giao việc từ nhóm Telegram: thêm bot vào nhóm rồi gõ `/task Huy, Cường | Dọn phòng chụp 2 | 18:00` hoặc `/nhacnho all | Mai họp 8h30` (thêm `#anh` để bắt buộc ảnh; `/viec` xem hướng dẫn). Chỉ Telegram đã liên kết tài khoản Admin/Quản lý mới giao được; tên nhận theo tên gọi, tên đầy đủ, mã NV hoặc tên trên Sheet. Bot trả lời trong nhóm trong vòng 1 phút (theo cron), việc hiện trên web và người nhận được nhắn riêng.
-- Đăng ký ca theo tuần (menu Thêm → Đăng ký ca): nhân viên tick ca chắc chắn đi làm (thứ 2 – Chủ nhật), tối thiểu 5 ca rồi bấm Chốt. Trước khi chốt đổi thoải mái; sau khi chốt (hoặc khi tuần đã bắt đầu) bỏ ca là **nghỉ gấp**: hiện cảnh báo đỏ, bắt buộc ghi lý do, báo Telegram cho Admin/Quản lý. Hệ thống chỉ đề xuất 100 điểm KPI (tái phạm trong tháng 300); người có quyền Event log bấm "Ghi Event log" mới ghi nhận. Thứ 7 và Chủ nhật, ai chưa chốt tuần tới sẽ thấy popup nhắc khi mở web (có ô "Không hiện hôm nay"); trang Chấm công có thẻ nhắc.
+- Đăng ký ca theo tuần (menu Thêm → Đăng ký ca): nhân viên tick ca chắc chắn đi làm (thứ 2 – Chủ nhật), tối thiểu 5 ca rồi bấm Chốt. Trước khi chốt đổi thoải mái. Sau khi chốt (hoặc khi tuần đã bắt đầu): bỏ ca còn từ 3 ngày trở lên là báo trước, không bị tính (vẫn giữ tối thiểu 5 ca); bỏ ca còn trong vòng 2 ngày là **nghỉ gấp**: hiện cảnh báo đỏ, bắt buộc ghi lý do, báo Telegram cho Admin/Quản lý. Hệ thống chỉ đề xuất 100 điểm KPI (tái phạm trong tháng 300); người có quyền Event log bấm "Ghi Event log" mới ghi nhận. Thứ 7 và Chủ nhật, ai chưa chốt tuần tới sẽ thấy popup nhắc khi mở web (có ô "Không hiện hôm nay"); trang Chấm công có thẻ nhắc. Ca đã đăng ký tự hiện trong Lịch làm của tôi (chỉ để xem, đối soát chấm công vẫn theo lịch khách).
 - Telegram: cron mỗi phút nhắn người nhận đã liên kết bot, kèm nút mở mục Việc. Việc tạo quá 24 giờ chưa gửi được thì bỏ qua, không nhắn dồn.
 - Database tự tạo các bảng mới `tasks`, `task_recipients`, `task_audit`, `shift_availability`, `shift_cancellations`, `availability_weeks`, `availability_audit` (tự thêm cột nếu đã có bảng từ bản thử trước) khi mở web lần đầu; không đổi dữ liệu cũ.
 
@@ -20,9 +20,9 @@ Giải nén từng ZIP trên máy, upload **các file bên trong** vào đúng t
 
 | Gói | Thư mục trên hosting |
 | --- | --- |
-| 1-private-lib.zip | nhansu-private/lib (tasks.php, availability.php, telegram.php, schema.php, transfer.php, bootstrap.php, people-finance.php) |
+| 1-private-lib.zip | nhansu-private/lib (tasks.php, availability.php, workflows.php, telegram.php, schema.php, transfer.php, bootstrap.php, people-finance.php) |
 | 2-private-bin.zip | nhansu-private/bin |
-| 3-public-assets.zip | public_html/nhansu/assets (file mới: mobile.css, availability.js, availability.css) |
+| 3-public-assets.zip | public_html/nhansu/assets (file mới: mobile.css, availability.js, availability.css; có cập nhật roster.js) |
 | 4-public-root.zip | public_html/nhansu |
 
 1. Thay theo thứ tự 1 → 2 → 3 → 4. Giữ nguyên config.php, storage, database và WordPress.
