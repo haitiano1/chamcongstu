@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
-// Đăng ký ca theo tuần (thứ Hai – Chủ nhật): nhân viên tick ca chắc chắn đi làm, tối thiểu 5 ca rồi chốt.
+// Đăng ký ca theo tuần (thứ Hai – Chủ nhật): nhân viên tick ca chắc chắn đi làm, tối thiểu 10 ca rồi chốt (chủ dự án đổi từ 5 lên 10 ngày 28/10/2026).
 // Sau khi chốt (hoặc khi tuần đã bắt đầu) bỏ tick là "nghỉ gấp": bắt buộc lý do, lưu lại, báo quản lý,
 // hệ thống chỉ ĐỀ XUẤT điểm KPI 100 (tái phạm trong tháng 300); người có quyền Event log mới ghi nhận.
-const AVAIL_MIN_SHIFTS=5;
+const AVAIL_MIN_SHIFTS=10;
 // Bỏ ca đã chốt khi còn ≤ 2 ngày tới ngày của ca là nghỉ gấp; từ 3 ngày trở lên là báo trước, không tính.
 const AVAIL_URGENT_DAYS=2;
 const AVAIL_SHIFTS=['day_first','day_second'];

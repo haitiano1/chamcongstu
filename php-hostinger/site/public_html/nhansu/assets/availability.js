@@ -1,5 +1,5 @@
-import {loadRules,ruleLogDialog} from './rule-picker.js?v=20261027-rules2';
-// Đăng ký ca theo tuần: tick ca chắc chắn đi làm, tối thiểu 5 ca rồi chốt; bỏ ca đã chốt là nghỉ gấp.
+import {loadRules,ruleLogDialog} from './rule-picker.js?v=20261028-kpi2';
+// Đăng ký ca theo tuần: tick ca chắc chắn đi làm, tối thiểu 10 ca (lấy từ máy chủ) rồi chốt; bỏ ca đã chốt là nghỉ gấp.
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stamp=v=>v?new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}).format(v):'—';
 const WEEKDAY=['Thứ 2','Thứ 3','Thứ 4','Thứ 5','Thứ 6','Thứ 7','Chủ nhật'];
@@ -11,7 +11,7 @@ const URGENT_WARNING=`<div class="avail-warning" role="alert"><strong>Bạn ch�
 
 function dialog(title,body,cls=''){const d=document.createElement('dialog');d.className='workflow-dialog finance-dialog '+cls;d.innerHTML=`<div class="dialog-heading"><h2>${esc(title)}</h2><button class="dialog-close" aria-label="Đóng" type="button">×</button></div>${body}`;document.body.append(d);d.querySelector('.dialog-close').onclick=()=>d.close();d.addEventListener('close',()=>d.remove(),{once:true});d.showModal();return d;}
 
-export function availabilityPage(user){return `<section class="finance-page avail-page" data-page="availability" hidden><div class="finance-heading"><div><span class="eyebrow">ANH GẤU STUDIO · ĐĂNG KÝ CA</span><h1>Đăng ký ca</h1><p>Tick những ca bạn chắc chắn đi làm trong tuần, tối thiểu 5 ca, rồi bấm Chốt.</p></div></div>
+export function availabilityPage(user){return `<section class="finance-page avail-page" data-page="availability" hidden><div class="finance-heading"><div><span class="eyebrow">ANH GẤU STUDIO · ĐĂNG KÝ CA</span><h1>Đăng ký ca</h1><p>Tick những ca bạn chắc chắn đi làm trong tuần, tối thiểu 10 ca, rồi bấm Chốt.</p></div></div>
 <div class="card avail-week-bar"><button class="secondary" type="button" id="avail-prev" aria-label="Tuần trước">‹</button><div><strong id="avail-week-title">Tuần</strong><small id="avail-week-range"></small></div><button class="secondary" type="button" id="avail-next" aria-label="Tuần sau">›</button></div>
 ${user.role!=='admin'?`<section class="card avail-mine"><div class="avail-status"><div><span id="avail-badge" class="avail-badge"></span><p id="avail-count" class="avail-count"></p></div><div class="avail-progress"><i id="avail-progress"></i></div></div><p class="hint" id="avail-hint"></p><div id="avail-grid" class="avail-grid" aria-live="polite"></div><button class="primary" type="button" id="avail-commit">Chốt đăng ký tuần</button></section>`:''}
 ${user.role!=='employee'?`<section class="card avail-team"><div class="section-head"><h2>Đăng ký của nhân viên</h2></div><div id="avail-cancels"></div><div id="avail-team-list"></div></section>`:''}
