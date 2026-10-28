@@ -18,6 +18,14 @@ function finance_range(): array {
  if(!empty($_GET['date']))$start=$end=valid_day($_GET['date']);
  return [$start,$end];
 }
+// Điểm KPI: mỗi nhân viên có 2000 điểm mỗi tháng, trừ theo Event log đã xác nhận/đã xử lý trong tháng.
+// Lọc tháng giống hệt trang Event log để hai nơi cùng một con số. Điểm KPI không quy đổi thành tiền.
+const KPI_MONTHLY_POINTS=2000;
+function kpi_month_deductions(App $a,string $month): array {
+ $start=valid_month($month).'-01';$end=date('Y-m-t',strtotime($start));
+ $rows=$a->all("SELECT r.user_id,COALESCE(SUM(-r.points),0) deducted FROM {{event_log}} r WHERE r.user_id IS NOT NULL AND r.status IN ('confirmed','resolved') AND ((r.date_precision='day' AND r.event_date>=? AND r.event_date<=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?) OR (r.date_precision IN ('month','range') AND r.event_date<=? AND (CASE WHEN r.end_month='' THEN r.event_date ELSE r.end_month END)>=?)) GROUP BY r.user_id",[$start,$end,$end,$start,$month,$month]);
+ $out=[];foreach($rows as $r)$out[(int)$r['user_id']]=(int)$r['deducted'];return $out;
+}
 function entry_version(array $body,array $row): void {
  if(!is_int($body['version']??null)||$body['version']!==$row['version'])fail('Dữ liệu đã thay đổi. Tải lại trước khi xử lý.',409);
 }
