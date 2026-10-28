@@ -1,9 +1,13 @@
 import {resetRules} from './rule-picker.js?v=20261027-rules2';
-// Luật Studio: mọi người xem luật đang áp dụng; Admin thêm/sửa/ngừng áp dụng, xem lịch sử thay đổi.
+// Luật Studio: mọi người xem luật đang áp dụng; Admin thêm/sửa/ngừng áp dụng, xem lịch sử; Admin và Quản lý xóa luật.
+// Danh sách gọn theo nhóm loại luật; chạm một dòng mở chi tiết và các thao tác theo quyền.
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stamp=v=>v?new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}).format(v):'—';
 const fold=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();
-const AUDIT={created:'Tạo luật',edited:'Sửa luật',archived:'Ngừng áp dụng',restored:'Áp dụng lại'};
+const AUDIT={created:'Tạo luật',edited:'Sửa luật',archived:'Ngừng áp dụng',restored:'Áp dụng lại',deleted:'Xóa luật'};
+// Mức điểm → màu: 0 nhắc nhở, dưới 100 nhẹ, dưới 300 trung bình, từ 300 nặng.
+const sev=p=>p<=0?0:p<100?1:p<300?2:3;
+const pts=p=>p?`<span class="rule-points sev-${sev(p)}">−${p}<small> KPI</small></span>`:'<span class="rule-points sev-0">Nhắc nhở</span>';
 const FIELD={code:'Mã lỗi',name:'Tên lỗi',category:'Loại luật',content:'Nội dung',points:'Điểm KPI trừ',status:'Trạng thái'};
 
 function dialog(title,body){const d=document.createElement('dialog');d.className='workflow-dialog finance-dialog rule-dialog';d.innerHTML=`<div class="dialog-heading"><h2>${esc(title)}</h2><button class="dialog-close" aria-label="Đóng" type="button">×</button></div>${body}`;document.body.append(d);d.querySelector('.dialog-close').onclick=()=>d.close();d.addEventListener('close',()=>d.remove(),{once:true});d.showModal();return d;}
@@ -13,20 +17,28 @@ export function studioRulesPage(user){return `<section class="finance-page rules
 
 export function bindStudioRules({api,user,toast}){
  const page=document.querySelector('[data-page="rules"]');if(!page)return;
- let rows=[],cats=[],canEdit=false,cat='',showArchived=false;
+ let rows=[],cats=[],canEdit=false,canDelete=false,cat='',showArchived=false;
  const $=s=>page.querySelector(s);
  function render(){
   const q=fold($('#rule-search').value.trim());
-  $('#rule-cats').innerHTML=[['','Tất cả'],...cats.map(c=>[c,c])].map(([v,l])=>`<button type="button" data-cat="${esc(v)}" class="${v===cat?'active':''}" aria-pressed="${v===cat}">${esc(l)}</button>`).join('')+(canEdit?`<button type="button" data-archived class="${showArchived?'active':''}" aria-pressed="${showArchived}">Ngừng áp dụng</button>`:'');
+  const live=rows.filter(r=>r.status==='active');
+  $('#rule-cats').innerHTML=[['','Tất cả'],...cats.map(c=>[c,c])].map(([v,l])=>{const n=live.filter(r=>!v||r.category===v).length;return `<button type="button" data-cat="${esc(v)}" class="${v===cat&&!showArchived?'active':''}" aria-pressed="${v===cat&&!showArchived}">${esc(l)}<span>${n}</span></button>`;}).join('')+(canEdit?`<button type="button" data-archived class="${showArchived?'active':''}" aria-pressed="${showArchived}">Ngừng áp dụng</button>`:'');
   for(const b of page.querySelectorAll('[data-cat]'))b.onclick=()=>{cat=b.dataset.cat;showArchived=false;render();};
   const arch=page.querySelector('[data-archived]');if(arch)arch.onclick=()=>{showArchived=!showArchived;cat='';render();};
   const shown=rows.filter(r=>(showArchived?r.status==='archived':r.status==='active')&&(!cat||r.category===cat)&&(!q||fold(r.code+' '+r.name+' '+r.content+' '+r.category).includes(q)));
-  $('#rule-status').textContent=`${shown.length} luật${cat?' · '+cat:''}`;
-  $('#rule-list').innerHTML=shown.length?shown.map(r=>`<article class="rule-card ${r.status}"><div class="rule-head"><span class="rule-code">${esc(r.code)}</span><span class="rule-cat">${esc(r.category)}</span><span class="rule-points${r.points?'':' zero'}">${r.points?'−'+r.points+' điểm KPI':'Chỉ nhắc nhở'}</span></div><h3>${esc(r.name)}</h3>${r.content?`<p class="rule-content">${esc(r.content)}</p>`:''}${canEdit?`<div class="rule-foot"><small>Cập nhật ${stamp(r.updated_at)}${r.updater_name?' · '+esc(r.updater_name):''}</small><div class="rule-actions"><button class="secondary" type="button" data-edit="${r.id}">Sửa</button><button class="text-button" type="button" data-audit="${r.id}">Lịch sử</button><button class="text-button" type="button" data-${r.status==='active'?'archive':'restore'}="${r.id}">${r.status==='active'?'Ngừng áp dụng':'Áp dụng lại'}</button></div></div>`:''}</article>`).join(''):`<div class="task-empty"><p>${rows.length?'Không có luật phù hợp.':'Chưa có luật nào.'}</p></div>`;
-  for(const b of page.querySelectorAll('[data-edit]'))b.onclick=()=>form(rows.find(r=>r.id===b.dataset.edit));
-  for(const b of page.querySelectorAll('[data-audit]'))b.onclick=()=>audit(rows.find(r=>r.id===b.dataset.audit));
-  for(const b of page.querySelectorAll('[data-archive],[data-restore]'))b.onclick=()=>archive(rows.find(r=>r.id===(b.dataset.archive||b.dataset.restore)),!!b.dataset.archive);
+  $('#rule-status').textContent=`${shown.length} luật${cat?' · '+cat:''}${showArchived?' · ngừng áp dụng':''}`;
+  const groups=[...new Set(shown.map(r=>r.category))];
+  $('#rule-list').innerHTML=shown.length?groups.map(g=>{const list=shown.filter(r=>r.category===g);return `<section class="rule-group">${cat?'':`<h2>${esc(g)}<span>${list.length}</span></h2>`}<div class="rule-rows">${list.map(r=>`<button type="button" class="rule-row${r.status==='archived'?' archived':''}" data-open="${r.id}"><span class="rule-code">${esc(r.code)}</span><span class="rule-main"><span class="rule-name">${esc(r.name)}</span>${r.content?`<span class="rule-snippet">${esc(r.content)}</span>`:''}</span>${pts(r.points)}</button>`).join('')}</div></section>`;}).join(''):`<div class="task-empty"><p>${rows.length?'Không có luật phù hợp.':'Chưa có luật nào.'}</p></div>`;
+  for(const b of page.querySelectorAll('[data-open]'))b.onclick=()=>detail(rows.find(r=>r.id===b.dataset.open));
  }
+ // Chi tiết luật: mọi người xem đủ nội dung; nút thao tác hiện theo quyền.
+ function detail(r){
+  const acts=[canEdit?`<button class="primary" type="button" data-act="edit">Sửa luật</button>`:'',canEdit?`<button class="secondary" type="button" data-act="audit">Lịch sử</button>`:'',canEdit?`<button class="secondary" type="button" data-act="archive">${r.status==='active'?'Ngừng áp dụng':'Áp dụng lại'}</button>`:'',canDelete?`<button class="secondary danger-text" type="button" data-act="delete">Xóa luật</button>`:''].filter(Boolean);
+  const d=dialog(r.code,`<div class="rule-detail"><p class="rule-detail-tags"><span class="rule-cat">${esc(r.category)}</span>${pts(r.points)}${r.status==='archived'?'<span class="rule-cat">Ngừng áp dụng</span>':''}</p><h3>${esc(r.name)}</h3>${r.content?`<p class="rule-content">${esc(r.content)}</p>`:'<p class="hint">Không có mô tả thêm.</p>'}${canEdit||canDelete?`<p class="rule-meta">Cập nhật ${stamp(r.updated_at)}${r.updater_name?' · '+esc(r.updater_name):''}</p>`:''}${acts.length?`<div class="rule-detail-actions">${acts.join('')}</div>`:''}</div>`);
+  for(const b of d.querySelectorAll('[data-act]'))b.onclick=()=>{d.close();({edit:()=>form(r),audit:()=>audit(r),archive:()=>archive(r,r.status==='active'),delete:()=>remove(r)})[b.dataset.act]();};
+ }
+ function remove(r){const d=dialog('Xóa luật',`<form><p><b>${esc(r.code)}</b> · ${esc(r.name)}</p><p class="hint">Luật biến mất khỏi danh sách và ô chọn luật của mọi người. Event log đã ghi trước đó giữ nguyên mã, tên và điểm. Lịch sử thay đổi vẫn được lưu.</p><label>Lý do xóa (không bắt buộc)<input name="note" maxlength="500"></label><p class="error" role="alert"></p><button class="primary danger" type="submit">Xóa luật</button></form>`);
+  d.querySelector('form').onsubmit=async e=>{e.preventDefault();const btn=e.target.querySelector('[type=submit]');btn.disabled=true;try{await api(`studio-rules/${r.id}/delete`,{version:r.version,note:new FormData(e.target).get('note')||''});d.close();toast('Đã xóa luật.');load();}catch(err){d.querySelector('.error').textContent=err.message;}finally{btn.disabled=false;}};}
  function form(r){
   const d=dialog(r?'Sửa luật':'Thêm luật',`<form><div class="rule-form-row"><label>Mã lỗi<input name="code" required maxlength="30" pattern="[A-Za-z0-9][A-Za-z0-9._\\-]{1,29}" value="${esc(r?.code)}" placeholder="VD: NG-01" autocapitalize="characters"></label><label>Điểm KPI trừ<input name="points" type="number" inputmode="numeric" min="0" max="10000" step="1" required value="${r?r.points:''}" placeholder="VD: 100"></label></div><label>Tên lỗi<input name="name" required minlength="2" maxlength="200" value="${esc(r?.name)}" placeholder="VD: Nghỉ ca gấp"></label><label>Loại luật<input name="category" required minlength="2" maxlength="100" list="rule-cat-options" value="${esc(r?.category)}" placeholder="Chọn loại có sẵn hoặc gõ loại mới"><datalist id="rule-cat-options">${cats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></label><label>Nội dung<textarea name="content" rows="6" maxlength="5000" placeholder="Mô tả lỗi, cách áp dụng, ví dụ…">${esc(r?.content)}</textarea></label>${r?'<label>Ghi chú thay đổi (không bắt buộc)<input name="note" maxlength="500"></label>':''}<p class="hint">Mỗi mã lỗi là duy nhất. Điểm là điểm KPI, không tự quy đổi thành tiền.</p><p class="error" role="alert"></p><button class="primary" type="submit">${r?'Lưu thay đổi':'Thêm luật'}</button></form>`);
   d.querySelector('[name=code]').oninput=e=>{e.target.value=e.target.value.toUpperCase();};
@@ -35,7 +47,7 @@ export function bindStudioRules({api,user,toast}){
  async function archive(r,off){const d=dialog(off?'Ngừng áp dụng luật':'Áp dụng lại luật',`<form><p><b>${esc(r.code)}</b> · ${esc(r.name)}</p><p class="hint">${off?'Luật được ẩn khỏi danh sách của nhân viên nhưng vẫn giữ lại cùng lịch sử. Có thể áp dụng lại bất cứ lúc nào.':'Luật sẽ hiện lại cho mọi người.'}</p><label>Ghi chú (không bắt buộc)<input name="note" maxlength="500"></label><p class="error" role="alert"></p><button class="primary${off?' danger':''}" type="submit">${off?'Ngừng áp dụng':'Áp dụng lại'}</button></form>`);
   d.querySelector('form').onsubmit=async e=>{e.preventDefault();try{await api(`studio-rules/${r.id}/${off?'archive':'restore'}`,{version:r.version,note:new FormData(e.target).get('note')||''});d.close();toast(off?'Đã ngừng áp dụng.':'Đã áp dụng lại.');load();}catch(err){d.querySelector('.error').textContent=err.message;}};}
  async function audit(r){const d=dialog('Lịch sử · '+r.code,'<p class="hint">Đang tải…</p>');try{const data=await api(`studio-rules/${r.id}/audit`);const diff=(b,a)=>{b=JSON.parse(b||'null')||{};a=JSON.parse(a||'null')||{};return Object.keys(FIELD).filter(k=>k in a&&String(b[k]??'')!==String(a[k]??'')).map(k=>`<li><b>${FIELD[k]}:</b> ${k in b?`<s>${esc(b[k])}</s> → `:''}${esc(a[k])}</li>`).join('');};d.querySelector('.hint').outerHTML=`<ul class="rule-audit">${data.rows.map(x=>`<li><strong>${AUDIT[x.action]||x.action}</strong> · ${esc(x.actor_name)} · ${stamp(x.time)}${x.note?`<br><i>${esc(x.note)}</i>`:''}<ul>${diff(x.before_json,x.after_json)}</ul></li>`).join('')}</ul>`;}catch(e){d.querySelector('.hint').textContent=e.message;}}
- async function load(){resetRules();try{const data=await api('studio-rules');rows=data.rows;cats=data.categories;canEdit=data.can_edit;if(cat&&!cats.includes(cat))cat='';render();}catch(e){$('#rule-status').textContent=e.message;}}
+ async function load(){resetRules();try{const data=await api('studio-rules');rows=data.rows;cats=data.categories;canEdit=data.can_edit;canDelete=!!data.can_delete;if(cat&&!cats.includes(cat))cat='';render();}catch(e){$('#rule-status').textContent=e.message;}}
  $('#rule-search').oninput=render;
  const create=$('#rule-create');if(create)create.onclick=()=>form(null);
  page.addEventListener('refresh',load);if(!page.hidden)load();
