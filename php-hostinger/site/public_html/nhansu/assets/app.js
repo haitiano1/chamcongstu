@@ -1,5 +1,5 @@
 import {readApiResponse} from './api-response.js?v=20261024-fix1';
-import {bookingsPage,bindBookings} from './bookings.js?v=20261028-booking1';
+import {bookingsPage,bindBookings} from './bookings.js?v=20261028-sheet1';
 import {advancesPage,bindAdvances,eventLogPage,bindEventLog} from './people-finance.js?v=20261027-rules2';
 import {BASE,apiUrl} from './paths.js';
 import {studioRulesPage,bindStudioRules} from './studio-rules.js?v=20261027-rules2';

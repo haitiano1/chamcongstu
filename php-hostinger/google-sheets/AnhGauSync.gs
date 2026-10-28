@@ -13,6 +13,7 @@ function caiKetNoiAnhGau(){
  p.setProperties({AG_ENDPOINT:endpoint,AG_SYNC_KEY:key,AG_YEAR:year,AG_TAB:tab,AG_SHEET_ID:SpreadsheetApp.getActive().getId()});ui.alert('Đã lưu kết nối. Chọn Đồng bộ ngay để kiểm tra trước khi bật tự động.');
 }
 function agNormalize_(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').trim().toLowerCase().replace(/\s+/g,' ');}
+function agColumn_(c){let s='';for(c++;c>0;c=Math.floor((c-1)/26))s=String.fromCharCode(65+(c-1)%26)+s;return 'Cột '+s;}
 function agFindHeader_(headers,names){return headers.findIndex(v=>names.indexOf(agNormalize_(v))!==-1);}
 function agDate_(v,year){const s=String(v).trim();let m;if((m=s.match(/^(20\d{2})-(\d{2})-(\d{2})$/)))return s;if(!(m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2}|20\d{2}))?$/)))throw new Error('Ngày không hợp lệ: cần ngày/tháng hoặc ngày/tháng/năm.');const y=m[3]?(m[3].length===2?'20'+m[3]:m[3]):year;const day=Number(m[1]),month=Number(m[2]),d=new Date(Date.UTC(Number(y),month-1,day));if(d.getUTCDate()!==day||d.getUTCMonth()!==month-1)throw new Error('Ngày không tồn tại.');return y+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');}
 function agTime_(v){const m=String(v).trim().replace(/[hH]$/,'h00').match(/^(\d{1,2})(?:[:hH.](\d{1,2}))?(?::\d{2})?$/);if(!m||Number(m[1])>23||Number(m[2]||0)>59)throw new Error('Giờ không hợp lệ, cần dạng 12:00.');return String(Number(m[1])).padStart(2,'0')+':'+String(Number(m[2]||0)).padStart(2,'0');}
@@ -30,6 +31,8 @@ function dongBoAnhGau(){
    const r=values[i],time=r[columns.time]||'',name=r[columns.customer_name]||'';if(r[columns.date])lastDay=agDate_(r[columns.date],cfg.AG_YEAR);if(!time&&!name)continue;if(!lastDay)throw new Error('Thiếu ngày ở dòng '+(i+1));if(!time)throw new Error('Thiếu giờ ở dòng '+(i+1));
    let id=String(r[idCol]||'').trim();if(!id){id=Utilities.getUuid().toLowerCase();tab.getRange(i+1,idCol+1).setValue(id);}if(!/^[a-f0-9-]{36}$/i.test(id)||ids[id])throw new Error('Mã lịch trùng hoặc không hợp lệ ở dòng '+(i+1)+'. Không sao chép cột _AG_BOOKING_ID cho lịch mới.');ids[id]=true;
    const item={id:id,day:lastDay,time:agTime_(time),source_row:i+1};['customer_name','package_label','customer_phone','main_alias','support_alias','note','deposit_label','received_label'].forEach(k=>{item[k]=columns[k]>=0?String(r[columns[k]]||'').trim():'';});
+   // Gửi đủ mọi ô có dữ liệu theo tiêu đề cột để popup hiện nguyên thông tin Sheet; ô trống bỏ qua.
+   item.sheet_fields=[];r.forEach((v,c)=>{const value=String(v||'').trim();if(c===idCol||!value)return;item.sheet_fields.push({label:String(values[header][c]||'').trim()||agColumn_(c),value:value});});
    const state=columns.status>=0?agNormalize_(r[columns.status]):'';item.status=['huy','da huy','cancel','cancelled'].indexOf(state)!==-1?'cancelled':'active';rows.push(item);
   }
   if(rows.length>5000)throw new Error('Tab vượt 5.000 lịch. Chia tab theo tháng để đồng bộ.');
