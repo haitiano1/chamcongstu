@@ -12,7 +12,7 @@
 
 ## Quy tắc vận hành đã chốt
 
-- Điện thoại là thiết bị chính. Nhân viên mở vào Chấm công, nút thao tác dễ bấm, giữ camera chụp mặt và GPS; ảnh lưu private, không cần quản lý duyệt từng lượt.
+- Điện thoại là thiết bị chính; nhân viên hay mở từ icon màn hình chính (`assets/app-icon-*.png`, `app.webmanifest`), nên đầu trang điện thoại có nút ↻ tải lại để lấy bản mới. Nhân viên mở vào Chấm công, nút thao tác dễ bấm, giữ camera chụp mặt và GPS; ảnh lưu private, không cần quản lý duyệt từng lượt.
 - Ca 1 09:00–14:00, ca 2 14:00–19:00. Cho checkout đến đúng 14:30 / 19:30; sau đó dùng yêu cầu bổ sung. OT tách riêng, bắt đầu từ 19h, có cảnh báo xác nhận; không tự cộng tiền OT theo giờ vào lương cứng.
 - Hiện làm theo lịch khách: mốc đến là **khách đầu tiên được giao cho nhân viên trong từng ca**, không mặc định 9h/14h. Khách 12:00: đúng 12:30 chưa muộn; sau 12:30 mới muộn. Ca nhập tay chỉ tham khảo; không có khách được giao thì không tự ghi vắng/quên checkin. Từ 01/11/2026 (`BOOKING_CREDIT_FROM` trong rules.php): ca của **nhân viên** (role employee) không có khách được giao vẫn cho chấm công nhưng **không tính công**; Bảng lương hiện số "ca không khách" để cuối tháng Admin tự xét thưởng (chủ dự án chốt 28/10/2026, bỏ "mặc định 133k/ca"). Admin/Quản lý không áp quy tắc này. Lương theo công = lương cứng / số ngày của tháng (28–31) × công.
 - Gán thợ trên Sheet một lần, Lịch làm việc (trước gọi Phân ca) tự lấy từ lịch khách; không tạo bản sao phân ca vật lý. Tab Lịch làm việc chỉ Admin/Quản lý có; nhân viên không có trang Ca của tôi (chủ dự án bỏ 28/10/2026, xem ca qua thẻ Lịch chụp), `#roster` của nhân viên chuyển về Lịch chụp. Mốc đối soát được giữ lúc checkin, sửa Sheet sau đó không tự viết lại kết luận cũ.
