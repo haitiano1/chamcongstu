@@ -52,6 +52,10 @@ function import_bookings(App $a,array $b,string $sheet,?int $actor): array {
   $status=$r['status']??'active';if(!in_array($status,['active','cancelled'],true))fail('Trạng thái lịch không hợp lệ.');
   $row=['id'=>$id,'source_sheet'=>$sheet,'source_tab'=>$tab,'source_row'=>is_int($r['source_row']??null)&&$r['source_row']>0?$r['source_row']:$i+1,'shoot_day'=>$day,'minutes'=>(int)$m[1]*60+(int)$m[2]];
   foreach(['package_label'=>150,'customer_name'=>150,'customer_phone'=>50,'main_alias'=>150,'support_alias'=>150,'note'=>2000,'deposit_label'=>50,'received_label'=>50] as $field=>$max)$row[$field]=input_text($r[$field]??'',$field,0,$max);
+  // Toàn bộ ô có dữ liệu trên dòng Sheet (tiêu đề → giá trị), chỉ Quản lý/Admin xem. Bản Apps Script cũ không gửi thì giữ nguyên dữ liệu đã lưu.
+  if(array_key_exists('sheet_fields',$r)){$fields=$r['sheet_fields'];if(!is_array($fields)||!array_is_list($fields)||count($fields)>80)fail('Dữ liệu cột Sheet không hợp lệ.');$clean=[];
+   foreach($fields as $f){if(!is_array($f))fail('Dữ liệu cột Sheet không hợp lệ.');$value=input_text($f['value']??'','Giá trị cột Sheet',0,2000);if($value==='')continue;$clean[]=['label'=>input_text($f['label']??'','Tiêu đề cột Sheet',1,100),'value'=>$value];}
+   $row['sheet_fields_json']=json_encode($clean,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);}
   $row['status']=$status;$old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);
   if($old&&($old['source_sheet']!==$sheet||$old['source_tab']!==$tab))fail('Mã lịch thuộc Sheet hoặc tab khác. Không thay đổi nguồn của một mã lịch.',409);
   $normalized[]=[$row,$old];
@@ -148,12 +152,12 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   foreach($summary as &$value)$value=(int)$value;unset($value);return [200,$summary+['day'=>$today,'scope'=>$person!==null?'my_bookings':'all_synced_bookings']];
  }
  if($path==='/bookings'&&$method==='GET'){
-  [$start,$end]=finance_range();$staff=$a->user['role']==='employee';$where="b.status!='deleted' AND b.shoot_day>=? AND b.shoot_day<=?";$params=[$start,$end];
+  [$start,$end]=finance_range();$where="b.status!='deleted' AND b.shoot_day>=? AND b.shoot_day<=?";$params=[$start,$end];
   $person=booking_view_person($a);if($person!==null){$where.=' AND EXISTS(SELECT 1 FROM {{booking_staff}} s WHERE s.booking_id=b.id AND s.user_id=?)';$params[]=$person;}
   $page=finance_page();$total=(int)$a->scalar('SELECT COUNT(*) FROM {{shoot_bookings}} b WHERE '.$where,$params);
-  $columns=$staff?'b.id,b.shoot_day,b.minutes,b.package_label,b.customer_name,b.status,b.updated_at,b.main_alias,b.support_alias':'b.*';
-  $rows=$a->all('SELECT '.$columns.' FROM {{shoot_bookings}} b WHERE '.$where.' ORDER BY b.shoot_day,b.minutes,b.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
-  foreach($rows as &$row){$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
+  // Mọi role xem đủ thông tin Sheet trong popup; chỉ Quản lý/Admin được xóa lịch.
+  $rows=$a->all('SELECT b.* FROM {{shoot_bookings}} b WHERE '.$where.' ORDER BY b.shoot_day,b.minutes,b.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
+  foreach($rows as &$row){$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
   return [200,['rows'=>$rows,'total'=>$total,'page'=>$page,'start'=>$start,'end'=>$end]];
  }
  return null;
