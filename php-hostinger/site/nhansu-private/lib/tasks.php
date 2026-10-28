@@ -54,22 +54,24 @@ function task_create(App $a,int $me,array $b,string $note=''): array {
   return ['id'=>$id,'recipients'=>$ids,'kind'=>$kind,'title'=>$title,'due_at'=>$due,'require_photo'=>(bool)$photo,'audience'=>$audience];
 }
 function task_list_sql(): string {
- return "SELECT t.id,t.kind,t.title,t.body,t.due_at,t.require_photo,t.audience,t.status,t.cancel_reason,t.created_by,t.created_at,t.updated_at,t.version,(SELECT name FROM {{users}} WHERE id=t.created_by) creator_name,
+ return "SELECT t.template_id,t.task_day,t.id,t.kind,t.title,t.body,t.due_at,t.require_photo,t.audience,t.status,t.cancel_reason,t.created_by,t.created_at,t.updated_at,t.version,(SELECT name FROM {{users}} WHERE id=t.created_by) creator_name,
  (SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id) total,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND seen_at IS NOT NULL) seen,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND done_at IS NOT NULL) done,
  my.seen_at my_seen_at,my.done_at my_done_at,my.done_note my_done_note,(my.proof_jpeg IS NOT NULL) my_has_proof,(my.user_id IS NOT NULL) mine
  FROM {{tasks}} t ";
 }
 function task_pending(App $a): int {
- return (int)$a->scalar("SELECT COUNT(*) FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id WHERE r.user_id=? AND t.status='open' AND (t.kind='notice' AND r.seen_at IS NULL OR t.kind='task' AND r.done_at IS NULL)",[$a->user['id']]);
+ return (int)$a->scalar("SELECT COUNT(*) FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id WHERE r.user_id=? AND t.status='open' AND (t.task_day IS NULL OR t.task_day=?) AND (t.kind='notice' AND r.seen_at IS NULL OR t.kind='task' AND r.done_at IS NULL)",[$a->user['id'],local_day(now_ms())]);
 }
 function task_routes(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/tasks'&&!str_starts_with($path,'/tasks/'))return null;
  $manager=$a->user['role']!=='employee';$me=$a->user['id'];
+ daily_tasks_ensure($a,local_day(now_ms()));
+ $r=daily_template_routes($a,$path,$b,$method);if($r!==null)return $r;
  if($path==='/tasks/summary'&&$method==='GET')return [200,['pending'=>task_pending($a)]];
  if($path==='/tasks'&&$method==='GET'){
   $rows=$manager?$a->all(task_list_sql().'LEFT JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? ORDER BY t.created_at DESC LIMIT 300',[$me]):$a->all(task_list_sql().'JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? ORDER BY t.created_at DESC LIMIT 300',[$me]);
   foreach($rows as &$r){$r['mine']=(bool)$r['mine'];$r['my_has_proof']=(bool)$r['my_has_proof'];if(!$manager)unset($r['seen'],$r['done']);}unset($r);
-  return [200,['rows'=>$rows,'pending'=>task_pending($a),'can_manage'=>$manager,'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
+  return [200,['rows'=>$rows,'pending'=>task_pending($a),'can_manage'=>$manager,'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
  }
  if($path==='/tasks'&&$method==='POST'){
   $a->requireManager();$r=task_create($a,$me,$b);
@@ -119,6 +121,63 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
  $a->run("UPDATE {{task_recipients}} SET notify_state='skipped' WHERE task_id=? AND notify_state='pending'",[$t['id']]);
  task_audit($a,$t['id'],'cancelled',['status'=>'open'],['status'=>'cancelled'],$reason);
  return [200,['ok'=>true]];
+}
+// Việc hằng ngày: Admin/Quản lý cài mẫu cho từng người; mỗi ngày tự sinh một Task (khóa template_id+task_day nên không trùng).
+// Ca 2 phải xong hết việc hằng ngày của hôm đó mới chấm ra được; ca 1 không ràng buộc.
+const DAILY_TASK_SEED=[['cuong','Bấm bill xuất hóa đơn cho khách',0],['tin','Chụp dọn vệ sinh 7 khu vực',1],['tin','Hoàn thành check list mỗi khách trong ngày',0],['huy','Chụp hình khu vực trang thiết bị',1]];
+function daily_tasks_seed(App $a): void {
+ if($a->meta('daily_tasks_seeded'))return;$a->meta('daily_tasks_seeded','1');
+ $admin=$a->scalar("SELECT id FROM {{users}} WHERE role='admin' AND archived=0 ORDER BY id LIMIT 1");if(!$admin)return;
+ $people=$a->all("SELECT id,name FROM {{users}} WHERE archived=0 AND status!='inactive'");
+ foreach(DAILY_TASK_SEED as [$key,$title,$photo]){
+  // Chỉ gán khi tên gọi khớp đúng một người; trùng hoặc không có thì để Admin tự cài.
+  $hits=array_values(array_filter($people,fn($p)=>(explode(' ',task_fold($p['name']))[substr_count(task_fold($p['name']),' ')]??'')===$key));
+  if(count($hits)!==1)continue;$id=task_uuid();$now=now_ms();
+  $a->run('INSERT INTO {{task_templates}}(id,user_id,title,require_photo,active,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,1,?,?,?,?)',[$id,$hits[0]['id'],$title,$photo,$admin,$now,$admin,$now]);
+  task_audit($a,$id,'template_created',null,['user_id'=>$hits[0]['id'],'title'=>$title,'require_photo'=>(bool)$photo],'Cài sẵn khi cập nhật',(int)$admin);
+ }
+}
+function daily_tasks_ensure(App $a,string $day,?int $user=null): void {
+ $a->tx(function()use($a,$day,$user){daily_tasks_seed($a);
+  $rows=$a->all("SELECT d.* FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE d.active=1 AND u.archived=0 AND u.status!='inactive'".($user!==null?' AND d.user_id=?':'').' AND NOT EXISTS(SELECT 1 FROM {{tasks}} t WHERE t.template_id=d.id AND t.task_day=?)',[...($user!==null?[$user]:[]),$day]);
+  foreach($rows as $d){$id=task_uuid();$now=now_ms();
+   if(!$a->run("INSERT IGNORE INTO {{tasks}}(id,kind,title,body,due_at,require_photo,audience,status,cancel_reason,created_by,created_at,updated_by,updated_at,template_id,task_day) VALUES(?,'task',?,'',NULL,?,'people','open','',?,?,?,?,?,?)",[$id,$d['title'],$d['require_photo'],$d['created_by'],$now,$d['created_by'],$now,$d['id'],$day])->rowCount())continue;
+   $a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'','skipped')",[$id,$d['user_id']]);
+  }
+  return null;});
+}
+function daily_tasks_today(App $a,int $user): array {
+ $day=local_day(now_ms());daily_tasks_ensure($a,$day,$user);
+ return $a->all("SELECT t.id,t.title,t.require_photo,r.done_at FROM {{tasks}} t JOIN {{task_recipients}} r ON r.task_id=t.id AND r.user_id=? WHERE t.task_day=? AND t.status='open' ORDER BY t.created_at,t.title",[$user,$day]);
+}
+function daily_tasks_block_checkout(App $a,array $b): void {
+ if(($b['type']??'')!=='out'||($b['shift']??'')!=='day_second')return;
+ $left=array_filter(daily_tasks_today($a,$a->user['id']),fn($t)=>$t['done_at']===null);
+ if($left)fail('Cần hoàn thành việc hằng ngày trước khi chấm ra ca 2: '.implode('; ',array_column($left,'title')).'. Vào mục Việc để báo xong.',409);
+}
+function daily_template_routes(App $a,string $path,array $b,string $method): ?array {
+ if($path!=='/tasks/templates'&&!str_starts_with($path,'/tasks/templates/'))return null;
+ $a->requireManager();if($method!=='POST')fail('Chỉ nhận POST.',405);$me=$a->user['id'];$today=local_day(now_ms());
+ $fields=function()use($b){$title=task_text($b['title']??null,'Tên việc',3,150);if(!is_bool($b['require_photo']??null))fail('Chọn có cần ảnh hay không.');return ['title'=>$title,'require_photo'=>$b['require_photo']?1:0];};
+ if($path==='/tasks/templates'){
+  $f=$fields();$uid=$b['user_id']??null;if(!is_int($uid)||!$a->one("SELECT id FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive'",[$uid]))fail('Chọn nhân viên đang làm.');
+  $id=task_uuid();$now=now_ms();$a->run('INSERT INTO {{task_templates}}(id,user_id,title,require_photo,active,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,1,?,?,?,?)',[$id,$uid,$f['title'],$f['require_photo'],$me,$now,$me,$now]);
+  task_audit($a,$id,'template_created',null,['user_id'=>$uid]+$f);daily_tasks_ensure($a,$today,$uid);return [201,['id'=>$id]];
+ }
+ if(!preg_match('~^/tasks/templates/([a-f0-9-]{36})/(edit|pause|resume)$~D',$path,$m))fail('Không tìm thấy chức năng Việc hằng ngày.',404);
+ $d=$a->one('SELECT * FROM {{task_templates}} WHERE id=?',[entry_uuid($m[1])]);if(!$d)fail('Không tìm thấy việc hằng ngày.',404);entry_version($b,$d);
+ $before=['title'=>$d['title'],'require_photo'=>(int)$d['require_photo'],'active'=>(int)$d['active']];
+ // Việc hôm nay chưa xong thì đổi theo mẫu; việc đã xong và các ngày trước giữ nguyên.
+ $todayTask=$a->one('SELECT t.id FROM {{tasks}} t JOIN {{task_recipients}} r ON r.task_id=t.id WHERE t.template_id=? AND t.task_day=? AND t.status=\'open\' AND r.done_at IS NULL',[$d['id'],$today]);
+ if($m[2]==='edit'){$f=$fields();if($f===['title'=>$d['title'],'require_photo'=>(int)$d['require_photo']])fail('Chưa có thay đổi nào.');
+  $a->run('UPDATE {{task_templates}} SET title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$f['title'],$f['require_photo'],$me,now_ms(),$d['id']]);
+  if($todayTask)$a->run('UPDATE {{tasks}} SET title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$f['title'],$f['require_photo'],$me,now_ms(),$todayTask['id']]);
+  task_audit($a,$d['id'],'template_edited',$before,$f+['active'=>(int)$d['active']]);return [200,['ok'=>true]];}
+ $active=$m[2]==='resume'?1:0;if((int)$d['active']===$active)fail('Việc hằng ngày đã ở trạng thái này.',409);
+ $a->run('UPDATE {{task_templates}} SET active=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$active,$me,now_ms(),$d['id']]);
+ if(!$active&&$todayTask)$a->run("UPDATE {{tasks}} SET status='cancelled',cancel_reason='Ngừng việc hằng ngày',updated_by=?,updated_at=?,version=version+1 WHERE id=?",[$me,now_ms(),$todayTask['id']]);
+ task_audit($a,$d['id'],$active?'template_resumed':'template_paused',['active'=>(int)$d['active']],['active'=>$active]);
+ if($active){$a->run("UPDATE {{tasks}} SET status='open',cancel_reason='',updated_by=?,updated_at=?,version=version+1 WHERE template_id=? AND task_day=? AND status='cancelled'",[$me,now_ms(),$d['id'],$today]);daily_tasks_ensure($a,$today,(int)$d['user_id']);}return [200,['ok'=>true]];
 }
 // Cron mỗi phút: ping Telegram cho người nhận việc mới. Không có token/liên kết thì bỏ qua, không gửi dồn việc cũ.
 function task_telegram_tick(App $a,?int $clock=null): void {
