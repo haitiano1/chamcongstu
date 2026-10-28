@@ -52,3 +52,5 @@
 .booking-detail-actions{display:flex;gap:10px}.booking-detail-actions .booking-detail-close{flex:1}.booking-delete-open{min-height:44px;padding:0 16px;border:1px solid #f0d4cf;border-radius:7px;background:#fdf3f1;color:#b4483a;font:inherit;font-size:13px;font-weight:600}.booking-delete-open[hidden]{display:none}
 .booking-delete-form{background:#fdf3f1;border:1px solid #f0d4cf;border-radius:12px;padding:16px;margin:0 0 14px}.booking-delete-form h3{font-size:14px;margin:0 0 6px;color:#9c3a2e}.booking-delete-form p{font-size:12px;line-height:1.7;margin:0 0 10px;color:#7d5a54}.booking-delete-form label{display:block;font-size:12px}.booking-delete-form textarea{display:block;width:100%;box-sizing:border-box;margin-top:6px;font:inherit;font-size:16px;padding:10px;border:1px solid #e6cfc9;border-radius:8px;resize:vertical}.booking-delete-actions{display:flex;gap:10px;margin-top:12px}.booking-delete-actions button{flex:1;min-height:44px}
 .booking-sheet-fields dd{white-space:pre-wrap}
+@media(max-width:800px){.booking-page .booking-sidebar,.booking-page .booking-sidebar.card{display:none}}
+.booking-card-line>.booking-card-customer{white-space:normal}

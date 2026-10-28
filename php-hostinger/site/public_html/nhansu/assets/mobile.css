@@ -120,5 +120,12 @@ dialog .dialog-heading h2{font-size:18px!important}
 .page-tabs button{min-height:44px;font-size:14px;padding:8px 6px}
 
 footer{display:none!important}
+/* Nút tải lại: khi mở từ màn hình chính không có thanh trình duyệt để cập nhật bản mới. */
+.topbar .account{gap:10px}
+.topbar .app-refresh{display:grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid #ffffff33;border-radius:50%;background:#ffffff14;color:#fff;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.topbar .app-refresh:active{background:#ffffff2e}
+.topbar .app-refresh svg{width:21px;height:21px;stroke-width:2}
+.topbar .app-refresh.spinning svg{animation:app-refresh-spin .8s linear infinite}
+@keyframes app-refresh-spin{to{transform:rotate(360deg)}}
 }
 @media(max-width:800px) and (prefers-reduced-motion:no-preference){.sidebar{transition:transform .22s cubic-bezier(.2,.8,.2,1)!important}}
