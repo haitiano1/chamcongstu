@@ -29,7 +29,8 @@ function dongBoAnhGau(){
   const rows=[],ids={};let lastDay='';
   for(let i=header+1;i<values.length;i++){
    const r=values[i],time=r[columns.time]||'',name=r[columns.customer_name]||'';if(r[columns.date])lastDay=agDate_(r[columns.date],cfg.AG_YEAR);if(!time&&!name)continue;if(!lastDay)throw new Error('Thiếu ngày ở dòng '+(i+1));if(!time)throw new Error('Thiếu giờ ở dòng '+(i+1));
-   let id=String(r[idCol]||'').trim();if(!id){id=Utilities.getUuid().toLowerCase();tab.getRange(i+1,idCol+1).setValue(id);}if(!/^[a-f0-9-]{36}$/i.test(id)||ids[id])throw new Error('Mã lịch trùng hoặc không hợp lệ ở dòng '+(i+1)+'. Không sao chép cột _AG_BOOKING_ID cho lịch mới.');ids[id]=true;
+   // Dòng sao chép mang theo mã của dòng trên: giữ mã cho dòng xuất hiện trước, cấp mã mới cho dòng sau thay vì dừng cả lần đồng bộ.
+   let id=String(r[idCol]||'').trim().toLowerCase();if(!/^[a-f0-9-]{36}$/.test(id)||ids[id]){id=Utilities.getUuid().toLowerCase();tab.getRange(i+1,idCol+1).setValue(id);}ids[id]=true;
    const item={id:id,day:lastDay,time:agTime_(time),source_row:i+1};['customer_name','package_label','customer_phone','main_alias','support_alias','note','deposit_label','received_label'].forEach(k=>{item[k]=columns[k]>=0?String(r[columns[k]]||'').trim():'';});
    // Gửi đủ mọi ô có dữ liệu theo tiêu đề cột để popup hiện nguyên thông tin Sheet; ô trống bỏ qua.
    item.sheet_fields=[];r.forEach((v,c)=>{const value=String(v||'').trim();if(c===idCol||!value)return;item.sheet_fields.push({label:String(values[header][c]||'').trim()||agColumn_(c),value:value});});
