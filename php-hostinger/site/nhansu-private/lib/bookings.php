@@ -152,12 +152,12 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   foreach($summary as &$value)$value=(int)$value;unset($value);return [200,$summary+['day'=>$today,'scope'=>$person!==null?'my_bookings':'all_synced_bookings']];
  }
  if($path==='/bookings'&&$method==='GET'){
-  [$start,$end]=finance_range();$staff=$a->user['role']==='employee';$where="b.status!='deleted' AND b.shoot_day>=? AND b.shoot_day<=?";$params=[$start,$end];
+  [$start,$end]=finance_range();$where="b.status!='deleted' AND b.shoot_day>=? AND b.shoot_day<=?";$params=[$start,$end];
   $person=booking_view_person($a);if($person!==null){$where.=' AND EXISTS(SELECT 1 FROM {{booking_staff}} s WHERE s.booking_id=b.id AND s.user_id=?)';$params[]=$person;}
   $page=finance_page();$total=(int)$a->scalar('SELECT COUNT(*) FROM {{shoot_bookings}} b WHERE '.$where,$params);
-  $columns=$staff?'b.id,b.shoot_day,b.minutes,b.package_label,b.customer_name,b.status,b.updated_at,b.main_alias,b.support_alias':'b.*';
-  $rows=$a->all('SELECT '.$columns.' FROM {{shoot_bookings}} b WHERE '.$where.' ORDER BY b.shoot_day,b.minutes,b.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
-  foreach($rows as &$row){if(!$staff){$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);}$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
+  // Mọi role xem đủ thông tin Sheet trong popup; chỉ Quản lý/Admin được xóa lịch.
+  $rows=$a->all('SELECT b.* FROM {{shoot_bookings}} b WHERE '.$where.' ORDER BY b.shoot_day,b.minutes,b.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
+  foreach($rows as &$row){$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
   return [200,['rows'=>$rows,'total'=>$total,'page'=>$page,'start'=>$start,'end'=>$end]];
  }
  return null;

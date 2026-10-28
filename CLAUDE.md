@@ -18,7 +18,7 @@
 - Gán thợ trên Sheet một lần, Lịch làm việc (trước gọi Phân ca) tự lấy từ lịch khách; không tạo bản sao phân ca vật lý. Mốc đối soát được giữ lúc checkin, sửa Sheet sau đó không tự viết lại kết luận cũ.
 - Lịch chụp mặc định Tuần. Thứ Hai–thứ Bảy: tuần bình thường từ thứ Hai đến Chủ nhật; riêng ngày Chủ nhật: từ Chủ nhật đó đến thứ Bảy kế tiếp. Lịch nhỏ chọn lại ngày cũ, đánh dấu tất cả ngày có lịch trong cả khoảng lịch nhỏ, không chỉ tuần đang xem.
 - Thẻ gọn: `12:00 - Gói 699k - Ca 1` / `Huy - Cường`; chỉ tên gọi trên thẻ, popup giữ thông tin đầy đủ theo quyền.
-- Mọi role mặc định **xem lịch Toàn studio**, kể cả lịch chưa gán thợ. Có `Lịch của tôi` (`scope=mine`). Danh sách, dấu chấm và thống kê cùng phạm vi. Nhân viên vẫn không được sửa lịch và không được API trả SĐT khách/ghi chú nội bộ/nguồn Sheet. Quyền xem chung không thay đổi phân công để chấm công.
+- Mọi role mặc định **xem lịch Toàn studio**, kể cả lịch chưa gán thợ. Có `Lịch của tôi` (`scope=mine`). Danh sách, dấu chấm và thống kê cùng phạm vi. Popup lịch hiện đủ mọi cột Sheet có dữ liệu cho mọi role (chủ dự án chốt 28/10/2026, kể cả SĐT/cọc/ghi chú); nhân viên chỉ không được xóa/sửa lịch. Quyền xem chung không thay đổi phân công để chấm công.
 - Event log: mọi role xem được; chỉ Admin và người được Admin chỉ định được ghi/sửa/xử lý. Manager không mặc định được sửa. Sửa lưu người, giờ, lý do và nội dung trước/sau. Giữ tài liệu/log cũ và lịch sử.
 - 20 / 100 / 300 là **điểm KPI**, không phải tiền. Không tự quy đổi thành tiền/phạt lương. Lương cứng và hoa hồng không hiện cho nhân viên; bảo vệ quyền ở backend.
 - Telegram: nhắc checkin từ lịch khách +10 phút; nhắc checkout kết thúc ca +5 phút từ lượt checkin thực tế, không cần phân ca tay. Cron trên hosting chạy mỗi phút.
