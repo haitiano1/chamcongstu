@@ -14,7 +14,8 @@ Gói này cộng dồn mọi thay đổi ngày 28/10 sau bản đã upload (đ�
 - Trừ KPI giữ nguyên: tối đa bằng thưởng, không trừ vào lương theo công.
 - **Đăng ký ca: tối thiểu 10 ca/tuần** (trước là 5). Chọn đủ 10 ca mới bấm được Chốt. Tuần đã chốt từ trước với ít hơn 10 ca vẫn giữ nguyên; muốn bỏ một ca báo trước thì phải chọn thêm ca thay thế cho đủ 10 (nghỉ gấp có lý do vẫn như cũ). (v1.3.9)
 - **Lịch trên điện thoại mở thẳng lịch hôm nay**: mặc định chế độ Ngày (máy tính vẫn mặc định Tuần). Ẩn khối Chọn ngày · Xem lịch cũ và thống kê ở đầu trang trên điện thoại; xem ngày khác bằng ‹ › hoặc Bộ lọc & chọn ngày, vẫn đổi được sang Tuần/Tháng. (v1.3.10)
-- Không đổi database. v1.3.10.
+- **Thẻ lịch chụp: Giờ - Tên khách - Gói** (ví dụ `11:00 - Minh Anh - Gói 1499k`), bỏ phần Ca vì đã có giờ. Dòng dưới vẫn là tên thợ. Lịch chưa có tên khách thì chỉ hiện Giờ - Gói. (v1.3.11)
+- Không đổi database. v1.3.11.
 
 ## Cập nhật
 
@@ -28,7 +29,7 @@ Giải nén từng ZIP trên máy, upload **các file bên trong** vào đúng t
 
 1. Thay theo thứ tự 1 → 2 → 3. Giữ nguyên config.php, storage, database và WordPress.
 2. Mở https://anhgaustudio.com/nhansu/kiemtra-capnhat.php, tất cả dòng phải xanh.
-3. Điện thoại đóng tab cũ rồi mở lại; máy tính Ctrl + F5. Góc menu hiện **v1.3.10 · 28/10/2026**.
+3. Điện thoại đóng tab cũ rồi mở lại; máy tính Ctrl + F5. Góc menu hiện **v1.3.11 · 28/10/2026**.
 4. Trước 01/11: kiểm tra tên thợ trên Sheet đã ghép đúng hồ sơ nhân viên (Quản lý → đồng bộ Sheet). Tên chưa ghép thì ca của người đó sẽ bị tính là không khách.
 
 Đã thử cục bộ trên bản dev: 4 ca hoàn tất trong đó 1 ca không khách → 1,5 công, 400.000đ với lương 8 triệu tháng 11; lịch đã hủy không tính; quản lý không bị áp; tháng 10 không đổi; nhân viên thấy số ca không khách nhưng không thấy tiền. Kiểm thử quy tắc nghiệp vụ `tests/rules.php`: 32 đạt.
