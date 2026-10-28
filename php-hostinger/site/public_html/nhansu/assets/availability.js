@@ -1,4 +1,4 @@
-import {loadRules,ruleLogDialog} from './rule-picker.js?v=20261027-rules2';
+import {loadRules,ruleLogDialog} from './rule-picker.js?v=20261028-kpi2';
 // Đăng ký ca theo tuần: tick ca chắc chắn đi làm, tối thiểu 5 ca rồi chốt; bỏ ca đã chốt là nghỉ gấp.
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stamp=v=>v?new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}).format(v):'—';

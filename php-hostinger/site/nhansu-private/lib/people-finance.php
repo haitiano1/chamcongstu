@@ -19,12 +19,23 @@ function finance_range(): array {
  return [$start,$end];
 }
 // Điểm KPI: mỗi nhân viên có 2000 điểm mỗi tháng, trừ theo Event log đã xác nhận/đã xử lý trong tháng.
-// Lọc tháng giống hệt trang Event log để hai nơi cùng một con số. Điểm KPI không quy đổi thành tiền.
+// Lọc tháng giống hệt trang Event log để hai nơi cùng một con số.
+// Tiền: 1 điểm bị trừ = 1.000đ, trừ vào Tổng thưởng (hiện là hoa hồng mỗi khách hệ thống tính), tối đa bằng Tổng thưởng,
+// không trừ vào lương theo công. Lương cuối = lương theo công + Tổng thưởng − trừ KPI.
 const KPI_MONTHLY_POINTS=2000;
+const KPI_POINT_VND=1000;
 function kpi_month_deductions(App $a,string $month): array {
  $start=valid_month($month).'-01';$end=date('Y-m-t',strtotime($start));
  $rows=$a->all("SELECT r.user_id,COALESCE(SUM(-r.points),0) deducted FROM {{event_log}} r WHERE r.user_id IS NOT NULL AND r.status IN ('confirmed','resolved') AND ((r.date_precision='day' AND r.event_date>=? AND r.event_date<=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?) OR (r.date_precision IN ('month','range') AND r.event_date<=? AND (CASE WHEN r.end_month='' THEN r.event_date ELSE r.end_month END)>=?)) GROUP BY r.user_id",[$start,$end,$end,$start,$month,$month]);
  $out=[];foreach($rows as $r)$out[(int)$r['user_id']]=(int)$r['deducted'];return $out;
+}
+// Gắn KPI vào từng dòng bảng lương. $money=false: tháng đã chốt từ trước khi có KPI, chỉ thêm điểm, giữ nguyên tiền đã chốt.
+function payroll_apply(App $a,string $month,array $rows,bool $money=true): array {
+ $kpi=kpi_month_deductions($a,$month);
+ foreach($rows as &$p){$used=$kpi[$p['id']]??0;$p['kpi_quota']=KPI_MONTHLY_POINTS;$p['kpi_deducted']=$used;$p['kpi_left']=KPI_MONTHLY_POINTS-$used;
+  if(!$money)continue;$p['bonus_total']=(int)$p['commission'];$p['kpi_money']=$used*KPI_POINT_VND;$p['kpi_applied']=max(0,min($p['kpi_money'],$p['bonus_total']));
+  $p['gross_salary']=(int)$p['base_salary']+$p['bonus_total'];$p['salary']=$p['gross_salary']-$p['kpi_applied'];}
+ unset($p);return $rows;
 }
 function entry_version(array $body,array $row): void {
  if(!is_int($body['version']??null)||$body['version']!==$row['version'])fail('Dữ liệu đã thay đổi. Tải lại trước khi xử lý.',409);
