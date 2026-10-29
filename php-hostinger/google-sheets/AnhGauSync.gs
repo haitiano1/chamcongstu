@@ -47,7 +47,7 @@ function agTabs_(book,cfg){
 // Đọc một tab: hàng tiêu đề, các dòng lịch và vị trí từng ngày. ids dùng chung mọi tab: dòng sao chép mang theo mã của dòng khác thì cấp mã mới.
 function agParse_(values,year,tabMonth,ids){
  let header=-1,columns;
- for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0){header=i;columns={date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))};break;}}
+ for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0){header=i;columns={date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))};break;}}
  if(header<0)throw new Error('Không tìm thấy hàng tiêu đề gồm Ngày, Time/Giờ, Tên khách.');
  let idCol=values[header].indexOf('_AG_BOOKING_ID');const addIdHeader=idCol<0;if(addIdHeader)idCol=values[header].length;
  const rows=[],newIds=[],entries=[];let lastDay='';
@@ -124,22 +124,22 @@ function agWriteTime_(cell,hhmm,sample){
  if(sample&&agIsDate_(sample.value)){cell.setNumberFormat(sample.format).setValue(hhmm);return;}
  const [h,m]=hhmm.split(':').map(Number);cell.setNumberFormat('@').setValue(/^\d{1,2}\s*h/i.test(sample?sample.shown:'')?h+'h'+(m?String(m).padStart(2,'0'):''):hhmm);
 }
-// Ô là dropdown (Makeup: Nam / Nữ / Làm Tóc; Gói: 399 / Couple 999 / Team 349…): ghi đúng chữ lựa chọn trên Sheet.
+// Ô là dropdown (Makeup: Nam / Nữ / Làm Tóc; Đặc Biệt: Ô TÔ / Ngoại Cảnh…; Gói: 399 / Couple 999 / Team 349…): ghi đúng chữ lựa chọn trên Sheet.
 function agOptions_(cell){
  try{const rule=cell.getDataValidation(),C=SpreadsheetApp.DataValidationCriteria;if(rule){const type=rule.getCriteriaType(),value=rule.getCriteriaValues()[0];return type===C.VALUE_IN_LIST?value.map(String):type===C.VALUE_IN_RANGE?value.getDisplayValues().reduce((a,row)=>a.concat(row),[]):[];}}catch(e){}
  return [];
 }
-// Makeup chọn nhiều thì cách nhau ", " như dropdown chọn nhiều.
+// Lịch cũ có Makeup chọn nhiều thì cách nhau ", " như dropdown chọn nhiều.
 function agPickOptions_(cell,text){const options=agOptions_(cell);return text.split(',').map(x=>x.trim()).filter(Boolean).map(x=>options.find(o=>agNormalize_(o)===agNormalize_(x))||x).join(', ');}
 function agWriteValues_(t,r,q,samples){
  const p=t.parsed,sheet=t.sheet,c=p.columns,v=q.values,written={};const cell=k=>sheet.getRange(r,c[k]+1);
  agWriteTime_(cell('time'),q.time,samples.time);written[c.time]=true;
- // Make up (Nam/Nữ/Làm tóc): Sheet có cột Make up thì ghi vào đó, không thì ghép vào đầu Ghi chú.
- const makeup=String(v.makeup||''),note=c.makeup>=0||!makeup?String(v.note||''):['Make up: '+makeup,String(v.note||'')].filter(Boolean).join(' · '),text={makeup:makeup,note:note};
- ['customer_name','customer_phone','main_alias','support_alias','note','makeup','package_label','deposit_label'].forEach(k=>{if(c[k]<0)return;written[c[k]]=true;const value=String(k in text?text[k]:v[k]||'');if(!value)return;
+ // Make up (Nam/Nữ/Làm tóc), Đặc biệt (Ô TÔ/Ngoại Cảnh…): Sheet có cột đó thì ghi vào cột, không thì ghép vào đầu Ghi chú.
+ const makeup=String(v.makeup||''),special=String(v.special||''),note=[c.special<0&&special?'Đặc biệt: '+special:'',c.makeup<0&&makeup?'Make up: '+makeup:'',String(v.note||'')].filter(Boolean).join(' · '),text={makeup:makeup,special:special,note:note};
+ ['customer_name','customer_phone','main_alias','support_alias','note','makeup','special','package_label','deposit_label'].forEach(k=>{if(c[k]<0)return;written[c[k]]=true;const value=String(k in text?text[k]:v[k]||'');if(!value)return;
   // Gói/cọc đang là số trên Sheet thì ghi số (giữ công thức cộng tiền); còn lại ghi chữ để giữ số 0 đầu SĐT.
   const sample=samples[k]||null,number=/^\d[\d.,]*k?$/i.test(value)?Number(value.replace(/[.,]/g,'').replace(/k$/i,''))*(/k$/i.test(value)?1000:1):NaN;
-  if(k==='makeup'){cell(k).setValue(agPickOptions_(cell(k),value));return;}
+  if(k==='makeup'||k==='special'){cell(k).setValue(agPickOptions_(cell(k),value));return;}
   const option=k==='package_label'?agOptions_(cell(k)).find(o=>agPrice_(o)===agPrice_(value)):null;if(option){cell(k).setValue(option);return;}
   if(sample&&typeof sample.value==='number'&&!isNaN(number))cell(k).setValue(k==='package_label'&&number>=10000&&sample.value<10000?number/1000:number);else cell(k).setNumberFormat('@').setValue(value);});
  sheet.getRange(r,p.idCol+1).setValue(q.booking_id);written[p.idCol]=true;

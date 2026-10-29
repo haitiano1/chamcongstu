@@ -55,8 +55,14 @@ const BOOKING_TEAM_PRICE=349;
 const BOOKING_OPEN_MINUTES=540,BOOKING_CLOSE_MINUTES=1140;
 // Lịch thêm trên web mặc định thợ chính Huy, thợ phụ Cường (chủ dự án chốt 29/10/2026); đổi thợ thì sửa trên Sheet.
 const BOOKING_DEFAULT_STAFF=['main_alias'=>'huy','support_alias'=>'cuong'];
-// Đúng chữ các lựa chọn của cột Makeup (dropdown) trên Sheet.
+// Đúng chữ các lựa chọn của cột Makeup và Đặc Biệt (dropdown) trên Sheet; mỗi cột chọn 1, không bắt buộc (chủ dự án chốt 29/10/2026).
 const BOOKING_MAKEUP=['nam'=>'Nam','nu'=>'Nữ','toc'=>'Làm Tóc'];
+const BOOKING_SPECIAL=['oto'=>'Ô TÔ','ngoai'=>'Ngoại Cảnh','nhom'=>'Nhóm tại Stu','sanpham'=>'Sản Phẩm'];
+// Một lựa chọn hoặc để trống; app cũ còn trong bộ nhớ đệm gửi mảng thì nhận mảng tối đa 1 phần tử.
+function booking_pick(mixed $value,array $options,string $label): string {
+ if(is_array($value)&&array_is_list($value)&&count($value)<=1)$value=$value[0]??'';
+ if($value===null||$value==='')return '';if(!is_string($value)||!isset($options[$value]))fail('Lựa chọn '.$label.' không hợp lệ.');return $options[$value];
+}
 function booking_default_staff(App $a): array {
  $out=['main_alias'=>'','support_alias'=>''];if(!function_exists('task_fold'))return $out;
  $rows=$a->all("SELECT m.alias_label,u.name FROM {{booking_aliases}} m JOIN {{users}} u ON u.id=m.user_id WHERE u.archived=0 AND u.status!='inactive' ORDER BY m.alias_label");
@@ -102,8 +108,8 @@ function booking_queue_poll(App $a): array {
   if(!$bk||$bk['status']==='deleted'){$a->run("UPDATE {{booking_sheet_queue}} SET status='skipped',done_at=? WHERE id=?",[now_ms(),$q['id']]);continue;}
   $a->run('UPDATE {{booking_sheet_queue}} SET sent_at=? WHERE id=?',[now_ms(),$q['id']]);$payload=json_decode($q['payload_json'],true)?:[];
   $out[]=['id'=>$q['id'],'booking_id'=>$q['booking_id'],'action'=>$q['action'],'tab'=>$q['action']==='create'?$q['tab']:$bk['source_tab'],'day'=>$bk['shoot_day'],'time'=>booking_hm((int)$bk['minutes']),'length'=>booking_length($bk['package_label'],$bk['note']),
-   // Make up gửi riêng: Sheet có cột Make up thì ghi vào cột đó, không thì script ghép vào Ghi chú.
-   'values'=>['customer_name'=>$bk['customer_name'],'customer_phone'=>$bk['customer_phone'],'package_label'=>$bk['package_label'],'main_alias'=>$bk['main_alias'],'support_alias'=>$bk['support_alias'],'deposit_label'=>$bk['deposit_label'],'note'=>$payload['note']??$bk['note'],'makeup'=>$payload['makeup']??'']];
+   // Make up, Đặc biệt gửi riêng: Sheet có cột đó thì ghi vào cột, không thì script ghép vào Ghi chú.
+   'values'=>['customer_name'=>$bk['customer_name'],'customer_phone'=>$bk['customer_phone'],'package_label'=>$bk['package_label'],'main_alias'=>$bk['main_alias'],'support_alias'=>$bk['support_alias'],'deposit_label'=>$bk['deposit_label'],'note'=>$payload['note']??$bk['note'],'makeup'=>$payload['makeup']??'','special'=>$payload['special']??'']];
  }
  return ['queue'=>$out];
 }
@@ -218,7 +224,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  }
  if($path==='/bookings/slots'&&$method==='GET'){
   if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền thêm lịch.',403);$day=valid_day($_GET['day']??null);
-  return [200,['day'=>$day,'busy'=>booking_busy($a,$day),'packages'=>array_map(fn($price,$minutes)=>['price'=>$price,'minutes'=>$minutes],array_keys(BOOKING_WEB_PACKAGES),BOOKING_WEB_PACKAGES),'open'=>BOOKING_OPEN_MINUTES,'close'=>BOOKING_CLOSE_MINUTES,'range'=>booking_web_range(),'tab'=>booking_sheet_tab($day),'staff'=>booking_default_staff($a),'makeup'=>BOOKING_MAKEUP,'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
+  return [200,['day'=>$day,'busy'=>booking_busy($a,$day),'packages'=>array_map(fn($price,$minutes)=>['price'=>$price,'minutes'=>$minutes],array_keys(BOOKING_WEB_PACKAGES),BOOKING_WEB_PACKAGES),'open'=>BOOKING_OPEN_MINUTES,'close'=>BOOKING_CLOSE_MINUTES,'range'=>booking_web_range(),'tab'=>booking_sheet_tab($day),'staff'=>booking_default_staff($a),'makeup'=>BOOKING_MAKEUP,'special'=>BOOKING_SPECIAL,'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
  }
  if($path==='/bookings/create'&&$method==='POST'){
   if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền thêm lịch.',403);
@@ -232,17 +238,16 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   // Cọc ghi luôn trong tên khách (chủ dự án chốt 29/10/2026), không có ô riêng.
   $row=['customer_name'=>input_text($b['customer_name']??null,'Tên khách',1,150),'customer_phone'=>input_text($b['customer_phone']??'','Số điện thoại',0,50),'deposit_label'=>''];$plain=input_text($b['note']??'','Ghi chú',0,1900);
   if($row['customer_phone']!==''&&!preg_match('/^[0-9 +().-]{8,20}$/D',$row['customer_phone']))fail('Số điện thoại không hợp lệ.');
-  $picked=$b['makeup']??[];if(!is_array($picked)||!array_is_list($picked)||array_diff($picked,array_keys(BOOKING_MAKEUP)))fail('Lựa chọn Make up không hợp lệ.');
-  $makeup=implode(', ',array_values(array_intersect_key(BOOKING_MAKEUP,array_flip($picked))));
-  // Ghi chú trên Sheet: "Giữ N tiếng" (gói Team) + ghi chú; Make up ghi cột Makeup, Sheet không có cột đó thì script ghép vào đầu Ghi chú như trên web.
+  $makeup=booking_pick($b['makeup']??'',BOOKING_MAKEUP,'Make up');$special=booking_pick($b['special']??'',BOOKING_SPECIAL,'Đặc biệt');
+  // Ghi chú trên Sheet: "Giữ N tiếng" (gói Team) + ghi chú; Make up / Đặc biệt ghi cột Makeup / Đặc Biệt, Sheet không có cột đó thì script ghép vào đầu Ghi chú như trên web.
   $sheetNote=implode(' · ',array_filter([$team?'Giữ '.intdiv($hold,60).' tiếng':'',$plain]));
-  $row+=booking_default_staff($a)+['note'=>implode(' · ',array_filter([$makeup!==''?'Make up: '.$makeup:'',$sheetNote]))];
+  $row+=booking_default_staff($a)+['note'=>implode(' · ',array_filter([$special!==''?'Đặc biệt: '.$special:'',$makeup!==''?'Make up: '.$makeup:'',$sheetNote]))];
   // Mọi POST đã khóa write_lock trong giao dịch nên hai người thêm cùng lúc không lọt trùng giờ.
   foreach(booking_busy($a,$day) as $x)if($start<$x['end']&&$x['start']<$end)fail('Khung '.booking_hm($start).'–'.booking_hm($end).' trùng lịch '.booking_hm($x['start']).'–'.booking_hm($x['end']).($x['customer_name']!==''?' của '.$x['customer_name']:'').'. Chọn giờ khác.',409);
   $row=['id'=>uuid_v4(),'source_sheet'=>$a->meta('sheet_sync_id')?:'web','source_tab'=>booking_sheet_tab($day),'source_row'=>0,'shoot_day'=>$day,'minutes'=>$start,'package_label'=>$price===null?'':(string)$price]+$row+['received_label'=>'','status'=>'active'];
   freeze_existing_booking_day($a,$day);$cols=array_keys($row);
   $a->run('INSERT INTO {{shoot_bookings}} ('.implode(',',$cols).',created_at,updated_at) VALUES('.implode(',',array_fill(0,count($cols)+2,'?')).')',[...array_values($row),now_ms(),now_ms()]);
-  relink_booking($a,$row);booking_enqueue($a,$row['id'],'create',$row['source_tab'],['makeup'=>$makeup,'note'=>$sheetNote]);
+  relink_booking($a,$row);booking_enqueue($a,$row['id'],'create',$row['source_tab'],['makeup'=>$makeup,'special'=>$special,'note'=>$sheetNote]);
   $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$row['id'],$a->user['id'],'created_web',null,json_encode($row,JSON_THROW_ON_ERROR),now_ms()]);
   return [200,['id'=>$row['id'],'tab'=>$row['source_tab'],'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
  }
