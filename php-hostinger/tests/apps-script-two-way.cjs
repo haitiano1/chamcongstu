@@ -98,11 +98,13 @@ const b2=new Book();b2.add('LICH_CHUP',[H,['21/10','10:00','X',699,'','','','','
 ok(run(load(gs,b2,server(st2),cfg))===null,'chạy không lỗi');ok(st2.tabs.LICH_CHUP[0].day==='2026-10-21'&&b2.getSheetByName('LICH_CHUP').rows()[2].slice(0,3).join('|')==='02/11|10:00|Web8','ghi lịch vào tab cố định');
 console.log('9. Cột Makeup là dropdown (Nam / Nữ / Làm Tóc), có cột Tip');
 const HM=['Ngày','Time','Tên khách','Gói','SĐT','Thợ chính','Thợ phụ','Makeup','Tip','Ghi chú'],dv={type:'VALUE_IN_LIST',values:['Nam','Nữ','Làm Tóc']},mk=v=>({v,fmt:'',dv});
-const b3=new Book(),m11=b3.add('Tháng 11',[HM,['05/11','10:00','Lan cọc 200k',699,'0901','HUY','CƯỜNG',mk('Nam'),'50k',''],['06/11','09:00','Mai',1499,'','HUY','',mk(''),'',''],['','','','','','','',mk(''),'',''],['','','','','','','',mk(''),'','']]);
-const st3={posts:[],queue:[q(10,'2026-11-05','14:00',{makeup:'Nữ, Làm tóc',note:'Concept áo dài',main_alias:'HUY',support_alias:'CƯỜNG'}),q(11,'2026-12-02','10:00',{makeup:'Nam'})],acks:[],tabs:{}};
+const pdv={type:'VALUE_IN_LIST',values:['399','699','Couple 999','1499','2999','Team 349']},pk=v=>({v,fmt:'@',dv:pdv});
+const b3=new Book(),m11=b3.add('Tháng 11',[HM,['05/11','10:00','Lan cọc 200k',pk('699'),'0901','HUY','CƯỜNG',mk('Nam'),'50k',''],['06/11','09:00','Mai',pk('1499'),'','HUY','',mk(''),'',''],['','','',pk(''),'','','',mk(''),'',''],['','','',pk(''),'','','',mk(''),'','']]);
+const st3={posts:[],queue:[q(10,'2026-11-05','14:00',{makeup:'Nữ, Làm tóc',note:'Concept áo dài',main_alias:'HUY',support_alias:'CƯỜNG'}),q(11,'2026-12-02','10:00',{makeup:'Nam'}),q(12,'2026-11-06','13:00',{package_label:'999'}),q(13,'2026-11-06','15:00',{package_label:'349',note:'Giữ 2 tiếng'})],acks:[],tabs:{}};
 ok(run(load(gs,b3,server(st3),cfg))===null,'chạy không lỗi');
 const r10=m11.rows().find(r=>r[2]==='Web10');ok(r10&&r10[7]==='Nữ, Làm Tóc','ghi đúng chữ lựa chọn dropdown: '+(r10&&r10[7]));
 ok(r10&&r10[9]==='Concept áo dài'&&r10[5]==='HUY'&&r10[6]==='CƯỜNG','Ghi chú không lặp Make up; thợ HUY - CƯỜNG');
+const r12=m11.rows().find(r=>r[2]==='Web12'),r13=m11.rows().find(r=>r[2]==='Web13');ok(r12&&r12[3]==='Couple 999'&&r13&&r13[3]==='Team 349'&&r13[9]==='Giữ 2 tiếng','cột Gói là dropdown → ghi đúng lựa chọn "Couple 999", "Team 349"');
 ok(st3.tabs['Tháng 11'][0].sheet_fields.some(f=>f.label==='Tip'&&f.value==='50k'),'cột Tip có trong dữ liệu gửi lên web');
 const m12=b3.getSheetByName('Tháng 12');ok(m12&&b3.getSheets().indexOf(m12)===1&&m12.rows()[0].join('|')===HM.concat(['_AG_BOOKING_ID']).join('|'),'Tháng 12 nhân bản đủ cột (Makeup, Tip) từ Tháng 11, đặt ngay sau');
 ok(m12&&m12.rows()[1][7]==='Nam'&&m12.cell(2,8).dv,'Tháng 12 giữ dropdown Makeup, ghi Nam');

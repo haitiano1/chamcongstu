@@ -124,12 +124,13 @@ function agWriteTime_(cell,hhmm,sample){
  if(sample&&agIsDate_(sample.value)){cell.setNumberFormat(sample.format).setValue(hhmm);return;}
  const [h,m]=hhmm.split(':').map(Number);cell.setNumberFormat('@').setValue(/^\d{1,2}\s*h/i.test(sample?sample.shown:'')?h+'h'+(m?String(m).padStart(2,'0'):''):hhmm);
 }
-// Ô Makeup là dropdown (Nam / Nữ / Làm Tóc): ghi đúng chữ lựa chọn trên Sheet; chọn nhiều thì cách nhau ", " như dropdown chọn nhiều.
-function agPickOptions_(cell,text){
- let options=[];
- try{const rule=cell.getDataValidation(),C=SpreadsheetApp.DataValidationCriteria;if(rule){const type=rule.getCriteriaType(),value=rule.getCriteriaValues()[0];options=type===C.VALUE_IN_LIST?value.map(String):type===C.VALUE_IN_RANGE?value.getDisplayValues().reduce((a,row)=>a.concat(row),[]):[];}}catch(e){}
- return text.split(',').map(x=>x.trim()).filter(Boolean).map(x=>options.find(o=>agNormalize_(o)===agNormalize_(x))||x).join(', ');
+// Ô là dropdown (Makeup: Nam / Nữ / Làm Tóc; Gói: 399 / Couple 999 / Team 349…): ghi đúng chữ lựa chọn trên Sheet.
+function agOptions_(cell){
+ try{const rule=cell.getDataValidation(),C=SpreadsheetApp.DataValidationCriteria;if(rule){const type=rule.getCriteriaType(),value=rule.getCriteriaValues()[0];return type===C.VALUE_IN_LIST?value.map(String):type===C.VALUE_IN_RANGE?value.getDisplayValues().reduce((a,row)=>a.concat(row),[]):[];}}catch(e){}
+ return [];
 }
+// Makeup chọn nhiều thì cách nhau ", " như dropdown chọn nhiều.
+function agPickOptions_(cell,text){const options=agOptions_(cell);return text.split(',').map(x=>x.trim()).filter(Boolean).map(x=>options.find(o=>agNormalize_(o)===agNormalize_(x))||x).join(', ');}
 function agWriteValues_(t,r,q,samples){
  const p=t.parsed,sheet=t.sheet,c=p.columns,v=q.values,written={};const cell=k=>sheet.getRange(r,c[k]+1);
  agWriteTime_(cell('time'),q.time,samples.time);written[c.time]=true;
@@ -139,6 +140,7 @@ function agWriteValues_(t,r,q,samples){
   // Gói/cọc đang là số trên Sheet thì ghi số (giữ công thức cộng tiền); còn lại ghi chữ để giữ số 0 đầu SĐT.
   const sample=samples[k]||null,number=/^\d[\d.,]*k?$/i.test(value)?Number(value.replace(/[.,]/g,'').replace(/k$/i,''))*(/k$/i.test(value)?1000:1):NaN;
   if(k==='makeup'){cell(k).setValue(agPickOptions_(cell(k),value));return;}
+  const option=k==='package_label'?agOptions_(cell(k)).find(o=>agPrice_(o)===agPrice_(value)):null;if(option){cell(k).setValue(option);return;}
   if(sample&&typeof sample.value==='number'&&!isNaN(number))cell(k).setValue(k==='package_label'&&number>=10000&&sample.value<10000?number/1000:number);else cell(k).setNumberFormat('@').setValue(value);});
  sheet.getRange(r,p.idCol+1).setValue(q.booking_id);written[p.idCol]=true;
  return written;
