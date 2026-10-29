@@ -200,7 +200,46 @@ function task_telegram_tick(App $a,?int $clock=null): void {
 //   /task Huy, Cường | Dọn phòng chụp 2 | 18:00 28/10 #anh
 //   /nhacnho all | Mai họp 8h30
 // Chỉ Telegram đã liên kết với tài khoản Admin/Quản lý mới được giao.
-const TASK_TG_HELP="Cách giao việc:\n/task Huy, Cường | Dọn phòng chụp 2 | 18:00\n/nhacnho all | Mai họp 8h30\n\n• Người nhận: tên gọi, tên đầy đủ, mã NV hoặc all\n• Phần hạn (không bắt buộc): 18:00 hoặc 18h30 28/10\n• Thêm #anh nếu bắt buộc chụp ảnh khi báo xong";
+const TASK_TG_HELP="Cách giao việc:\n/task Huy, Cường | Dọn phòng chụp 2 | 18:00\n/nhacnho all | Mai họp 8h30\n\n• Người nhận: tên gọi, tên đầy đủ, mã NV hoặc all\n• Phần hạn (không bắt buộc): 18:00 hoặc 18h30 28/10\n• Thêm #anh nếu bắt buộc chụp ảnh khi báo xong\n\nGhi Event log: /log Nội dung | Huy (gõ /log để xem hướng dẫn)";
+// Ghi Event log hôm nay; chỉ Admin và người được Admin cấp quyền ghi Event log:
+//   /log Quên checkout ca 2 | Huy
+//   /log Họp rút kinh nghiệm cả studio | all        (nhật ký chung, không trừ điểm)
+//   /log Đi trễ 40 phút | Huy, Cường | NG-01        (phần 3: mã luật hoặc điểm 20/100/300)
+const LOG_TG_HELP="Cách ghi Event log:\n/log Quên checkout ca 2 | Huy\n/log Họp rút kinh nghiệm | all\n/log Đi trễ 40 phút | Huy, Cường | NG-01\n\n• Phần 1: nội dung sự việc (từ 5 ký tự)\n• Phần 2: người liên quan — tên gọi, tên đầy đủ, mã NV, nhiều người cách nhau dấu phẩy; all = nhật ký chung studio\n• Phần 3 (không bắt buộc): mã luật hoặc điểm KPI 20/100/300; nhật ký chung không trừ điểm\n• Ngày ghi nhận: hôm nay. Sửa hoặc xử lý tiếp trên web.";
+function log_telegram_command(App $a,Telegram $tg,array $m,string $args): bool {
+ $chat=(string)$m['chat']['id'];$reply=fn(string $msg)=>$tg->call('sendMessage',['chat_id'=>$chat,'text'=>$msg,'reply_to_message_id'=>$m['message_id'],'disable_web_page_preview'=>true]);
+ $previous=$a->user;
+ try{
+  if($args===''){$reply(LOG_TG_HELP);return true;}
+  $sender=$a->one("SELECT u.* FROM {{telegram_links}} l JOIN {{users}} u ON u.id=l.user_id WHERE l.chat_id=? AND u.archived=0 AND u.status!='inactive'",[(string)($m['from']['id']??'')]);
+  if(!$sender)fail('Telegram của bạn chưa liên kết với tài khoản trên web. Vào web → Chấm công → Liên kết Telegram.');
+  // log_routes kiểm tra quyền và ghi người tạo theo $a->user, giống khi ghi trên web.
+  $a->user=$sender;
+  if(!log_permissions($a)['can_record'])fail('Chỉ Admin và người được Admin cấp quyền mới được ghi Event log.');
+  $parts=array_map('trim',explode('|',$args));
+  if(count($parts)<2||$parts[0]===''||$parts[1]==='')fail("Thiếu nội dung hoặc người liên quan.\n\n".LOG_TG_HELP);
+  if(count($parts)>3)fail('Dùng tối đa 3 phần: nội dung | người liên quan | luật hoặc điểm.');
+  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive'");
+  $targets=array_values(array_filter(array_map('trim',preg_split('/\s*(?:,|;|\s+và\s+)\s*/u',$parts[1]))));
+  $all=count($targets)===1&&in_array(task_fold(ltrim($targets[0],'@')),['all','tat ca','ca studio','moi nguoi','studio','chung'],true);
+  $subjects=[];if(!$all)foreach($targets as $tk){$p=task_find_person($a,$people,$tk);$subjects[$p['id']]=$p;}
+  $extra=['deduction'=>0];$rule=null;$kpi=$parts[2]??'';
+  if($kpi!==''){
+   if(preg_match('/^\d+$/D',$kpi)){if(!in_array((int)$kpi,[0,20,100,300],true))fail('Điểm KPI cần là 20, 100 hoặc 300.');$extra=['deduction'=>(int)$kpi];}
+   else{$rule=$a->one("SELECT id,code,name,points FROM {{studio_rules}} WHERE code=? AND status='active'",[strtoupper($kpi)]);if(!$rule)fail('Không tìm thấy luật "'.$kpi.'" đang áp dụng. Xem mã trong Luật Studio trên web.');$extra=['rule_id'=>$rule['id']];}
+  }
+  $points=$rule?$rule['points']:$extra['deduction'];
+  if($all&&$points!==0)fail('Nhật ký chung studio (all) không trừ điểm. Ghi tên người liên quan để áp '.($rule?'luật '.$rule['code']:'điểm KPI').'.');
+  $day=local_day(now_ms());
+  foreach($all?[null]:array_keys($subjects) as $uid){
+   $id=uuid_v4();log_routes($a,'/event-log',['id'=>$id,'user_id'=>$uid,'event_date'=>$day,'category'=>'other','description'=>$parts[0]]+$extra,'POST');
+   $a->run("UPDATE {{event_log_audit}} SET note=? WHERE event_log_id=? AND action='created'",['Ghi qua Telegram bởi người được cấp quyền chỉnh sửa Event log.',$id]);
+  }
+  $reply('✅ Đã ghi Event log · '.implode('/',array_reverse(explode('-',$day)))."\n".($all?'Nhật ký chung studio':'Người liên quan: '.implode(', ',array_column($subjects,'name')))."\n«".(mb_strlen($parts[0])>300?mb_substr($parts[0],0,300).'…':$parts[0]).'»'.($rule?"\nLuật ".$rule['code'].' · '.$rule['name']:'').($points?"\nTrừ ".$points.' điểm KPI'.(count($subjects)>1?' mỗi người':''):'')."\nXem trên web: ".$a->config['app_url'].'/#eventlog');
+ }catch(HttpError $e){$reply('⚠️ '.$e->getMessage());}
+ finally{$a->user=$previous;}
+ return true;
+}
 function task_fold(string $s): string {
  $s=mb_strtolower(trim($s),'UTF-8');
  $map=['à'=>'a','á'=>'a','ả'=>'a','ã'=>'a','ạ'=>'a','ă'=>'a','ằ'=>'a','ắ'=>'a','ẳ'=>'a','ẵ'=>'a','ặ'=>'a','â'=>'a','ầ'=>'a','ấ'=>'a','ẩ'=>'a','ẫ'=>'a','ậ'=>'a','đ'=>'d','è'=>'e','é'=>'e','ẻ'=>'e','ẽ'=>'e','ẹ'=>'e','ê'=>'e','ề'=>'e','ế'=>'e','ể'=>'e','ễ'=>'e','ệ'=>'e','ì'=>'i','í'=>'i','ỉ'=>'i','ĩ'=>'i','ị'=>'i','ò'=>'o','ó'=>'o','ỏ'=>'o','õ'=>'o','ọ'=>'o','ô'=>'o','ồ'=>'o','ố'=>'o','ổ'=>'o','ỗ'=>'o','ộ'=>'o','ơ'=>'o','ờ'=>'o','ớ'=>'o','ở'=>'o','ỡ'=>'o','ợ'=>'o','ù'=>'u','ú'=>'u','ủ'=>'u','ũ'=>'u','ụ'=>'u','ư'=>'u','ừ'=>'u','ứ'=>'u','ử'=>'u','ữ'=>'u','ự'=>'u','ỳ'=>'y','ý'=>'y','ỷ'=>'y','ỹ'=>'y','ỵ'=>'y'];
@@ -231,6 +270,7 @@ function task_parse_due(string $text,int $now): ?int {
 }
 function task_telegram_command(App $a,Telegram $tg,array $m): bool {
  $text=trim($m['text']??'');
+ if(preg_match('~^/log(?:@\w+)?(?:\s+(.*))?$~su',$text,$cmd))return log_telegram_command($a,$tg,$m,trim($cmd[1]??''));
  if(!preg_match('~^/(task|nhacnho|viec)(?:@\w+)?(?:\s+(.*))?$~su',$text,$cmd))return false;
  $chat=(string)$m['chat']['id'];$reply=fn(string $msg)=>$tg->call('sendMessage',['chat_id'=>$chat,'text'=>$msg,'reply_to_message_id'=>$m['message_id'],'disable_web_page_preview'=>true]);
  try{
