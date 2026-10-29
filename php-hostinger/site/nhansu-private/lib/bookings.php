@@ -47,6 +47,57 @@ function relink_booking(App $a,array $row): void {
   if($person)$a->run('INSERT IGNORE INTO {{booking_staff}} VALUES(?,?,?)',[$row['id'],$person['id'],$role]);
  }
 }
+// Thêm lịch trên web (chủ dự án chốt 29/10/2026): mỗi khung giờ 1 khách; gói 399/699 chiếm 1 tiếng, 1499/2999 chiếm 2 tiếng (chụp + make up).
+// Chỉ Admin và người được Admin cấp quyền. Lịch mới vào hàng chờ; Apps Script lấy về mỗi phút, chèn dòng vào tab "Tháng N" rồi báo lại.
+const BOOKING_WEB_PACKAGES=[399=>60,699=>60,1499=>120,2999=>120];
+const BOOKING_OPEN_MINUTES=540,BOOKING_CLOSE_MINUTES=1140;
+function booking_length(string $label): int {return BOOKING_WEB_PACKAGES[booking_package_price($label)??0]??60;}
+function booking_hm(int $minutes): string {return sprintf('%02d:%02d',intdiv($minutes,60),$minutes%60);}
+function booking_sheet_tab(string $day): string {return 'Tháng '.(int)substr($day,5,2);}
+function booking_permissions(App $a): array {
+ $admin=$a->user['role']==='admin';$granted=(bool)$a->one('SELECT user_id FROM {{booking_creators}} WHERE user_id=?',[$a->user['id']]);
+ return ['can_create'=>$admin||$granted,'can_grant'=>$admin];
+}
+// Từ đầu tháng trước đến 6 tháng tới: Apps Script đọc đúng các tab trong khoảng này nên tên "Tháng N" không bị nhầm năm.
+function booking_web_range(): array {$today=local_day(now_ms());return ['min'=>date('Y-m-d',strtotime(substr($today,0,7).'-01T12:00:00Z -1 month')),'max'=>local_day(day_time($today)+183*86400000)];}
+function booking_busy(App $a,string $day): array {
+ return array_map(fn($r)=>['id'=>$r['id'],'start'=>(int)$r['minutes'],'end'=>(int)$r['minutes']+booking_length($r['package_label']),'customer_name'=>$r['customer_name'],'package_label'=>$r['package_label']],$a->all("SELECT id,minutes,customer_name,package_label FROM {{shoot_bookings}} WHERE shoot_day=? AND status='active' ORDER BY minutes,id",[$day]));
+}
+function booking_enqueue(App $a,string $booking,string $action,string $tab,array $payload=[]): void {
+ $a->run('INSERT INTO {{booking_sheet_queue}}(id,booking_id,action,tab,payload_json,created_by,created_at) VALUES(?,?,?,?,?,?,?)',[uuid_v4(),$booking,$action,$tab,json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$a->user['id']??null,now_ms()]);
+}
+// Việc ghi Sheet chưa xong của từng lịch (chờ hoặc lỗi), để thẻ và popup báo cho người thêm lịch.
+function booking_sheet_states(App $a,array $ids): array {
+ if(!$ids)return [];$out=[];
+ foreach($a->all("SELECT booking_id,action,status,error,created_at FROM {{booking_sheet_queue}} WHERE status IN ('pending','failed') AND booking_id IN (".implode(',',array_fill(0,count($ids),'?')).') ORDER BY created_at',$ids) as $q)$out[$q['booking_id']]=['action'=>$q['action'],'status'=>$q['status'],'error'=>$q['error']];
+ return $out;
+}
+function booking_queue_skip(App $a,string $booking,bool $unsentOnly=false): int {
+ return $a->run("UPDATE {{booking_sheet_queue}} SET status='skipped',done_at=? WHERE booking_id=? AND status IN ('pending','failed')".($unsentOnly?" AND action='create' AND sent_at IS NULL":''),[now_ms(),$booking])->rowCount();
+}
+// Apps Script hỏi việc cần ghi: lịch mới (create) và lịch hủy trên web (cancel).
+function booking_queue_poll(App $a): array {
+ $out=[];
+ foreach($a->all("SELECT * FROM {{booking_sheet_queue}} WHERE status='pending' ORDER BY created_at,id LIMIT 20") as $q){
+  $bk=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$q['booking_id']]);
+  if(!$bk||$bk['status']==='deleted'){$a->run("UPDATE {{booking_sheet_queue}} SET status='skipped',done_at=? WHERE id=?",[now_ms(),$q['id']]);continue;}
+  $a->run('UPDATE {{booking_sheet_queue}} SET sent_at=? WHERE id=?',[now_ms(),$q['id']]);
+  $out[]=['id'=>$q['id'],'booking_id'=>$q['booking_id'],'action'=>$q['action'],'tab'=>$q['action']==='create'?$q['tab']:$bk['source_tab'],'day'=>$bk['shoot_day'],'time'=>booking_hm((int)$bk['minutes']),'length'=>booking_length($bk['package_label']),
+   'values'=>['customer_name'=>$bk['customer_name'],'customer_phone'=>$bk['customer_phone'],'package_label'=>$bk['package_label'],'main_alias'=>$bk['main_alias'],'support_alias'=>$bk['support_alias'],'deposit_label'=>$bk['deposit_label'],'note'=>$bk['note']]];
+ }
+ return ['queue'=>$out];
+}
+function booking_queue_ack(App $a,array $acks,string $sheet): array {
+ if(!array_is_list($acks)||count($acks)>50)fail('Danh sách xác nhận không hợp lệ.');$done=0;
+ foreach($acks as $k){
+  if(!is_array($k))fail('Danh sách xác nhận không hợp lệ.');$q=$a->one('SELECT * FROM {{booking_sheet_queue}} WHERE id=?',[entry_uuid($k['id']??null)]);if(!$q||$q['status']!=='pending')continue;
+  if(($k['ok']??null)===true){
+   $a->run("UPDATE {{booking_sheet_queue}} SET status='done',error='',done_at=? WHERE id=?",[now_ms(),$q['id']]);$done++;
+   if($q['action']==='create'){$tab=input_text($k['tab']??$q['tab'],'Tên tab',1,150);$row=is_int($k['row']??null)&&$k['row']>0?$k['row']:0;$a->run("UPDATE {{shoot_bookings}} SET source_sheet=?,source_tab=?,source_row=? WHERE id=? AND source_sheet IN (?,'web')",[$sheet,$tab,$row,$q['booking_id'],$sheet]);}
+  }else{$error=trim(preg_replace('/[\x00-\x1F\x7F]+/u',' ',is_string($k['error']??null)&&preg_match('//u',$k['error'])?$k['error']:'Apps Script không ghi được.'));$a->run("UPDATE {{booking_sheet_queue}} SET status='failed',error=?,done_at=? WHERE id=?",[mb_substr($error,0,300),now_ms(),$q['id']]);}
+ }
+ return ['acked'=>count($acks),'done'=>$done];
+}
 function import_bookings(App $a,array $b,string $sheet,?int $actor): array {
  $rows=$b['rows']??null;$tab=input_text($b['tab']??'','Tên tab',1,150);
  if(!is_array($rows)||!array_is_list($rows)||count($rows)>1000)fail('Mỗi lần đồng bộ tối đa 1.000 lịch.');
@@ -62,14 +113,21 @@ function import_bookings(App $a,array $b,string $sheet,?int $actor): array {
    foreach($fields as $f){if(!is_array($f))fail('Dữ liệu cột Sheet không hợp lệ.');$value=input_text($f['value']??'','Giá trị cột Sheet',0,2000);if($value==='')continue;$clean[]=['label'=>input_text($f['label']??'','Tiêu đề cột Sheet',1,100),'value'=>$value];}
    $row['sheet_fields_json']=json_encode($clean,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);}
   $row['status']=$status;$old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);
-  if($old&&($old['source_sheet']!==$sheet||$old['source_tab']!==$tab))fail('Mã lịch thuộc Sheet hoặc tab khác. Không thay đổi nguồn của một mã lịch.',409);
+  // Tab theo tháng: dòng được chuyển sang tab khác của cùng Sheet thì đổi tab theo; lịch thêm trên web khi chưa nối Sheet ('web') nhận Sheet này.
+  if($old&&$old['source_sheet']!==$sheet&&$old['source_sheet']!=='web')fail('Mã lịch thuộc Sheet khác. Không thay đổi nguồn của một mã lịch.',409);
   $normalized[]=[$row,$old];
  }
+ $pending=[];if($seen)foreach($a->all("SELECT id,booking_id,action FROM {{booking_sheet_queue}} WHERE status='pending' AND booking_id IN (".implode(',',array_fill(0,count($seen),'?')).')',array_keys($seen)) as $q)$pending[$q['booking_id']][]=$q;
  $changed=0;$created=0;
  foreach($normalized as [$row,$old]){
   // Lịch Quản lý/Admin đã xóa trên web không được Sheet đồng bộ lại.
   if($old&&$old['status']==='deleted')continue;
-  if($old){$same=true;foreach($row as $k=>$v)if($old[$k]!==$v){$same=false;break;}if($same)continue;}
+  // Dòng đã lên Sheet thì xong việc "create". Hủy trên web chưa ghi xuống Sheet: giữ trạng thái web, không để Sheet cũ ghi đè.
+  $waiting=false;foreach($pending[$row['id']]??[] as $q){if($q['action']==='create'||$row['status']==='cancelled')$a->run("UPDATE {{booking_sheet_queue}} SET status='done',error='',done_at=? WHERE id=?",[now_ms(),$q['id']]);else $waiting=true;}
+  if($waiting)continue;
+  if($old){$diff=array_keys(array_filter($row,fn($v,$k)=>$old[$k]!==$v,ARRAY_FILTER_USE_BOTH));if(!$diff)continue;
+   // Chèn/xóa dòng phía trên chỉ làm đổi số dòng: cập nhật lặng lẽ, không ghi lịch sử.
+   if($diff===['source_row']){$a->run('UPDATE {{shoot_bookings}} SET source_row=? WHERE id=?',[$row['source_row'],$row['id']]);continue;}}
   freeze_existing_booking_day($a,$row['shoot_day']);if($old&&$old['shoot_day']!==$row['shoot_day'])freeze_existing_booking_day($a,$old['shoot_day']);
   if($old){$cols=array_values(array_diff(array_keys($row),['id']));$a->run('UPDATE {{shoot_bookings}} SET '.implode(',',array_map(fn($c)=>$c.'=?',$cols)).',updated_at=? WHERE id=?',[...array_map(fn($c)=>$row[$c],$cols),now_ms(),$row['id']]);$changed++;}
   else{$cols=array_keys($row);$a->run('INSERT INTO {{shoot_bookings}} ('.implode(',',$cols).',created_at,updated_at) VALUES('.implode(',',array_fill(0,count($cols)+2,'?')).')',[...array_values($row),now_ms(),now_ms()]);$created++;}
@@ -88,6 +146,8 @@ function sheet_receiver(App $a,string $path,array $b,string $method): ?array {
  $sheet=$a->meta('sheet_sync_id');if(!$sheet||($b['sheet_id']??null)!==$sheet)fail('Sheet không khớp kết nối đã cấu hình.',403);
  if($a->one('SELECT nonce FROM {{sheet_sync_nonces}} WHERE nonce=?',[$nonce]))fail('Yêu cầu đã được nhận, không xử lý trùng.',409);
  $a->run('DELETE FROM {{sheet_sync_nonces}} WHERE created_at<?',[now_ms()-600000]);$a->run('INSERT INTO {{sheet_sync_nonces}} VALUES(?,?)',[$nonce,now_ms()]);
+ if(($b['poll']??null)===true)return [200,booking_queue_poll($a)];
+ if(array_key_exists('ack',$b))return [200,booking_queue_ack($a,is_array($b['ack'])?$b['ack']:[],$sheet)];
  return [200,import_bookings($a,$b,$sheet,null)];
 }
 function attendance_issues(App $a,string $month,?int $person=null): array {
@@ -124,7 +184,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $note=input_text($b['description']??null,'Nội dung xác nhận',5,2000);$id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$issue['id'],'event_date'=>$issue['day'],'category'=>$issue['kind']==='late'?'late':'missing_punch','description'=>$note,'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null],'POST');
   $a->run('INSERT INTO {{attendance_issue_links}} VALUES(?,?)',[$key,$id]);return $result;
  }
- if($path==='/sheet-sync/status'&&$method==='GET'){$a->requireManager();$last=json_decode($a->meta('sheet_sync_last')??'null',true);$aliases=$a->all('SELECT m.*,u.name FROM {{booking_aliases}} m JOIN {{users}} u ON u.id=m.user_id ORDER BY m.alias_label');return [200,['sheet_id'=>$a->meta('sheet_sync_id')??'1JCyjUuLzCJy05yRvjWMKEGmwbvCEAiSjnyi1cNcuZow','configured'=>is_file($a->storage.'/sheet-sync-key'),'last_sync'=>$last,'aliases'=>$aliases,'people'=>finance_people($a),'can_configure'=>$a->user['role']==='admin']];}
+ if($path==='/sheet-sync/status'&&$method==='GET'){$a->requireManager();$last=json_decode($a->meta('sheet_sync_last')??'null',true);$aliases=$a->all('SELECT m.*,u.name FROM {{booking_aliases}} m JOIN {{users}} u ON u.id=m.user_id ORDER BY m.alias_label');return [200,['sheet_id'=>$a->meta('sheet_sync_id')??'1JCyjUuLzCJy05yRvjWMKEGmwbvCEAiSjnyi1cNcuZow','configured'=>is_file($a->storage.'/sheet-sync-key'),'last_sync'=>$last,'aliases'=>$aliases,'people'=>finance_people($a),'can_configure'=>$a->user['role']==='admin','creators'=>$a->user['role']==='admin'?array_map('intval',array_column($a->all('SELECT user_id FROM {{booking_creators}}'),'user_id')):[]]];}
  if($path==='/sheet-sync/configure'&&$method==='POST'){
   $a->requireAdmin();$sheet=$b['sheet_id']??'';if(!is_string($sheet)||!preg_match('/^[A-Za-z0-9_-]{20,80}$/D',$sheet))fail('Mã Google Sheet không hợp lệ.');
   $key=bin2hex(random_bytes(32));$file=$a->storage.'/sheet-sync-key';if(file_put_contents($file,$key,LOCK_EX)===false)fail('Không lưu được khóa kết nối.',500);chmod($file,0600);$a->meta('sheet_sync_id',$sheet);$a->audit($a->user['id'],'configure_sheet_sync');return [200,['key'=>$key,'sheet_id'=>$sheet,'endpoint'=>$a->config['app_url'].'/api.php?route=%2Fsheet-sync%2Freceive']];
@@ -136,12 +196,57 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   foreach($a->all('SELECT * FROM {{shoot_bookings}}') as $row)relink_booking($a,$row);
   $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(NULL,?,?,NULL,?,?)',[$a->user['id'],'map_alias',json_encode(['alias'=>$label,'user_id'=>$b['user_id']],JSON_THROW_ON_ERROR),now_ms()]);return [200,['ok'=>true]];
  }
+ if($path==='/bookings/slots'&&$method==='GET'){
+  if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền thêm lịch.',403);$day=valid_day($_GET['day']??null);
+  $aliases=$a->all("SELECT m.alias_label,u.name FROM {{booking_aliases}} m JOIN {{users}} u ON u.id=m.user_id WHERE u.archived=0 AND u.status!='inactive' ORDER BY m.alias_label");
+  return [200,['day'=>$day,'busy'=>booking_busy($a,$day),'aliases'=>$aliases,'packages'=>array_map(fn($price,$minutes)=>['price'=>$price,'minutes'=>$minutes],array_keys(BOOKING_WEB_PACKAGES),BOOKING_WEB_PACKAGES),'open'=>BOOKING_OPEN_MINUTES,'close'=>BOOKING_CLOSE_MINUTES,'range'=>booking_web_range(),'tab'=>booking_sheet_tab($day),'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
+ }
+ if($path==='/bookings/create'&&$method==='POST'){
+  if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền thêm lịch.',403);
+  $range=booking_web_range();$day=valid_day($b['day']??null);$vn=fn($d)=>implode('/',array_reverse(explode('-',$d)));if($day<$range['min']||$day>$range['max'])fail('Chỉ thêm lịch từ '.$vn($range['min']).' đến '.$vn($range['max']).'.');
+  $time=$b['time']??'';if(!is_string($time)||!preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/D',$time,$m))fail('Giờ chụp phải dạng HH:mm.');$start=(int)$m[1]*60+(int)$m[2];
+  $price=$b['package']??null;if(!is_int($price)||!isset(BOOKING_WEB_PACKAGES[$price]))fail('Chọn gói 399, 699, 1499 hoặc 2999.');$end=$start+BOOKING_WEB_PACKAGES[$price];
+  if($start<420||$end>1320)fail('Giờ chụp cần trong khoảng 07:00–22:00.');
+  $row=['customer_name'=>input_text($b['customer_name']??null,'Tên khách',1,150),'customer_phone'=>input_text($b['customer_phone']??'','Số điện thoại',0,50),'main_alias'=>input_text($b['main_alias']??'','Thợ chính',0,150),'support_alias'=>input_text($b['support_alias']??'','Thợ phụ',0,150),'deposit_label'=>input_text($b['deposit_label']??'','Đã cọc',0,50),'note'=>input_text($b['note']??'','Ghi chú',0,2000)];
+  if($row['customer_phone']!==''&&!preg_match('/^[0-9 +().-]{8,20}$/D',$row['customer_phone']))fail('Số điện thoại không hợp lệ.');
+  foreach(['main_alias'=>'Thợ chính','support_alias'=>'Thợ phụ'] as $field=>$label)if($row[$field]!==''&&!$a->one('SELECT alias_key FROM {{booking_aliases}} WHERE alias_key=?',[alias_key($row[$field])]))fail($label.' chưa được ghép với nhân viên. Chọn trong danh sách.');
+  if($row['main_alias']!==''&&$row['main_alias']===$row['support_alias'])fail('Thợ chính và thợ phụ cần khác nhau.');
+  // Mọi POST đã khóa write_lock trong giao dịch nên hai người thêm cùng lúc không lọt trùng giờ.
+  foreach(booking_busy($a,$day) as $x)if($start<$x['end']&&$x['start']<$end)fail('Khung '.booking_hm($start).'–'.booking_hm($end).' trùng lịch '.booking_hm($x['start']).'–'.booking_hm($x['end']).($x['customer_name']!==''?' của '.$x['customer_name']:'').'. Chọn giờ khác.',409);
+  $row=['id'=>uuid_v4(),'source_sheet'=>$a->meta('sheet_sync_id')?:'web','source_tab'=>booking_sheet_tab($day),'source_row'=>0,'shoot_day'=>$day,'minutes'=>$start,'package_label'=>(string)$price]+$row+['received_label'=>'','status'=>'active'];
+  freeze_existing_booking_day($a,$day);$cols=array_keys($row);
+  $a->run('INSERT INTO {{shoot_bookings}} ('.implode(',',$cols).',created_at,updated_at) VALUES('.implode(',',array_fill(0,count($cols)+2,'?')).')',[...array_values($row),now_ms(),now_ms()]);
+  relink_booking($a,$row);booking_enqueue($a,$row['id'],'create',$row['source_tab']);
+  $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$row['id'],$a->user['id'],'created_web',null,json_encode($row,JSON_THROW_ON_ERROR),now_ms()]);
+  return [200,['id'=>$row['id'],'tab'=>$row['source_tab'],'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
+ }
+ if($path==='/bookings/cancel'&&$method==='POST'){
+  if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền hủy lịch.',403);
+  $id=entry_uuid($b['id']??null);$reason=input_text($b['reason']??'','Lý do hủy',0,300);$old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);
+  if(!$old||$old['status']==='deleted')fail('Không tìm thấy lịch.',404);if($old['status']!=='active')fail('Lịch này đã hủy.',409);
+  freeze_existing_booking_day($a,$old['shoot_day']);$a->run("UPDATE {{shoot_bookings}} SET status='cancelled',updated_at=? WHERE id=?",[now_ms(),$id]);
+  // Lịch web chưa kịp ghi xuống Sheet: bỏ luôn việc ghi, khỏi chèn rồi lại hủy.
+  if(!booking_queue_skip($a,$id,true))booking_enqueue($a,$id,'cancel',$old['source_tab'],['reason'=>$reason]);
+  $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$id,$a->user['id'],'cancelled_web',json_encode($old,JSON_THROW_ON_ERROR),json_encode(['status'=>'cancelled','reason'=>$reason],JSON_THROW_ON_ERROR),now_ms()]);
+  return [200,['ok'=>true]];
+ }
+ if($path==='/bookings/sheet-retry'&&$method==='POST'){
+  if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền thêm lịch.',403);$id=entry_uuid($b['id']??null);
+  $n=$a->run("UPDATE {{booking_sheet_queue}} SET status='pending',error='',sent_at=NULL,done_at=NULL WHERE booking_id=? AND status='failed'",[$id])->rowCount();if(!$n)fail('Lịch này không có lỗi ghi Sheet.',409);
+  return [200,['ok'=>true]];
+ }
+ if($path==='/bookings/creators'&&$method==='POST'){
+  $a->requireAdmin();if(!is_int($b['user_id']??null)||!is_bool($b['enabled']??null))fail('Quyền thêm lịch không hợp lệ.');
+  $target=$a->target($b['user_id']);if($target['role']==='admin')fail('Admin luôn được thêm lịch.');
+  if($b['enabled'])$a->run('INSERT INTO {{booking_creators}} VALUES(?,?,?) ON DUPLICATE KEY UPDATE granted_by=VALUES(granted_by),granted_at=VALUES(granted_at)',[$target['id'],$a->user['id'],now_ms()]);else $a->run('DELETE FROM {{booking_creators}} WHERE user_id=?',[$target['id']]);
+  $a->audit($target['id'],$b['enabled']?'grant_booking_create':'revoke_booking_create');return [200,['ok'=>true]];
+ }
  if($path==='/bookings/import'&&$method==='POST'){$a->requireManager();$sheet=input_text($b['sheet_id']??'manual','Mã nguồn',1,80);return [200,import_bookings($a,$b,$sheet,$a->user['id'])];}
  if($path==='/bookings/delete'&&$method==='POST'){
   // Xóa mềm: ẩn khỏi lịch, thống kê, đối soát và nhắc Telegram; giữ dòng và nhật ký trước/sau.
   $a->requireManager();$id=entry_uuid($b['id']??null);$reason=input_text($b['reason']??'','Lý do xóa',0,300);
   $old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);if(!$old)fail('Không tìm thấy lịch.',404);if($old['status']==='deleted')fail('Lịch này đã bị xóa.',409);
-  freeze_existing_booking_day($a,$old['shoot_day']);$a->run("UPDATE {{shoot_bookings}} SET status='deleted',updated_at=? WHERE id=?",[now_ms(),$id]);
+  freeze_existing_booking_day($a,$old['shoot_day']);$a->run("UPDATE {{shoot_bookings}} SET status='deleted',updated_at=? WHERE id=?",[now_ms(),$id]);booking_queue_skip($a,$id);
   $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$id,$a->user['id'],'deleted',json_encode($old,JSON_THROW_ON_ERROR),json_encode(['status'=>'deleted','reason'=>$reason],JSON_THROW_ON_ERROR),now_ms()]);
   return [200,['ok'=>true]];
  }
@@ -162,8 +267,9 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $page=finance_page();$total=(int)$a->scalar('SELECT COUNT(*) FROM {{shoot_bookings}} b WHERE '.$where,$params);
   // Mọi role xem đủ thông tin Sheet trong popup; chỉ Quản lý/Admin được xóa lịch.
   $rows=$a->all('SELECT b.* FROM {{shoot_bookings}} b WHERE '.$where.' ORDER BY b.shoot_day,b.minutes,b.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
-  foreach($rows as &$row){$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
-  return [200,['rows'=>$rows,'total'=>$total,'page'=>$page,'start'=>$start,'end'=>$end]];
+  $states=booking_sheet_states($a,array_column($rows,'id'));
+  foreach($rows as &$row){$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['sheet_state']=$states[$row['id']]??null;$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
+  return [200,['rows'=>$rows,'total'=>$total,'page'=>$page,'start'=>$start,'end'=>$end,'permissions'=>booking_permissions($a)]];
  }
  return null;
 }

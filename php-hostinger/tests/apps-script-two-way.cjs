@@ -1,0 +1,97 @@
+// Sheet 2 chiều (29/10/2026): chạy AnhGauSync.gs trên Sheet giả lập — chèn lịch web, ghi Hủy, tô trùng giờ, tab Tháng N. Chạy: node php-hostinger/tests/apps-script-two-way.cjs
+const {Book,load}=require('./fixtures/sheet-mock.cjs');
+const gs=process.argv[2]||'php-hostinger/google-sheets/AnhGauSync.gs';let pass=0,fail=0;
+const ok=(c,m)=>{if(c){pass++;console.log('  ✓ '+m);}else{fail++;console.log('  ✗ '+m);}};
+const H=['Ngày','Time','Tên khách','Gói','SĐT','Thợ chính','Thợ phụ','Đã cọc','Còn lại','Ghi chú'];
+const ID=(n)=>('00000000-0000-4000-8000-'+String(n).padStart(12,'0'));
+function book(){
+ const b=new Book();
+ // Tab tháng 10: ngày dạng chữ, giờ dạng chữ, gói là số, có công thức Còn lại.
+ b.add('Tháng 10',[['LỊCH CHỤP THÁNG 10'],H,
+  ['28/10','10:00','Lan',699,'0901','Huy','','200k',{v:'=f',formula:'=R[0]C[-5]-1'},''],
+  ['','14:00','Mai',1499,'','Cường','','',{v:'=f',formula:'=R[0]C[-5]-1'},''],
+  ['29/10','09:00','An',399,'','Huy','','','',''],
+ ]);
+ // Tab tháng 11: ô ngày gộp theo ngày, giờ là kiểu thời gian, có mã sẵn.
+ const n=b.add('Tháng 11',[H.concat(['_AG_BOOKING_ID']),
+  ['05/11',{v:new Date(1899,11,30,9,0),fmt:'HH:mm'},'Bình',699,'','Huy','','','','',ID(1)],
+  ['',{v:new Date(1899,11,30,13,0),fmt:'HH:mm'},'Chi',1499,'','Huy','','','','',ID(2)],
+  ['09/11',{v:new Date(1899,11,30,11,0),fmt:'HH:mm'},'Dũng',399,'','Cường','','','','',ID(3)],
+  ['10/11','','','','','','','','','',''],
+ ]);n.merges.push({c:1,r1:2,r2:3});
+ b.add('Tháng 5',[H,['03/05','10:00','Cũ',699,'','','','','','']]);// ngoài khoảng: bỏ qua
+ b.add('Tháng 1',[H,['04/01','10:00','Tết',2999,'','','','','','']]);// năm sau
+ return b;
+}
+function server(state){return (body)=>{state.posts.push(body);if(body.poll)return [200,{queue:state.queue.splice(0)}];if(body.ack){state.acks.push(...body.ack);return [200,{acked:body.ack.length}];}state.tabs[body.tab]=body.rows;return [200,{received:body.rows.length}];};}
+const run=(ctx,e)=>{try{ctx.dongBoAnhGau(e);return null;}catch(err){return err.message;}};
+const cfg={AG_ENDPOINT:'https://x/api.php?route=%2Fsheet-sync%2Freceive',AG_SYNC_KEY:'k'.repeat(64),AG_SHEET_ID:'SHEETID',AG_TAB:'LICH_CHUP',AG_YEAR:'2026'};
+
+console.log('1. Đồng bộ các tab tháng');
+let b=book(),st={posts:[],queue:[],acks:[],tabs:{}},ctx=load(gs,b,server(st),cfg);
+ok(run(ctx)===null,'chạy không lỗi');
+ok(Object.keys(st.tabs).join()==='Tháng 10,Tháng 11,Tháng 1','gửi Tháng 10, 11, 1 (bỏ Tháng 5 cũ, bỏ tab cố định LICH_CHUP cũ)');
+ok(st.tabs['Tháng 1'][0].day==='2027-01-04','Tháng 1 hiểu là năm 2027');
+ok(st.tabs['Tháng 10'][1].day==='2026-10-28'&&st.tabs['Tháng 10'][1].time==='14:00','dòng không ghi ngày thuộc ngày phía trên');
+ok(st.tabs['Tháng 11'][0].id===ID(1)&&st.tabs['Tháng 11'][1].time==='13:00','giữ mã cũ, đọc giờ kiểu thời gian');
+ok(b.getSheetByName('Tháng 10').rows()[1][10]==='_AG_BOOKING_ID','thêm cột mã cho tab chưa có');
+// Gói 1499 14:00 và 699 10:00 không chồng; 5/11: 699 9:00 (đến 10:00), 1499 13:00 → không trùng.
+ok(!st.tabs['Tháng 10'].some(()=>false)&&b.getSheetByName('Tháng 10').cell(3,2).bg!=='#f4c7c3','không trùng thì không tô');
+
+console.log('2. Lần chạy tự động sau, Sheet không đổi: không gửi lại tab');
+st.posts=[];ok(run(ctx,{triggerUid:'t'})===null,'chạy không lỗi');
+ok(st.posts.length===1&&st.posts[0].poll===true,'chỉ 1 yêu cầu hỏi lịch mới từ web');
+
+console.log('3. Ghi lịch thêm trên web vào đúng chỗ');
+const q=(id,day,time,v)=>({id:ID(900+id),booking_id:ID(500+id),action:'create',tab:'Tháng '+Number(day.slice(5,7)),day,time,length:60,values:Object.assign({customer_name:'Web'+id,customer_phone:'0912345678',package_label:'699',main_alias:'Huy',support_alias:'',deposit_label:'',note:''},v)});
+st.queue=[q(1,'2026-11-05','11:00'),q(2,'2026-11-05','08:00',{deposit_label:'300k'}),q(3,'2026-11-07','10:00'),q(4,'2026-11-10','15:00'),q(5,'2026-12-03','10:00'),q(6,'2026-10-28','12:00'),{id:ID(999),booking_id:ID(3),action:'cancel',tab:'Tháng 11',day:'2026-11-09',time:'11:00',values:{}}];
+st.posts=[];ok(run(ctx)===null,'chạy không lỗi');
+const n=b.getSheetByName('Tháng 11').rows().map(r=>[r[0],r[1],r[2]].join('|'));
+console.log('     Tháng 11:',JSON.stringify(n));
+ok(n[1]==='05/11|08:00|Web2'&&n[2]==='|09:00|Bình'&&n[3]==='|11:00|Web1'&&n[4]==='|13:00|Chi','05/11: 08:00 (khách sớm nhất, giữ ô ngày) → 09:00 → 11:00 → 13:00');
+ok(b.getSheetByName('Tháng 11').merges.some(m=>m.r1===2&&m.r2===5),'ô ngày gộp của 05/11 giãn ra đủ 4 dòng');
+ok(n[5]==='07/11|10:00|Web3'||n[6]==='07/11|10:00|Web3','07/11 (ngày mới) chèn giữa 05/11 và 09/11, có ghi ngày');
+ok(n.indexOf('07/11|10:00|Web3')<n.indexOf('09/11|11:00|Dũng'),'07/11 đứng trước 09/11');
+ok(n.includes('10/11|15:00|Web4')&&n.length===8,'10/11 có dòng ngày trống: ghi luôn vào dòng đó');
+const s11=b.getSheetByName('Tháng 11'),r2=s11.cell(2,2);
+ok(r2.v instanceof Date&&r2.fmt==='HH:mm','giờ ghi đúng kiểu thời gian như các dòng khác');
+ok(s11.cell(2,5).v==='0912345678'&&s11.cell(2,5).fmt==='@','SĐT giữ số 0 đầu');
+ok(s11.cell(2,4).v===699&&typeof s11.cell(2,4).v==='number','gói ghi dạng số như Sheet');
+ok(s11.cell(2,11).v===ID(502),'ghi mã lịch web vào cột _AG_BOOKING_ID');
+const dung=s11.rows().findIndex(r=>r[2]==='Dũng');ok(s11.rows()[0][11]==='Trạng thái'&&s11.rows()[dung][11]==='Hủy','hủy trên web → thêm cột Trạng thái, ghi Hủy');
+const s12=b.getSheetByName('Tháng 12');ok(s12&&b.getSheets().indexOf(s12)===b.getSheets().indexOf(s11)+1,'chưa có tab Tháng 12 → tạo ngay sau Tháng 11');
+ok(s12&&s12.rows()[0][0]==='Ngày'&&s12.rows()[1].slice(0,3).join('|')==='03/12|10:00|Web5','Tháng 12 có tiêu đề và lịch 03/12');
+const t10=b.getSheetByName('Tháng 10').rows().map(r=>[r[0],r[1],r[2]].join('|'));console.log('     Tháng 10:',JSON.stringify(t10));
+ok(t10[3]==='|12:00|Web6'&&t10[4]==='|14:00|Mai','28/10 12:00 chèn giữa 10:00 và 14:00');
+ok(b.getSheetByName('Tháng 10').cell(4,9).formula==='=R[0]C[-5]-1','chép công thức cột Còn lại');
+ok(b.getSheetByName('Tháng 10').cell(4,2).fmt==='@'&&b.getSheetByName('Tháng 10').cell(4,2).v==='12:00','giờ ghi dạng chữ như tab Tháng 10');
+ok(st.acks.length===7&&st.acks.every(a=>a.ok),'báo lại web đủ 7 việc thành công');
+const a2=st.acks.find(a=>a.id===ID(902));ok(a2.tab==='Tháng 11'&&a2.row===2,'báo đúng tab và dòng');
+
+console.log('4. Lịch web đã có trên Sheet (lần trước chưa kịp báo) thì không chèn lại');
+st.queue=[q(1,'2026-11-05','11:00')];st.acks=[];const before=s11.rows().length;ok(run(ctx)===null,'chạy không lỗi');
+ok(s11.rows().length===before&&st.acks[0].ok&&st.acks[0].row===4,'không thêm dòng, báo dòng 4');
+
+console.log('5. Trùng giờ: tô đỏ ô giờ, sửa xong trả màu cũ');
+s11.cell(4,2).bg='#fff2cc';s11.getRange(4,2).setValue('08:30');// Web1 11:00 → 08:30, chồng 08:00 gói 1499 (đến 10:00) và 09:00
+ok(run(ctx)===null,'chạy không lỗi');
+ok(s11.cell(4,2).bg==='#f4c7c3'&&/trùng giờ với dòng 2/.test(s11.cell(4,2).note),'08:30 tô đỏ, ghi chú trùng dòng 2');
+ok(s11.cell(2,2).bg==='#f4c7c3'&&s11.cell(3,2).bg==='#f4c7c3','08:00 và 09:00 cũng tô đỏ');
+ok(/1 dòng|3 dòng trùng giờ/.test(b.toasts.at(-1)),'thông báo số dòng trùng: '+b.toasts.at(-1));
+s11.getRange(4,2).setValue('11:00');ok(run(ctx)===null,'chạy không lỗi');
+ok(s11.cell(4,2).bg==='#fff2cc'&&!s11.cell(4,2).note&&s11.cell(2,2).bg==='#ffffff','hết trùng: bỏ ghi chú, trả màu vàng cũ');
+
+console.log('6. Dòng sao chép sang tab khác mang theo mã: cấp mã mới');
+s12.cell(2,11).v=ID(502);st.tabs={};ok(run(ctx)===null,'chạy không lỗi');
+ok(st.tabs['Tháng 12'][0].id!==ID(502)&&st.tabs['Tháng 11'][0].id===ID(502),'dòng chép sang Tháng 12 nhận mã mới, Tháng 11 giữ mã gốc');
+
+console.log('7. Lỗi một tab không chặn tab khác, báo lỗi ghi Sheet');
+s12.cell(2,1).v='32/12';st.tabs={};st.queue=[q(7,'2026-12-05','10:00')];st.acks=[];const err=run(ctx);
+ok(/Tháng 12: Ngày không tồn tại/.test(err||''),'báo lỗi tab Tháng 12: '+err);
+ok(st.tabs['Tháng 11']&&st.tabs['Tháng 10'],'Tháng 10, 11 vẫn gửi');
+ok(st.acks[0]&&!st.acks[0].ok&&/Tháng 12 đang lỗi/.test(st.acks[0].error),'lịch 05/12 báo lỗi về web: '+(st.acks[0]&&st.acks[0].error));
+
+console.log('8. Sheet cũ không chia tab tháng: dùng tab cố định');
+const b2=new Book();b2.add('LICH_CHUP',[H,['21/10','10:00','X',699,'','','','','','']]);const st2={posts:[],queue:[q(8,'2026-11-02','10:00')],acks:[],tabs:{}};
+ok(run(load(gs,b2,server(st2),cfg))===null,'chạy không lỗi');ok(st2.tabs.LICH_CHUP[0].day==='2026-10-21'&&b2.getSheetByName('LICH_CHUP').rows()[2].slice(0,3).join('|')==='02/11|10:00|Web8','ghi lịch vào tab cố định');
+console.log(`\n${pass} đạt, ${fail} lỗi`);process.exit(fail?1:0);
