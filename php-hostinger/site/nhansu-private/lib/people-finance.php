@@ -34,7 +34,8 @@ function kpi_month_deductions(App $a,string $month): array {
 // - Hoa hồng lịch khách: mỗi khách đã chụp (thợ chính hoặc phụ) = mức của người đó × hệ số gói.
 const PROGRESS_BONUS_FROM='2026-11';
 const ATTENDANCE_BONUS_VND=500000;
-const BOOKING_PACKAGE_UNITS=[399=>1,699=>1,1499=>4,2999=>8];
+// Team 349 tính như 399 (mỗi dòng/người), Couple 999 ×2 (chủ dự án chốt 29/10/2026).
+const BOOKING_PACKAGE_UNITS=[349=>1,399=>1,699=>1,999=>2,1499=>4,2999=>8];
 const BOOKING_RATE_SEED=[['huy',17500],['cuong',15000]];
 function attendance_target(string $month): int {return substr($month,5,2)==='02'?26:28;}
 // "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699; chỉ ghi chữ "Couple" → 999, "Team" → 349.
