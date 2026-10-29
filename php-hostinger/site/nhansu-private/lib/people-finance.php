@@ -37,9 +37,9 @@ const ATTENDANCE_BONUS_VND=500000;
 const BOOKING_PACKAGE_UNITS=[399=>1,699=>1,1499=>4,2999=>8];
 const BOOKING_RATE_SEED=[['huy',17500],['cuong',15000]];
 function attendance_target(string $month): int {return substr($month,5,2)==='02'?26:28;}
-// "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699.
+// "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699; chỉ ghi chữ "Couple" → 999, "Team" → 349.
 function booking_package_price(string $label): ?int {
- if(!preg_match('/\d{1,3}(?:[.,]\d{3})+|\d+/',$label,$m))return null;
+ if(!preg_match('/\d{1,3}(?:[.,]\d{3})+|\d+/',$label,$m)){$text=mb_strtolower($label,'UTF-8');return str_contains($text,'couple')?999:(str_contains($text,'team')?349:null);}
  $n=(int)preg_replace('/\D/','',$m[0]);return $n>=10000?intdiv($n,1000):$n;
 }
 function booking_rates_seed(App $a): void {

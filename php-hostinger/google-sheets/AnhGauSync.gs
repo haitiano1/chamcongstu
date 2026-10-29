@@ -25,8 +25,10 @@ function agFindHeader_(headers,names){return headers.findIndex(v=>names.indexOf(
 // tabMonth: ô "2/1" trong tab Tháng 12 là tháng 1 năm sau (và ngược lại).
 function agDate_(v,year,tabMonth){const s=String(v).trim();let m;if((m=s.match(/^(20\d{2})-(\d{2})-(\d{2})$/)))return s;if(!(m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2}|20\d{2}))?$/)))throw new Error('Ngày không hợp lệ: cần ngày/tháng hoặc ngày/tháng/năm.');const day=Number(m[1]),month=Number(m[2]),y=m[3]?Number(m[3].length===2?'20'+m[3]:m[3]):Number(year)+(tabMonth===12&&month===1?1:tabMonth===1&&month===12?-1:0),d=new Date(Date.UTC(y,month-1,day));if(d.getUTCDate()!==day||d.getUTCMonth()!==month-1)throw new Error('Ngày không tồn tại.');return y+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');}
 function agTime_(v){const m=String(v).trim().replace(/[hH]$/,'h00').match(/^(\d{1,2})(?:[:hH.](\d{1,2}))?(?::\d{2})?$/);if(!m||Number(m[1])>23||Number(m[2]||0)>59)throw new Error('Giờ không hợp lệ, cần dạng 12:00.');return String(Number(m[1])).padStart(2,'0')+':'+String(Number(m[2]||0)).padStart(2,'0');}
-// Mỗi khung giờ 1 khách: gói 1499/2999 chiếm 2 tiếng (chụp + make up), gói khác 1 tiếng. Giống booking_length() trên web.
-function agLength_(label){const m=String(label||'').match(/\d{1,3}(?:[.,]\d{3})+|\d+/);if(!m)return 60;let n=Number(m[0].replace(/\D/g,''));if(n>=10000)n=Math.floor(n/1000);return n===1499||n===2999?120:60;}
+// Mỗi khung giờ 1 khách: Couple 999 / 1499 / 2999 chiếm 2 tiếng (chụp + make up), 399/699 (hoặc ô Gói trống) 1 tiếng;
+// Team 349 và gói khác theo "Giữ N tiếng" trong Ghi chú. Giống booking_length() trên web.
+function agPrice_(label){const s=String(label||''),m=s.match(/\d{1,3}(?:[.,]\d{3})+|\d+/);if(!m){const t=agNormalize_(s);return t.indexOf('couple')!==-1?999:t.indexOf('team')!==-1?349:0;}const n=Number(m[0].replace(/\D/g,''));return n>=10000?Math.floor(n/1000):n;}
+function agLength_(label,note){const n=agPrice_(label);if(n===999||n===1499||n===2999)return 120;if(n===399||n===699)return 60;const m=agNormalize_(note).match(/giu (?:cho )?([1-8]) ?(?:tieng|h)\b/);return m?Number(m[1])*60:60;}
 function agHm_(n){return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');}
 function agMonthTabs_(book,now){
  const base=now.getFullYear()*12+now.getMonth(),out=[];
@@ -45,7 +47,7 @@ function agTabs_(book,cfg){
 // Đọc một tab: hàng tiêu đề, các dòng lịch và vị trí từng ngày. ids dùng chung mọi tab: dòng sao chép mang theo mã của dòng khác thì cấp mã mới.
 function agParse_(values,year,tabMonth,ids){
  let header=-1,columns;
- for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0){header=i;columns={date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai'])};break;}}
+ for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0){header=i;columns={date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))};break;}}
  if(header<0)throw new Error('Không tìm thấy hàng tiêu đề gồm Ngày, Time/Giờ, Tên khách.');
  let idCol=values[header].indexOf('_AG_BOOKING_ID');const addIdHeader=idCol<0;if(addIdHeader)idCol=values[header].length;
  const rows=[],newIds=[],entries=[];let lastDay='';
@@ -58,7 +60,7 @@ function agParse_(values,year,tabMonth,ids){
   // Gửi đủ mọi ô có dữ liệu theo tiêu đề cột để popup hiện nguyên thông tin Sheet; ô trống bỏ qua.
   item.sheet_fields=[];r.forEach((v,c)=>{const value=String(v||'').trim();if(c===idCol||!value)return;item.sheet_fields.push({label:String(values[header][c]||'').trim()||agColumn_(c),value:value});});
   const state=columns.status>=0?agNormalize_(r[columns.status]):'';item.status=['huy','da huy','cancel','cancelled'].indexOf(state)!==-1?'cancelled':'active';rows.push(item);
-  entries.push({row:i,day:lastDay,minutes:Number(item.time.slice(0,2))*60+Number(item.time.slice(3)),length:agLength_(item.package_label),active:item.status==='active',name:item.customer_name,id:id});
+  entries.push({row:i,day:lastDay,minutes:Number(item.time.slice(0,2))*60+Number(item.time.slice(3)),length:agLength_(item.package_label,item.note),team:agPrice_(item.package_label)===349,active:item.status==='active',name:item.customer_name,id:id});
  }
  if(rows.length>5000)throw new Error('Tab vượt 5.000 lịch.');
  return {header:header,columns:columns,idCol:idCol,addIdHeader:addIdHeader,rows:rows,newIds:newIds,entries:entries};
@@ -69,9 +71,10 @@ function agLoad_(t,ids,writeIds){
  return t;
 }
 // Tô đỏ ô giờ của các lịch chồng giờ nhau trong cùng ngày, ghi chú dòng bị trùng; hết trùng thì trả lại màu cũ.
+// Các dòng gói Team cùng giờ bắt đầu là một nhóm khách (điền tay từng người), không tính là trùng nhau.
 function agConflicts_(p){
  const byDay={},out={};p.entries.forEach(e=>{if(e.minutes!==null&&e.active)(byDay[e.day]=byDay[e.day]||[]).push(e);});
- Object.keys(byDay).forEach(d=>{const l=byDay[d];for(let i=0;i<l.length;i++)for(let j=i+1;j<l.length;j++){const a=l[i],b=l[j];if(a.minutes<b.minutes+b.length&&b.minutes<a.minutes+a.length){(out[a.row]=out[a.row]||[]).push('dòng '+(b.row+1)+' ('+agHm_(b.minutes)+(b.name?' · '+b.name:'')+')');(out[b.row]=out[b.row]||[]).push('dòng '+(a.row+1)+' ('+agHm_(a.minutes)+(a.name?' · '+a.name:'')+')');}}});
+ Object.keys(byDay).forEach(d=>{const l=byDay[d];for(let i=0;i<l.length;i++)for(let j=i+1;j<l.length;j++){const a=l[i],b=l[j];if(a.team&&b.team&&a.minutes===b.minutes)continue;if(a.minutes<b.minutes+b.length&&b.minutes<a.minutes+a.length){(out[a.row]=out[a.row]||[]).push('dòng '+(b.row+1)+' ('+agHm_(b.minutes)+(b.name?' · '+b.name:'')+')');(out[b.row]=out[b.row]||[]).push('dòng '+(a.row+1)+' ('+agHm_(a.minutes)+(a.name?' · '+a.name:'')+')');}}});
  return out;
 }
 function agMarkConflicts_(t){
@@ -101,7 +104,7 @@ function agPlan_(p,day,minutes){
  const before=list.filter(e=>e.day<day),after=list.filter(e=>e.day>day);
  if(before.length){const d=before.reduce((m,e)=>e.day>m?e.day:m,''),block=list.filter(e=>e.day===d);return {op:'after',row:block[block.length-1].row,date:true};}
  if(after.length){const d=after.reduce((m,e)=>e.day<m?e.day:m,'9999'),block=list.filter(e=>e.day===d);return {op:'before',row:block[0].row,date:true};}
- return {op:'after',row:p.header,date:true};
+ return {op:'fill',row:p.header+1,date:true};// Tab chưa có khách: ghi vào dòng trống đầu tiên dưới tiêu đề.
 }
 // Ô mẫu để ghi đúng kiểu dữ liệu đang dùng (ngày/giờ dạng ngày-giờ hay chữ, giá dạng số hay chữ): lấy từ tab này, không có thì từ tab tháng khác.
 // Chụp lại trước khi chèn dòng (ô mẫu có thể bị đẩy xuống).
@@ -121,12 +124,21 @@ function agWriteTime_(cell,hhmm,sample){
  if(sample&&agIsDate_(sample.value)){cell.setNumberFormat(sample.format).setValue(hhmm);return;}
  const [h,m]=hhmm.split(':').map(Number);cell.setNumberFormat('@').setValue(/^\d{1,2}\s*h/i.test(sample?sample.shown:'')?h+'h'+(m?String(m).padStart(2,'0'):''):hhmm);
 }
+// Ô Makeup là dropdown (Nam / Nữ / Làm Tóc): ghi đúng chữ lựa chọn trên Sheet; chọn nhiều thì cách nhau ", " như dropdown chọn nhiều.
+function agPickOptions_(cell,text){
+ let options=[];
+ try{const rule=cell.getDataValidation(),C=SpreadsheetApp.DataValidationCriteria;if(rule){const type=rule.getCriteriaType(),value=rule.getCriteriaValues()[0];options=type===C.VALUE_IN_LIST?value.map(String):type===C.VALUE_IN_RANGE?value.getDisplayValues().reduce((a,row)=>a.concat(row),[]):[];}}catch(e){}
+ return text.split(',').map(x=>x.trim()).filter(Boolean).map(x=>options.find(o=>agNormalize_(o)===agNormalize_(x))||x).join(', ');
+}
 function agWriteValues_(t,r,q,samples){
  const p=t.parsed,sheet=t.sheet,c=p.columns,v=q.values,written={};const cell=k=>sheet.getRange(r,c[k]+1);
  agWriteTime_(cell('time'),q.time,samples.time);written[c.time]=true;
- ['customer_name','customer_phone','main_alias','support_alias','note','package_label','deposit_label'].forEach(k=>{if(c[k]<0)return;written[c[k]]=true;const value=String(v[k]||'');if(!value)return;
+ // Make up (Nam/Nữ/Làm tóc): Sheet có cột Make up thì ghi vào đó, không thì ghép vào đầu Ghi chú.
+ const makeup=String(v.makeup||''),note=c.makeup>=0||!makeup?String(v.note||''):['Make up: '+makeup,String(v.note||'')].filter(Boolean).join(' · '),text={makeup:makeup,note:note};
+ ['customer_name','customer_phone','main_alias','support_alias','note','makeup','package_label','deposit_label'].forEach(k=>{if(c[k]<0)return;written[c[k]]=true;const value=String(k in text?text[k]:v[k]||'');if(!value)return;
   // Gói/cọc đang là số trên Sheet thì ghi số (giữ công thức cộng tiền); còn lại ghi chữ để giữ số 0 đầu SĐT.
   const sample=samples[k]||null,number=/^\d[\d.,]*k?$/i.test(value)?Number(value.replace(/[.,]/g,'').replace(/k$/i,''))*(/k$/i.test(value)?1000:1):NaN;
+  if(k==='makeup'){cell(k).setValue(agPickOptions_(cell(k),value));return;}
   if(sample&&typeof sample.value==='number'&&!isNaN(number))cell(k).setValue(k==='package_label'&&number>=10000&&sample.value<10000?number/1000:number);else cell(k).setNumberFormat('@').setValue(value);});
  sheet.getRange(r,p.idCol+1).setValue(q.booking_id);written[p.idCol]=true;
  return written;
@@ -140,9 +152,10 @@ function agFind_(book,tabs,id,tabName){
 function agNewTab_(book,tabs,year,month){
  const ym=year*12+month,ready=tabs.filter(t=>t.parsed&&!t.legacy),earlier=ready.filter(t=>t.year*12+t.month<ym),template=earlier.slice(-1)[0]||ready.find(t=>t.year*12+t.month>ym);
  if(!template)throw new Error('Chưa có tab "Tháng '+month+'" và không có tab tháng nào để làm mẫu.');
- // Tab mới đứng ngay sau tab tháng liền trước (hoặc ngay trước tab tháng sau), chép hàng tiêu đề của tab đó.
- const name='Tháng '+month,sheet=book.insertSheet(name,template.sheet.getIndex()-(earlier.length?0:1)),cols=template.sheet.getLastColumn();
- template.sheet.getRange(1,1,template.parsed.header+1,cols).copyTo(sheet.getRange(1,1));for(let c=1;c<=cols;c++)sheet.setColumnWidth(c,template.sheet.getColumnWidth(c));sheet.setFrozenRows(template.sheet.getFrozenRows());
+ // Như cách làm tay: nhân bản tab tháng liền trước (giữ tiêu đề, dropdown Makeup, màu, độ rộng cột) rồi xóa các dòng khách; đặt ngay sau tab đó (hoặc ngay trước tab tháng sau).
+ const name='Tháng '+month,sheet=template.sheet.copyTo(book).setName(name),first=template.parsed.header+2,last=sheet.getLastRow();
+ if(last>=first){if(sheet.getMaxRows()<=last)sheet.insertRowsAfter(last,1);sheet.deleteRows(first,last-first+1);}
+ book.setActiveSheet(sheet);book.moveActiveSheet(template.sheet.getIndex()+(earlier.length?1:0));
  const t={sheet:sheet,name:name,year:year,month:month};tabs.push(t);tabs.sort((a,b)=>a.year*12+a.month-b.year*12-b.month);return agLoad_(t,{},false);
 }
 // Lịch thêm trên web → chèn dòng. Đã có mã trên Sheet (lần trước ghi rồi mà chưa kịp báo) thì không chèn lại.
@@ -154,7 +167,7 @@ function agInsert_(book,tabs,q){
  if(plan.op==='shift'){
   // Khách sớm nhất ngày: chèn dưới dòng đầu, chuyển nội dung dòng đầu (trừ ô Ngày) xuống, ghi lịch mới vào dòng đầu.
   r=plan.row+1;sheet.insertRowAfter(r);[[1,dateCol-1],[dateCol+1,width]].forEach(([a,b])=>{if(b<a)return;sheet.getRange(r,a,1,b-a+1).copyTo(sheet.getRange(r+1,a,1,b-a+1));sheet.getRange(r,a,1,b-a+1).clearContent();});
- }else if(plan.op==='fill')r=plan.row+1;
+ }else if(plan.op==='fill'){r=plan.row+1;if(sheet.getMaxRows()<r)sheet.insertRowAfter(r-1);}
  else if(plan.op==='before'){r=plan.row+1;sheet.insertRowBefore(r);}
  else{
   const last=plan.row+1,merged=!plan.date&&last>p.header+1?sheet.getRange(last,dateCol).getMergedRanges()[0]:null;sheet.insertRowAfter(last);r=last+1;

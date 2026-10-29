@@ -12,15 +12,22 @@ function parseInput(v,fmt){
  if(/^\d+$/.test(v))return Number(v);return v;
 }
 class Sheet{
- constructor(book,name,rows){this.book=book;this.name=name;this.cells=rows.map(r=>r.map(v=>typeof v==='object'&&v!==null&&!(v instanceof Date)?{...v}:{v,fmt:v instanceof Date?'dd/MM':''}));this.merges=[];this.frozen=0;this.widths={};}
+ constructor(book,name,rows){this.book=book;this.name=name;this.cells=rows.map(r=>r.map(v=>typeof v==='object'&&v!==null&&!(v instanceof Date)?{...v}:{v,fmt:v instanceof Date?'dd/MM':''}));this.merges=[];this.frozen=0;this.widths={};this.maxRows=this.cells.length+50;}
  getName(){return this.name}
  cell(r,c){while(this.cells.length<r)this.cells.push([]);const row=this.cells[r-1];while(row.length<c)row.push({v:'',fmt:''});return row[c-1];}
  getLastColumn(){return Math.max(0,...this.cells.map(r=>{let n=r.length;while(n&&(r[n-1].v===''||r[n-1].v==null)&&!r[n-1].note)n--;return n;}))}
  getLastRow(){let n=this.cells.length;while(n&&this.cells[n-1].every(c=>c.v===''||c.v==null))n--;return n;}
  getDataRange(){return new Range(this,1,1,Math.max(1,this.getLastRow()),Math.max(1,this.getLastColumn()));}
  getRange(r,c,nr=1,nc=1){return new Range(this,r,c,nr,nc);}
- insertRowAfter(r){this.cells.splice(r,0,[]);for(const m of this.merges){if(m.r1>r)m.r1++;if(m.r2>r&&m.r1<=r)m.r2++;else if(m.r2>r)m.r2++;}this.book.log.push(this.name+': insertRowAfter '+r);return this;}
- insertRowBefore(r){this.cells.splice(r-1,0,[]);for(const m of this.merges){if(m.r1>=r)m.r1++;if(m.r2>=r)m.r2++;}this.book.log.push(this.name+': insertRowBefore '+r);return this;}
+ // Dòng chèn thêm nằm trong vùng dropdown thì có dropdown (như Sheets mở rộng vùng kiểm tra dữ liệu).
+ blank(r){return (this.cells[r-1]||[]).map(c=>({v:'',fmt:'',dv:c.dv}));}
+ getMaxRows(){return Math.max(this.maxRows,this.cells.length)}
+ insertRowsAfter(r,n){for(let i=0;i<n;i++)this.insertRowAfter(r);return this;}
+ deleteRows(start,n){this.cells.splice(start-1,n);this.maxRows-=n;this.merges=this.merges.filter(m=>!(m.r1>=start&&m.r2<=start+n-1)).map(m=>({c:m.c,r1:m.r1>=start+n?m.r1-n:Math.min(m.r1,start),r2:m.r2>=start+n?m.r2-n:Math.min(m.r2,start-1)})).filter(m=>m.r2>=m.r1);this.book.log.push(this.name+': deleteRows '+start+' '+n);return this;}
+ setName(n){this.name=n;return this}
+ copyTo(book){const s=new Sheet(book,'Bản sao của '+this.name,[]);s.cells=this.cells.map(r=>r.map(c=>({...c})));s.merges=this.merges.map(m=>({...m}));s.frozen=this.frozen;s.widths={...this.widths};s.maxRows=this.maxRows;book.sheets.push(s);book.log.push('copyTo '+this.name);return s;}
+ insertRowAfter(r){this.cells.splice(r,0,this.blank(r));this.maxRows++;for(const m of this.merges){if(m.r1>r)m.r1++;if(m.r2>r&&m.r1<=r)m.r2++;else if(m.r2>r)m.r2++;}this.book.log.push(this.name+': insertRowAfter '+r);return this;}
+ insertRowBefore(r){this.cells.splice(r-1,0,this.blank(r));this.maxRows++;for(const m of this.merges){if(m.r1>=r)m.r1++;if(m.r2>=r)m.r2++;}this.book.log.push(this.name+': insertRowBefore '+r);return this;}
  getIndex(){return this.book.sheets.indexOf(this)+1}
  setColumnWidth(c,w){this.widths[c]=w}getColumnWidth(c){return this.widths[c]||100}
  setFrozenRows(n){this.frozen=n}getFrozenRows(){return this.frozen}
@@ -41,6 +48,7 @@ class Range{
  setBackgrounds(a){this.each((c,i,j)=>{c.bg=a[i][j]});return this}
  copyTo(t){const src=this.each(c=>({...c}));t.s.book.log.push('copyTo');for(let i=0;i<this.nr;i++)for(let j=0;j<this.nc;j++)Object.assign(t.s.cell(t.r+i,t.c+j),src[i][j]);}
  clearContent(){this.each(c=>{c.v='';c.formula=''});return this}
+ getDataValidation(){const c=this.s.cell(this.r,this.c);return c.dv?{getCriteriaType:()=>c.dv.type,getCriteriaValues:()=>[c.dv.values]}:null}
  getMergedRanges(){return this.s.merges.filter(m=>m.c===this.c&&m.r1<=this.r&&m.r2>=this.r).map(m=>({getRow:()=>m.r1,getLastRow:()=>m.r2}))}
  merge(){this.s.merges=this.s.merges.filter(m=>!(m.c===this.c&&m.r1>=this.r&&m.r2<=this.r+this.nr-1));this.s.merges.push({c:this.c,r1:this.r,r2:this.r+this.nr-1});return this}
  getFormulasR1C1(){return this.each(c=>c.formula||'')}
@@ -49,6 +57,7 @@ class Range{
 class Book{
  constructor(){this.sheets=[];this.log=[];this.toasts=[];}
  add(name,rows){const s=new Sheet(this,name,rows);this.sheets.push(s);return s;}
+ setActiveSheet(s){this.active=s;return s}moveActiveSheet(pos){this.sheets.splice(this.sheets.indexOf(this.active),1);this.sheets.splice(pos-1,0,this.active);}
  getSheets(){return this.sheets}getSheetByName(n){return this.sheets.find(s=>s.name===n)||null}
  insertSheet(name,idx){const s=new Sheet(this,name,[]);this.sheets.splice(idx,0,s);this.log.push('insertSheet '+name);return s;}
  getId(){return 'SHEETID'}toast(m){this.toasts.push(m)}
@@ -56,7 +65,7 @@ class Book{
 function load(gsPath,book,server,props={}){
  const store={...props};
  const ctx={console,
-  SpreadsheetApp:{openById:()=>book,getActive:()=>book},
+  SpreadsheetApp:{openById:()=>book,getActive:()=>book,DataValidationCriteria:{VALUE_IN_LIST:'VALUE_IN_LIST',VALUE_IN_RANGE:'VALUE_IN_RANGE'}},
   PropertiesService:{getScriptProperties:()=>({getProperties:()=>({...store}),getProperty:k=>store[k]??null,setProperty:(k,v)=>{store[k]=String(v)},setProperties:o=>Object.assign(store,o),deleteProperty:k=>{delete store[k]}})},
   LockService:{getScriptLock:()=>({tryLock:()=>true,releaseLock:()=>{}})},
   Utilities:{getUuid:()=>crypto.randomUUID(),Charset:{UTF_8:'utf8'},DigestAlgorithm:{SHA_256:'sha256'},computeDigest:(a,t)=>[...crypto.createHash('sha256').update(t).digest()].map(b=>b>127?b-256:b),computeHmacSha256Signature:(t,k)=>[...crypto.createHmac('sha256',k).update(t).digest()].map(b=>b>127?b-256:b)},
