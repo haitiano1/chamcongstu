@@ -29,11 +29,56 @@ function kpi_month_deductions(App $a,string $month): array {
  $rows=$a->all("SELECT r.user_id,COALESCE(SUM(-r.points),0) deducted FROM {{event_log}} r WHERE r.user_id IS NOT NULL AND r.status IN ('confirmed','resolved') AND ((r.date_precision='day' AND r.event_date>=? AND r.event_date<=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?) OR (r.date_precision IN ('month','range') AND r.event_date<=? AND (CASE WHEN r.end_month='' THEN r.event_date ELSE r.end_month END)>=?)) GROUP BY r.user_id",[$start,$end,$end,$start,$month,$month]);
  $out=[];foreach($rows as $r)$out[(int)$r['user_id']]=(int)$r['deducted'];return $out;
 }
+// Thưởng tiến độ (chủ dự án chốt 29/10/2026), áp dụng từ tháng 11/2026:
+// - Chuyên cần: Nhân viên đi làm đủ 28 ngày/tháng (tháng 2: 26) được cộng 500.000đ vào thưởng.
+// - Hoa hồng lịch khách: mỗi khách đã chụp (thợ chính hoặc phụ) = mức của người đó × hệ số gói.
+const PROGRESS_BONUS_FROM='2026-11';
+const ATTENDANCE_BONUS_VND=500000;
+const BOOKING_PACKAGE_UNITS=[399=>1,699=>1,1499=>4,2999=>8];
+const BOOKING_RATE_SEED=[['huy',17500],['cuong',15000]];
+function attendance_target(string $month): int {return substr($month,5,2)==='02'?26:28;}
+// "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699.
+function booking_package_price(string $label): ?int {
+ if(!preg_match('/\d{1,3}(?:[.,]\d{3})+|\d+/',$label,$m))return null;
+ $n=(int)preg_replace('/\D/','',$m[0]);return $n>=10000?intdiv($n,1000):$n;
+}
+function booking_rates_seed(App $a): void {
+ if($a->meta('booking_rates_seeded'))return;$a->meta('booking_rates_seeded','1');
+ $admin=$a->scalar("SELECT id FROM {{users}} WHERE role='admin' AND archived=0 ORDER BY id LIMIT 1");if(!$admin||!function_exists('task_fold'))return;
+ $people=$a->all("SELECT id,name FROM {{users}} WHERE archived=0 AND status!='inactive'");
+ foreach(BOOKING_RATE_SEED as [$key,$rate]){
+  // Chỉ gán khi tên gọi khớp đúng một người; trùng hoặc không có thì Admin tự nhập trong hồ sơ nhân viên.
+  $hits=array_values(array_filter($people,fn($p)=>(explode(' ',task_fold($p['name']))[substr_count(task_fold($p['name']),' ')]??'')===$key));
+  if(count($hits)===1)$a->run('INSERT IGNORE INTO {{booking_rates}} VALUES(?,?,?,?)',[$hits[0]['id'],$rate,$admin,now_ms()]);
+ }
+}
+function booking_rate_save(App $a,int $user,int $rate): void {
+ $old=(int)($a->scalar('SELECT rate FROM {{booking_rates}} WHERE user_id=?',[$user])?:0);if($old===$rate)return;
+ $a->run('INSERT INTO {{booking_rates}} VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE rate=VALUES(rate),updated_by=VALUES(updated_by),updated_at=VALUES(updated_at)',[$user,$rate,$a->user['id'],now_ms()]);$a->audit($user,'booking_rate');
+}
+function booking_rates(App $a): array {
+ booking_rates_seed($a);$out=[];foreach($a->all('SELECT user_id,rate FROM {{booking_rates}} WHERE rate>0') as $r)$out[(int)$r['user_id']]=(int)$r['rate'];return $out;
+}
+// Khách đã chụp trong tháng (lịch đang hoạt động, đã qua giờ chụp) của người có mức hoa hồng.
+function booking_month_commissions(App $a,string $month,int $now): array {
+ $rates=booking_rates($a);if(!$rates)return [];
+ $start=valid_month($month).'-01';$end=date('Y-m-t',strtotime($start));$today=local_day($now);$minute=intdiv($now-day_time($today),60000);$out=[];
+ foreach($a->all("SELECT DISTINCT s.user_id,b.id,b.shoot_day,b.minutes,b.package_label FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?",[$start,$end]) as $r){
+  $id=(int)$r['user_id'];if(!isset($rates[$id])||$r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute))continue;
+  $units=BOOKING_PACKAGE_UNITS[booking_package_price($r['package_label'])??0]??0;
+  $out[$id]??=['customers'=>0,'units'=>0,'unpriced'=>0,'rate'=>$rates[$id]];$out[$id]['customers']++;$out[$id]['units']+=$units;if(!$units)$out[$id]['unpriced']++;
+ }
+ foreach($rates as $id=>$rate)$out[$id]??=['customers'=>0,'units'=>0,'unpriced'=>0,'rate'=>$rate];
+ return $out;
+}
 // Gắn KPI vào từng dòng bảng lương. $money=false: tháng đã chốt từ trước khi có KPI, chỉ thêm điểm, giữ nguyên tiền đã chốt.
 function payroll_apply(App $a,string $month,array $rows,bool $money=true): array {
  $kpi=kpi_month_deductions($a,$month);
+ $progress=$month>=PROGRESS_BONUS_FROM;$bookings=$progress?booking_month_commissions($a,$month,now_ms()):[];
  foreach($rows as &$p){$used=$kpi[$p['id']]??0;$p['kpi_quota']=KPI_MONTHLY_POINTS;$p['kpi_deducted']=$used;$p['kpi_left']=KPI_MONTHLY_POINTS-$used;
-  if(!$money)continue;$p['bonus_total']=(int)$p['commission'];$p['kpi_money']=$used*KPI_POINT_VND;$p['kpi_applied']=max(0,min($p['kpi_money'],$p['bonus_total']));
+  if($progress&&$p['role']==='employee'){$p['attendance_target']=attendance_target($month);$p['attendance_bonus_vnd']=ATTENDANCE_BONUS_VND;$p['attendance_bonus']=$p['days']>=$p['attendance_target']?ATTENDANCE_BONUS_VND:0;}
+  if($b=$bookings[$p['id']]??null){$p['booking_customers']=$b['customers'];$p['booking_unpriced']=$b['unpriced'];$p['booking_commission']=$b['rate']*$b['units'];}
+  if(!$money)continue;$p['bonus_total']=(int)$p['commission']+($p['booking_commission']??0)+($p['attendance_bonus']??0);$p['kpi_money']=$used*KPI_POINT_VND;$p['kpi_applied']=max(0,min($p['kpi_money'],$p['bonus_total']));
   $p['gross_salary']=(int)$p['base_salary']+$p['bonus_total'];$p['salary']=$p['gross_salary']-$p['kpi_applied'];}
  unset($p);return $rows;
 }

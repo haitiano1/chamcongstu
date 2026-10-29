@@ -19,6 +19,13 @@ function task_due(mixed $value,string $kind): ?int {
  if($value>now_ms()+366*86400000)fail('Hạn hoàn thành tối đa trong 1 năm.');
  return $value;
 }
+// require_photo = số ảnh bắt buộc (0 = không cần). Ảnh 1 nằm ở task_recipients.proof_jpeg, ảnh 2 trở đi ở task_proofs.
+const TASK_MAX_PHOTOS=10;
+function task_photo_count(mixed $value): int {
+ if(is_bool($value))return $value?1:0;
+ if(!is_int($value)||$value<0||$value>TASK_MAX_PHOTOS)fail('Số ảnh bắt buộc cần từ 0 đến '.TASK_MAX_PHOTOS.'.');
+ return $value;
+}
 function task_photo(mixed $value): ?string {
  if($value===null||$value==='')return null;
  if(!is_string($value)||strlen($value)>350000||!preg_match('~^data:image/jpeg;base64,([A-Za-z0-9+/]+={0,2})$~D',$value,$m))fail('Ảnh bằng chứng cần là JPEG dưới 250 KB.');
@@ -41,7 +48,7 @@ function task_audit(App $a,string $id,string $action,?array $before,?array $afte
 function task_create(App $a,int $me,array $b,string $note=''): array {
   $kind=$b['kind']??'';if(!in_array($kind,TASK_KINDS,true))fail('Chọn loại: Task hoặc Nhắc nhở.');
   $title=task_text($b['title']??null,'Tiêu đề',3,150);$body=task_text($b['body']??'','Nội dung',0,2000);$due=task_due($b['due_at']??null,$kind);
-  $photo=$kind==='task'&&($b['require_photo']??false)===true?1:0;
+  $photo=$kind==='task'?task_photo_count($b['require_photo']??false):0;
   $audience=$b['audience']??'';if(!in_array($audience,['all','people'],true))fail('Chọn người nhận.');
   $active=array_column($a->all("SELECT id FROM {{users}} WHERE archived=0 AND status!='inactive'"),'id');
   if($audience==='all')$ids=array_values(array_filter($active,fn($id)=>$id!==$me));
@@ -50,13 +57,13 @@ function task_create(App $a,int $me,array $b,string $note=''): array {
   $id=task_uuid();$now=now_ms();
   $a->run("INSERT INTO {{tasks}}(id,kind,title,body,due_at,require_photo,audience,status,cancel_reason,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,'open','',?,?,?,?)",[$id,$kind,$title,$body,$due,$photo,$audience,$me,$now,$me,$now]);
   foreach($ids as $uid)$a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'','pending')",[$id,$uid]);
-  task_audit($a,$id,'created',null,['kind'=>$kind,'title'=>$title,'body'=>$body,'due_at'=>$due,'require_photo'=>(bool)$photo,'audience'=>$audience,'recipients'=>$ids],$note,$me);
-  return ['id'=>$id,'recipients'=>$ids,'kind'=>$kind,'title'=>$title,'due_at'=>$due,'require_photo'=>(bool)$photo,'audience'=>$audience];
+  task_audit($a,$id,'created',null,['kind'=>$kind,'title'=>$title,'body'=>$body,'due_at'=>$due,'require_photo'=>$photo,'audience'=>$audience,'recipients'=>$ids],$note,$me);
+  return ['id'=>$id,'recipients'=>$ids,'kind'=>$kind,'title'=>$title,'due_at'=>$due,'require_photo'=>$photo,'audience'=>$audience];
 }
 function task_list_sql(): string {
  return "SELECT t.template_id,t.task_day,t.id,t.kind,t.title,t.body,t.due_at,t.require_photo,t.audience,t.status,t.cancel_reason,t.created_by,t.created_at,t.updated_at,t.version,(SELECT name FROM {{users}} WHERE id=t.created_by) creator_name,
  (SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id) total,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND seen_at IS NOT NULL) seen,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND done_at IS NOT NULL) done,
- my.seen_at my_seen_at,my.done_at my_done_at,my.done_note my_done_note,(my.proof_jpeg IS NOT NULL) my_has_proof,(my.user_id IS NOT NULL) mine
+ my.seen_at my_seen_at,my.done_at my_done_at,my.done_note my_done_note,(my.proof_jpeg IS NOT NULL) my_has_proof,(my.proof_jpeg IS NOT NULL)+(SELECT COUNT(*) FROM {{task_proofs}} p WHERE p.task_id=t.id AND p.user_id=my.user_id) my_proof_count,(my.user_id IS NOT NULL) mine
  FROM {{tasks}} t ";
 }
 function task_pending(App $a): int {
@@ -81,14 +88,14 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   $t=task_row($a,$m[1]);$mine=$a->one('SELECT 1 FROM {{task_recipients}} WHERE task_id=? AND user_id=?',[$t['id'],$me]);
   if(!$manager&&!$mine)fail('Bạn không có quyền xem việc này.',403);
   $t['creator_name']=$a->scalar('SELECT name FROM {{users}} WHERE id=?',[$t['created_by']]);
-  $recipients=$a->all('SELECT r.user_id,u.name,r.seen_at,r.done_at,r.done_note,(r.proof_jpeg IS NOT NULL) has_proof,r.notify_state FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=?'.($manager?'':' AND r.user_id=?').' ORDER BY u.name',$manager?[$t['id']]:[$t['id'],$me]);
-  foreach($recipients as &$r)$r['has_proof']=(bool)$r['has_proof'];unset($r);
+  $recipients=$a->all('SELECT r.user_id,u.name,r.seen_at,r.done_at,r.done_note,(r.proof_jpeg IS NOT NULL) has_proof,(r.proof_jpeg IS NOT NULL)+(SELECT COUNT(*) FROM {{task_proofs}} p WHERE p.task_id=r.task_id AND p.user_id=r.user_id) proof_count,r.notify_state FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=?'.($manager?'':' AND r.user_id=?').' ORDER BY u.name',$manager?[$t['id']]:[$t['id'],$me]);
+  foreach($recipients as &$r){$r['has_proof']=(bool)$r['has_proof'];$r['proof_count']=(int)$r['proof_count'];}unset($r);
   $audit=$manager?$a->all('SELECT x.action,x.before_json,x.after_json,x.note,x.time,u.name actor_name FROM {{task_audit}} x JOIN {{users}} u ON u.id=x.actor_id WHERE x.task_id=? ORDER BY x.id',[$t['id']]):[];
   return [200,['task'=>$t,'recipients'=>$recipients,'audit'=>$audit,'can_manage'=>$manager]];
  }
- if(preg_match('~^/tasks/([a-f0-9-]{36})/photo/(\d+)$~D',$path,$m)&&$method==='GET'){
-  $uid=(int)$m[2];if(!$manager&&$uid!==$me)fail('Bạn không có quyền xem ảnh này.',403);
-  $photo=$a->scalar('SELECT proof_jpeg FROM {{task_recipients}} WHERE task_id=? AND user_id=?',[entry_uuid($m[1]),$uid]);if(!$photo)fail('Không có ảnh bằng chứng.',404);
+ if(preg_match('~^/tasks/([a-f0-9-]{36})/photo/(\d+)(?:/(\d+))?$~D',$path,$m)&&$method==='GET'){
+  $uid=(int)$m[2];$n=(int)($m[3]??1);if(!$manager&&$uid!==$me)fail('Bạn không có quyền xem ảnh này.',403);
+  $photo=$n<=1?$a->scalar('SELECT proof_jpeg FROM {{task_recipients}} WHERE task_id=? AND user_id=?',[entry_uuid($m[1]),$uid]):$a->scalar('SELECT photo_jpeg FROM {{task_proofs}} WHERE task_id=? AND user_id=? AND idx=?',[entry_uuid($m[1]),$uid,$n]);if(!$photo)fail('Không có ảnh bằng chứng.',404);
   header('Content-Type: image/jpeg');header('Content-Disposition: inline');echo $photo;exit;
  }
  if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
@@ -96,14 +103,19 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
  if($action==='seen'){$r=task_mine($a,$t);if($r['seen_at']===null)$a->run('UPDATE {{task_recipients}} SET seen_at=? WHERE task_id=? AND user_id=?',[now_ms(),$t['id'],$me]);return [200,['ok'=>true,'pending'=>task_pending($a)]];}
  if($action==='done'){
   $r=task_mine($a,$t);if($t['kind']!=='task')fail('Nhắc nhở chỉ cần bấm Đã xem.');if($r['done_at']!==null)fail('Bạn đã báo xong việc này.',409);
-  $note=task_text($b['note']??'','Ghi chú',0,500);$photo=task_photo($b['photo']??null);if($t['require_photo']&&$photo===null)fail('Việc này bắt buộc chụp ảnh bằng chứng bằng camera.');$now=now_ms();
-  $a->run('UPDATE {{task_recipients}} SET seen_at=COALESCE(seen_at,?),done_at=?,done_note=?,proof_jpeg=? WHERE task_id=? AND user_id=?',[$now,$now,$note,$photo,$t['id'],$me]);
-  task_audit($a,$t['id'],'done',null,['note'=>$note,'photo'=>$photo!==null]);
+  $note=task_text($b['note']??'','Ghi chú',0,500);
+  // Bản cũ gửi một ảnh ở 'photo'; bản mới gửi danh sách 'photos'.
+  $list=array_key_exists('photos',$b)?$b['photos']:(($b['photo']??null)!==null&&$b['photo']!==''?[$b['photo']]:[]);if(!is_array($list)||!array_is_list($list)||count($list)>TASK_MAX_PHOTOS)fail('Gửi tối đa '.TASK_MAX_PHOTOS.' ảnh bằng chứng.');
+  $photos=array_values(array_filter(array_map('task_photo',$list),fn($x)=>$x!==null));$need=(int)$t['require_photo'];
+  if(count($photos)<$need)fail($need>1?'Việc này cần chụp đủ '.$need.' ảnh bằng chứng (mới có '.count($photos).').':'Việc này bắt buộc chụp ảnh bằng chứng bằng camera.');$now=now_ms();
+  $a->run('UPDATE {{task_recipients}} SET seen_at=COALESCE(seen_at,?),done_at=?,done_note=?,proof_jpeg=? WHERE task_id=? AND user_id=?',[$now,$now,$note,$photos[0]??null,$t['id'],$me]);
+  $a->run('DELETE FROM {{task_proofs}} WHERE task_id=? AND user_id=?',[$t['id'],$me]);foreach(array_slice($photos,1) as $i=>$photo)$a->run('INSERT INTO {{task_proofs}} VALUES(?,?,?,?)',[$t['id'],$me,$i+2,$photo]);
+  task_audit($a,$t['id'],'done',null,['note'=>$note,'photo'=>(bool)$photos,'photos'=>count($photos)]);
   return [200,['ok'=>true,'pending'=>task_pending($a)]];
  }
  if($action==='undo'){
   $r=task_mine($a,$t);if($r['done_at']===null)fail('Việc chưa được báo xong.',409);
-  $a->run("UPDATE {{task_recipients}} SET done_at=NULL,done_note='',proof_jpeg=NULL WHERE task_id=? AND user_id=?",[$t['id'],$me]);
+  $a->run("UPDATE {{task_recipients}} SET done_at=NULL,done_note='',proof_jpeg=NULL WHERE task_id=? AND user_id=?",[$t['id'],$me]);$a->run('DELETE FROM {{task_proofs}} WHERE task_id=? AND user_id=?',[$t['id'],$me]);
   task_audit($a,$t['id'],'undone',['note'=>$r['done_note'],'photo'=>$r['proof_jpeg']!==null],null);
   return [200,['ok'=>true,'pending'=>task_pending($a)]];
  }
@@ -158,7 +170,7 @@ function daily_tasks_block_checkout(App $a,array $b): void {
 function daily_template_routes(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/tasks/templates'&&!str_starts_with($path,'/tasks/templates/'))return null;
  $a->requireManager();if($method!=='POST')fail('Chỉ nhận POST.',405);$me=$a->user['id'];$today=local_day(now_ms());
- $fields=function()use($b){$title=task_text($b['title']??null,'Tên việc',3,150);if(!is_bool($b['require_photo']??null))fail('Chọn có cần ảnh hay không.');return ['title'=>$title,'require_photo'=>$b['require_photo']?1:0];};
+ $fields=function()use($b){$title=task_text($b['title']??null,'Tên việc',3,150);if(!is_bool($b['require_photo']??null)&&!is_int($b['require_photo']??null))fail('Chọn số ảnh bắt buộc.');return ['title'=>$title,'require_photo'=>task_photo_count($b['require_photo'])];};
  if($path==='/tasks/templates'){
   $f=$fields();$uid=$b['user_id']??null;if(!is_int($uid)||!$a->one("SELECT id FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive'",[$uid]))fail('Chọn nhân viên đang làm.');
   $id=task_uuid();$now=now_ms();$a->run('INSERT INTO {{task_templates}}(id,user_id,title,require_photo,active,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,1,?,?,?,?)',[$id,$uid,$f['title'],$f['require_photo'],$me,$now,$me,$now]);
@@ -189,7 +201,7 @@ function task_telegram_tick(App $a,?int $clock=null): void {
  foreach($rows as $r){
   if(!$a->run("UPDATE {{task_recipients}} SET notify_state='sending' WHERE task_id=? AND user_id=? AND notify_state='pending'",[$r['task_id'],$r['user_id']])->rowCount())continue;
   $body=$r['body']!==''?"\n\n".(text_length($r['body'])>500?mb_substr($r['body'],0,500).'…':$r['body']):'';
-  $text='Anh Gấu Studio · '.($r['kind']==='task'?'Việc mới':'Nhắc nhở')."\n".$r['title'].($r['due_at']?"\nHạn: ".date('H:i d/m/Y',intdiv($r['due_at'],1000)):'').($r['require_photo']?"\nCần chụp ảnh khi báo xong":'')."\nTừ: ".$r['creator_name'].$body;
+  $text='Anh Gấu Studio · '.($r['kind']==='task'?'Việc mới':'Nhắc nhở')."\n".$r['title'].($r['due_at']?"\nHạn: ".date('H:i d/m/Y',intdiv($r['due_at'],1000)):'').($r['require_photo']?"\nCần chụp ".($r['require_photo']>1?$r['require_photo'].' ':'')."ảnh khi báo xong":'')."\nTừ: ".$r['creator_name'].$body;
   try{
    $tg->call('sendMessage',['chat_id'=>$r['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở mục Việc',$a->config['app_url'].'/#tasks'));
    $a->run("UPDATE {{task_recipients}} SET notify_state='sent',notified_at=?,notify_error=NULL WHERE task_id=? AND user_id=?",[$now,$r['task_id'],$r['user_id']]);
@@ -200,7 +212,7 @@ function task_telegram_tick(App $a,?int $clock=null): void {
 //   /task Huy, Cường | Dọn phòng chụp 2 | 18:00 28/10 #anh
 //   /nhacnho all | Mai họp 8h30
 // Chỉ Telegram đã liên kết với tài khoản Admin/Quản lý mới được giao.
-const TASK_TG_HELP="Cách giao việc:\n/task Huy, Cường | Dọn phòng chụp 2 | 18:00\n/nhacnho all | Mai họp 8h30\n\n• Người nhận: tên gọi, tên đầy đủ, mã NV hoặc all\n• Phần hạn (không bắt buộc): 18:00 hoặc 18h30 28/10\n• Thêm #anh nếu bắt buộc chụp ảnh khi báo xong\n\nGhi Event log: /log Nội dung | Huy (gõ /log để xem hướng dẫn)";
+const TASK_TG_HELP="Cách giao việc:\n/task Huy, Cường | Dọn phòng chụp 2 | 18:00\n/nhacnho all | Mai họp 8h30\n\n• Người nhận: tên gọi, tên đầy đủ, mã NV hoặc all\n• Phần hạn (không bắt buộc): 18:00 hoặc 18h30 28/10\n• Thêm #anh nếu bắt buộc chụp ảnh khi báo xong (#anh5 = 5 ảnh)\n\nGhi Event log: /log Nội dung | Huy (gõ /log để xem hướng dẫn)";
 // Ghi Event log hôm nay; chỉ Admin và người được Admin cấp quyền ghi Event log:
 //   /log Quên checkout ca 2 | Huy
 //   /log Họp rút kinh nghiệm cả studio | all        (nhật ký chung, không trừ điểm)
@@ -281,8 +293,9 @@ function task_telegram_command(App $a,Telegram $tg,array $m): bool {
   $parts=array_map('trim',explode('|',$cmd[2]));
   if(count($parts)<2||$parts[1]==='')fail("Thiếu nội dung.\n\n".TASK_TG_HELP);
   if(count($parts)>3)fail("Dùng tối đa 3 phần: người nhận | nội dung | hạn.");
-  $photo=(bool)preg_match('/(^|\s)#anh\b/iu',$cmd[2]);
-  $content=trim(preg_replace('/(^|\s)#anh\b/iu','',$parts[1]));$dueText=trim(preg_replace('/(^|\s)#anh\b/iu','',$parts[2]??''));
+  // #anh = 1 ảnh, #anh5 = 5 ảnh.
+  $photo=preg_match('/(?:^|\s)#anh(\d{0,2})\b/iu',$cmd[2],$shot)?max(1,(int)$shot[1]):0;
+  $content=trim(preg_replace('/(^|\s)#anh\d{0,2}\b/iu','',$parts[1]));$dueText=trim(preg_replace('/(^|\s)#anh\d{0,2}\b/iu','',$parts[2]??''));
   if($content==='')fail('Thiếu nội dung.');
   $kind=$cmd[1]==='task'?'task':'notice';
   $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive'");
@@ -292,7 +305,7 @@ function task_telegram_command(App $a,Telegram $tg,array $m): bool {
   $title=mb_strlen($content)>150?mb_substr($content,0,147).'…':$content;
   $r=task_create($a,$sender['id'],['kind'=>$kind,'title'=>$title,'body'=>mb_strlen($content)>150?$content:'','due_at'=>$kind==='task'?task_parse_due($dueText,now_ms()):null,'require_photo'=>$photo,'audience'=>$all?'all':'people','user_ids'=>array_values(array_unique($ids))],'Tạo qua Telegram');
   $names=$all?'tất cả nhân viên ('.count($r['recipients']).' người)':implode(', ',array_column(array_filter($people,fn($p)=>in_array($p['id'],$r['recipients'],true)),'name'));
-  $reply('✅ Đã giao '.($kind==='task'?'Task':'Nhắc nhở').' cho '.$names."\n«".$r['title'].'»'.($r['due_at']?"\nHạn: ".date('H:i d/m/Y',intdiv($r['due_at'],1000)):'').($r['require_photo']?"\n📷 Bắt buộc chụp ảnh khi báo xong":'')."\nNgười nhận đã liên kết Telegram sẽ được nhắn riêng. Xem tiến độ: ".$a->config['app_url'].'/#tasks');
+  $reply('✅ Đã giao '.($kind==='task'?'Task':'Nhắc nhở').' cho '.$names."\n«".$r['title'].'»'.($r['due_at']?"\nHạn: ".date('H:i d/m/Y',intdiv($r['due_at'],1000)):'').($r['require_photo']?"\n📷 Bắt buộc chụp ".($r['require_photo']>1?$r['require_photo'].' ':'')."ảnh khi báo xong":'')."\nNgười nhận đã liên kết Telegram sẽ được nhắn riêng. Xem tiến độ: ".$a->config['app_url'].'/#tasks');
  }catch(HttpError $e){$reply('⚠️ '.$e->getMessage());}
  return true;
 }

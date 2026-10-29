@@ -47,5 +47,5 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 .kpi-used{color:#b42318;font-weight:600;white-space:nowrap}.kpi-zero{color:#8290a3}
 .kpi-meter{min-width:110px;display:grid;gap:4px}.kpi-meter span{font-size:12px;color:#6d7b91;white-space:nowrap}.kpi-meter b{font-size:14px;color:#14233a}
 .kpi-meter i{display:block;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--kpi-color) var(--kpi),#e9eef5 var(--kpi))}
-.kpi-meter.good{--kpi-color:#16a34a}.kpi-meter.warn{--kpi-color:#d97706}.kpi-meter.bad{--kpi-color:#dc2626}.kpi-meter.bad b{color:#b42318}
+.kpi-meter.good{--kpi-color:#16a34a}.kpi-meter.warn{--kpi-color:#d97706}.kpi-meter.bad{--kpi-color:#dc2626}.kpi-meter.bad b{color:#b42318}.kpi-meter.progress{--kpi-color:#2472e0}.kpi-meter small{font-size:11px;color:#6d7b91;white-space:nowrap}.kpi-meter small.ok{color:#15803d;font-weight:600}
 .app-refresh{display:none}
