@@ -54,3 +54,9 @@
 .booking-sheet-fields dd{white-space:pre-wrap}
 @media(max-width:800px){.booking-page .booking-sidebar,.booking-page .booking-sidebar.card{display:none}}
 .booking-card-line>.booking-card-customer{white-space:normal}
+
+.log-requests{border:1px solid #f3d38b;background:#fffaf0;display:grid;gap:12px}.log-requests[hidden]{display:none}.log-requests-head h2{font-size:17px;margin:0;display:flex;align-items:center;gap:8px}.log-requests-count{background:#d97706;color:#fff;border-radius:999px;font-size:12px;min-width:22px;height:22px;display:inline-grid;place-items:center;padding:0 6px}.log-requests-head .hint{margin:6px 0 0}
+.log-change-request{background:#fff;border:1px solid #efe2c4;border-radius:12px;padding:12px 14px;display:grid;gap:8px}.log-change-title{margin:0}.log-change-request .hint{margin:0}.log-change-actions{display:flex;flex-wrap:wrap;gap:8px}.log-change-actions:empty{display:none}
+.log-change-diff{display:grid;gap:6px;margin:0}.log-change-diff div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;font-size:13px}.log-change-diff dt{color:#6d7b91;font-weight:600}.log-change-diff dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.log-change-diff s{color:#b42318}.log-change-diff b{color:#15803d}
+.log-self-note{background:#fff7e6;border:1px solid #f3d38b;border-radius:10px;padding:8px 10px;font-size:13px;color:#8a5a00;margin:0 0 10px}
+@media(max-width:620px){.log-change-diff div{grid-template-columns:1fr;gap:2px}}

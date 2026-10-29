@@ -62,7 +62,7 @@ try {
  if($method==='POST'){
   $u=parse_url($a->config['app_url']);$origin=$u['scheme'].'://'.$u['host'].(isset($u['port'])?':'.$u['port']:'');
   if(isset($_SERVER['HTTP_ORIGIN'])&&$_SERVER['HTTP_ORIGIN']!==$origin||($_SERVER['HTTP_SEC_FETCH_SITE']??'')==='cross-site')fail('Nguồn yêu cầu không hợp lệ.',403);
-  $multipart=$path==='/migration/import';$limit=$multipart?40000000:(in_array($path,['/attendance','/sheet-sync/receive','/bookings/import'],true)||preg_match('~^/tasks/[a-f0-9-]{36}/done$~D',$path)?512000:32000);
+  $multipart=$path==='/migration/import';$limit=$multipart?40000000:(preg_match('~^/tasks/[a-f0-9-]{36}/done$~D',$path)?3600000:(in_array($path,['/attendance','/sheet-sync/receive','/bookings/import'],true)?512000:32000));
   if((int)($_SERVER['CONTENT_LENGTH']??0)>$limit)fail('Yêu cầu quá lớn.',413);
   if(!$multipart){if(!str_starts_with($_SERVER['CONTENT_TYPE']??'','application/json'))fail('Cần gửi dữ liệu JSON.',415);$raw=file_get_contents('php://input',false,null,0,$limit+1);if(strlen($raw)>$limit)fail('Yêu cầu quá lớn.',413);$b=json_decode($raw,true,32,JSON_THROW_ON_ERROR);if(!is_array($b)||array_is_list($b)&&$b!==[])fail('Dữ liệu không hợp lệ.');}else{$b=$_POST;}
  }
