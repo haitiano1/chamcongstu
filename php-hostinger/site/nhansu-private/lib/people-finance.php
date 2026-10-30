@@ -152,9 +152,10 @@ function advance_routes(App $a,string $path,array $b,string $method): ?array {
  fail('Không tìm thấy chức năng ứng lương.',404);
 }
 // Admin và Quản lý luôn được ghi, sửa, xử lý Event log; Nhân viên cần Admin tick "Viết Event Log" trong hồ sơ (chủ dự án chốt 30/10/2026).
+// Xóa log chỉ Admin và Quản lý (chủ dự án yêu cầu 30/10/2026).
 function log_permissions(App $a): array {
  $full=in_array($a->user['role'],['admin','manager'],true);$delegated=(bool)$a->one('SELECT user_id FROM {{event_log_recorders}} WHERE user_id=?',[$a->user['id']]);
- return ['can_record'=>$full||$delegated,'can_manage'=>$full||$delegated,'can_grant'=>$a->user['role']==='admin','delegated'=>$delegated];
+ return ['can_record'=>$full||$delegated,'can_manage'=>$full||$delegated,'can_delete'=>$full,'can_grant'=>$a->user['role']==='admin','delegated'=>$delegated];
 }
 // Cấp quyền trong hồ sơ nhân viên (chủ dự án yêu cầu 30/10/2026): Viết Event Log, Lên lịch chụp. Chỉ Admin tick;
 // Admin và Quản lý luôn có đủ 2 quyền nên không giữ dòng cấp quyền cho họ.
@@ -171,9 +172,9 @@ function save_user_grants(App $a,int $id,string $role,mixed $grants): void {
 }
 // Người được cấp quyền (không phải Admin) sửa, bổ sung, xử lý hoặc hủy log ghi về chính mình: không áp dụng ngay,
 // tạo yêu cầu kèm nội dung trước/sau; Quản lý hoặc Admin khác duyệt mới áp dụng (chủ dự án chốt 29/10/2026).
-const LOG_STATUS_LABELS=['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','resolved'=>'Đã xử lý','void'=>'Đã hủy','historical'=>'Log lưu trữ'];
+const LOG_STATUS_LABELS=['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','resolved'=>'Đã xử lý','void'=>'Đã hủy','historical'=>'Log lưu trữ','deleted'=>'Đã xóa'];
 const LOG_CATEGORY_LABELS=['missing_punch'=>'Quên chấm công','late'=>'Đi trễ','early_out'=>'Về sớm','absence'=>'Vắng ca','customer'=>'Khách hàng','task'=>'Công việc','other'=>'Khác'];
-const LOG_CHANGE_LABELS=['edit'=>'Chỉnh sửa nội dung','classify'=>'Bổ sung ngày / nhân viên','resolve'=>'Xử lý / hủy log'];
+const LOG_CHANGE_LABELS=['edit'=>'Chỉnh sửa nội dung','classify'=>'Bổ sung ngày / nhân viên','resolve'=>'Xử lý / hủy log','delete'=>'Xóa log'];
 function log_needs_approval(App $a,array $row): bool {return $a->user['role']!=='admin'&&$row['user_id']!==null&&(int)$row['user_id']===(int)$a->user['id'];}
 function log_person(App $a,?int $id): string {return $id?(string)$a->scalar('SELECT name FROM {{users}} WHERE id=?',[$id]):'Chưa gắn nhân viên';}
 function log_change_text(array $fields): string {return implode('; ',array_map(fn($k,$v)=>$k.': '.$v,array_keys($fields),$fields));}
@@ -214,7 +215,7 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
  $perms=log_permissions($a);$manage=$perms['can_manage'];
  if($path==='/event-log/source'&&$method==='GET'){$file=__DIR__.'/legacy-event-log.pdf';if(!is_file($file))fail('Chưa có PDF gốc.',404);header('Content-Type: application/pdf');header('Content-Disposition: inline; filename="EVENT-LOG-STUDIO.pdf"');readfile($file);exit;}
  if(preg_match('~^/event-log/([a-f0-9-]{36})/classify$~D',$path,$m)&&$method==='POST'){
-  if(!$manage)fail('Chỉ Admin, Quản lý hoặc nhân viên được Admin cấp quyền mới được chỉnh sửa Event log.',403);$row=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$m[1]]);if(!$row)fail('Không tìm thấy log.',404);entry_version($b,$row);if(!in_array($row['status'],['pending','historical'],true))fail('Chỉ bổ sung thông tin cho log chưa xác nhận hoặc log lưu trữ.',409);
+  if(!$manage)fail('Chỉ Admin, Quản lý hoặc nhân viên được Admin cấp quyền mới được chỉnh sửa Event log.',403);$row=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$m[1]]);if(!$row||$row['status']==='deleted')fail('Không tìm thấy log.',404);entry_version($b,$row);if(!in_array($row['status'],['pending','historical'],true))fail('Chỉ bổ sung thông tin cho log chưa xác nhận hoặc log lưu trữ.',409);
   $subject=$b['user_id']??null;if($subject!==null){if(!is_int($subject))fail('Nhân viên không hợp lệ.');if(!$a->one('SELECT id FROM {{users}} WHERE id=?',[$subject]))fail('Nhân viên không tồn tại.');}
   $precision=$b['date_precision']??'';if(!in_array($precision,['day','month','unknown'],true))fail('Độ chính xác ngày không hợp lệ.');
   $day=$precision==='day'?valid_day($b['event_date']??null):($precision==='month'?valid_month($b['event_date']??null):'');if($day&&$day>local_day(now_ms()))fail('Ngày không được ở tương lai.');
@@ -242,7 +243,7 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
   finance_audit($a,'log',$id,'created','Ghi nhận bởi người được cấp quyền chỉnh sửa Event log.');return [201,['id'=>$id,'status'=>$status]];
  }
  if($path==='/event-log'&&$method==='GET'){
-  [$start,$end]=finance_range();$period=$_GET['period']??'month';if(!in_array($period,['all','month','unknown'],true))fail('Khoảng lịch sử không hợp lệ.');$params=[];$where='1=1';if($period==='unknown')$where="r.date_precision='unknown'";elseif($period==='month'){if(!empty($_GET['date'])){$where="((r.date_precision='day' AND r.event_date=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?))";$params=[$start,$start,$start];}else{$month=substr($start,0,7);$where="((r.date_precision='day' AND r.event_date>=? AND r.event_date<=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?) OR (r.date_precision IN ('month','range') AND r.event_date<=? AND (CASE WHEN r.end_month='' THEN r.event_date ELSE r.end_month END)>=?))";$params=[$start,$end,$end,$start,$month,$month];}}
+  [$start,$end]=finance_range();$period=$_GET['period']??'month';if(!in_array($period,['all','month','unknown'],true))fail('Khoảng lịch sử không hợp lệ.');$params=[];$where="r.status!='deleted'";if($period==='unknown')$where.=" AND r.date_precision='unknown'";elseif($period==='month'){if(!empty($_GET['date'])){$where.=" AND ((r.date_precision='day' AND r.event_date=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?))";$params=[$start,$start,$start];}else{$month=substr($start,0,7);$where.=" AND ((r.date_precision='day' AND r.event_date>=? AND r.event_date<=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?) OR (r.date_precision IN ('month','range') AND r.event_date<=? AND (CASE WHEN r.end_month='' THEN r.event_date ELSE r.end_month END)>=?))";$params=[$start,$end,$end,$start,$month,$month];}}
   if(!empty($_GET['user_id'])){if(!ctype_digit((string)$_GET['user_id']))fail('Nhân viên không hợp lệ.');$where.=' AND r.user_id=?';$params[]=(int)$_GET['user_id'];}
   $status=$_GET['status']??'';if($status!==''){if(!in_array($status,['pending','confirmed','resolved','void','historical'],true))fail('Trạng thái không hợp lệ.');$where.=' AND r.status=?';$params[]=$status;}
   $q=input_text($_GET['q']??'','Từ khóa',0,200);if($q!==''){$where.=' AND (r.description LIKE ? OR r.related_names LIKE ? OR r.source_label LIKE ? OR EXISTS(SELECT 1 FROM {{users}} person WHERE person.id=r.user_id AND person.name LIKE ?))';$params=[...$params,'%'.$q.'%','%'.$q.'%','%'.$q.'%','%'.$q.'%'];}
@@ -255,14 +256,14 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
  }
  if(preg_match('~^/event-log/([a-f0-9-]{36})/edit$~D',$path,$m)&&$method==='POST'){
   if(!$manage)fail('Chỉ Admin, Quản lý hoặc nhân viên được Admin cấp quyền mới được chỉnh sửa Event log.',403);
-  $row=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$m[1]]);if(!$row)fail('Không tìm thấy sự việc.',404);entry_version($b,$row);
+  $row=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$m[1]]);if(!$row||$row['status']==='deleted')fail('Không tìm thấy sự việc.',404);entry_version($b,$row);
   $description=input_text($b['description']??null,'Nội dung sự việc',5,2000);$note=input_text($b['note']??null,'Lý do chỉnh sửa',5,1000);$category=$b['category']??'';if(!in_array($category,LOG_CATEGORIES,true))fail('Loại sự việc không hợp lệ.');
   if(!$approved&&log_needs_approval($a,$row))return log_request_change($a,$row,'edit',$b,['Loại'=>LOG_CATEGORY_LABELS[$row['category']]??$row['category'],'Nội dung'=>$row['description']],['Loại'=>LOG_CATEGORY_LABELS[$category],'Nội dung'=>$description,'Lý do'=>$note]);
   $a->run('UPDATE {{event_log}} SET description=?,category=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$description,$category,$a->user['id'],now_ms(),$row['id']]);
   finance_audit($a,'log',$row['id'],'edited',$note.' | Loại: '.$row['category'].' → '.$category.' | Nội dung trước: '.$row['description'].' | Nội dung sau: '.$description);return [200,['ok'=>true]];
  }
  if(preg_match('~^/event-log/([a-f0-9-]{36})/(resolve|audit)$~D',$path,$m)){
-  $id=entry_uuid($m[1]);$row=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$id]);if(!$row)fail('Không tìm thấy sự việc.',404);
+  $id=entry_uuid($m[1]);$row=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$id]);if(!$row||$row['status']==='deleted')fail('Không tìm thấy sự việc.',404);
   if($m[2]==='audit'&&$method==='GET')return [200,['rows'=>$a->all('SELECT h.*,u.name actor_name FROM {{event_log_audit}} h JOIN {{users}} u ON u.id=h.actor_id WHERE event_log_id=? ORDER BY h.time,h.id',[$id])]];
   if($m[2]==='resolve'&&$method==='POST'){
    if(!$manage)fail('Chỉ Admin, Quản lý hoặc nhân viên được Admin cấp quyền mới được chỉnh sửa Event log.',403);entry_version($b,$row);
@@ -276,6 +277,17 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
    if(!$approved&&log_needs_approval($a,$row))return log_request_change($a,$row,'resolve',$b,['Trạng thái'=>LOG_STATUS_LABELS[$row['status']]??$row['status'],'Điểm KPI'=>abs($row['points']),'Luật'=>$row['rule_code']?:'—'],['Trạng thái'=>LOG_STATUS_LABELS[$status],'Điểm KPI'=>abs($points),'Luật'=>$rule['code']??($row['rule_code']?:'—'),'Giải trình'=>$note]);
    $a->run('UPDATE {{event_log}} SET status=?,points=?,resolution=?,rule_id=COALESCE(?,rule_id),rule_code=COALESCE(?,rule_code),rule_name=COALESCE(?,rule_name),updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$status,$points,$note,$rule['id']??null,$rule['code']??null,$rule['name']??null,$a->user['id'],now_ms(),$id]);finance_audit($a,'log',$id,$status,$note.($rule?' | Luật: '.$rule['code'].' · '.$rule['name']:'').($points!==$row['points']?' | Điểm: '.$row['points'].' → '.$points:''));return [200,['ok'=>true]];
   }
+ }
+ // Xóa log: ẩn khỏi danh sách và không tính KPI, vẫn giữ dòng và lịch sử. Gỡ liên kết đối soát chấm công / nghỉ gấp để ghi lại được.
+ if(preg_match('~^/event-log/([a-f0-9-]{36})/delete$~D',$path,$m)&&$method==='POST'){
+  if(!$perms['can_delete'])fail('Chỉ Admin hoặc Quản lý được xóa Event log.',403);
+  $row=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$m[1]]);if(!$row||$row['status']==='deleted')fail('Không tìm thấy sự việc hoặc log đã bị xóa.',404);entry_version($b,$row);
+  $note=input_text($b['note']??null,'Lý do xóa',5,1000);
+  if(!$approved&&log_needs_approval($a,$row))return log_request_change($a,$row,'delete',$b,['Trạng thái'=>LOG_STATUS_LABELS[$row['status']]??$row['status'],'Điểm KPI'=>abs($row['points'])],['Trạng thái'=>LOG_STATUS_LABELS['deleted'],'Điểm KPI'=>0,'Lý do'=>$note]);
+  $a->run("UPDATE {{event_log}} SET status='deleted',updated_by=?,updated_at=?,version=version+1 WHERE id=?",[$a->user['id'],now_ms(),$row['id']]);
+  $a->run("UPDATE {{event_log_change_requests}} SET status='rejected',reviewed_by=?,reviewed_at=?,review_note='Log đã bị xóa.' WHERE event_log_id=? AND status='pending'",[$a->user['id'],now_ms(),$row['id']]);
+  $links=array_column($a->all('SELECT source_key FROM {{attendance_issue_links}} WHERE event_log_id=?',[$row['id']]),'source_key');if($links)$a->run('DELETE FROM {{attendance_issue_links}} WHERE event_log_id=?',[$row['id']]);
+  finance_audit($a,'log',$row['id'],'deleted',$note.' | Trạng thái trước: '.(LOG_STATUS_LABELS[$row['status']]??$row['status']).' | Điểm KPI: '.abs($row['points']).($links?' | Gỡ liên kết đối soát: '.implode(', ',$links):''));return [200,['ok'=>true]];
  }
  fail('Không tìm thấy chức năng Event log.',404);
 }
