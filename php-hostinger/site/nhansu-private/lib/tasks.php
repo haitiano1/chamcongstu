@@ -213,7 +213,7 @@ function task_telegram_tick(App $a,?int $clock=null): void {
 //   /nhacnho all | Mai họp 8h30
 // Chỉ Telegram đã liên kết với tài khoản Admin/Quản lý mới được giao.
 const TASK_TG_HELP="Cách giao việc:\n/task Huy, Cường | Dọn phòng chụp 2 | 18:00\n/nhacnho all | Mai họp 8h30\n\n• Người nhận: tên gọi, tên đầy đủ, mã NV hoặc all\n• Phần hạn (không bắt buộc): 18:00 hoặc 18h30 28/10\n• Thêm #anh nếu bắt buộc chụp ảnh khi báo xong (#anh5 = 5 ảnh)\n\nGhi Event log: /log Nội dung | Huy (gõ /log để xem hướng dẫn)";
-// Ghi Event log hôm nay; chỉ Admin và người được Admin cấp quyền ghi Event log:
+// Ghi Event log hôm nay; chỉ Admin, Quản lý và nhân viên được Admin cấp quyền ghi Event log:
 //   /log Quên checkout ca 2 | Huy
 //   /log Họp rút kinh nghiệm cả studio | all        (nhật ký chung, không trừ điểm)
 //   /log Đi trễ 40 phút | Huy, Cường | NG-01        (phần 3: mã luật hoặc điểm 20/100/300)
@@ -227,7 +227,7 @@ function log_telegram_command(App $a,Telegram $tg,array $m,string $args): bool {
   if(!$sender)fail('Telegram của bạn chưa liên kết với tài khoản trên web. Vào web → Chấm công → Liên kết Telegram.');
   // log_routes kiểm tra quyền và ghi người tạo theo $a->user, giống khi ghi trên web.
   $a->user=$sender;
-  if(!log_permissions($a)['can_record'])fail('Chỉ Admin và người được Admin cấp quyền mới được ghi Event log.');
+  if(!log_permissions($a)['can_record'])fail('Chỉ Admin, Quản lý và nhân viên được Admin cấp quyền mới được ghi Event log.');
   $parts=array_map('trim',explode('|',$args));
   if(count($parts)<2||$parts[0]===''||$parts[1]==='')fail("Thiếu nội dung hoặc người liên quan.\n\n".LOG_TG_HELP);
   if(count($parts)>3)fail('Dùng tối đa 3 phần: nội dung | người liên quan | luật hoặc điểm.');

@@ -51,7 +51,7 @@ function relink_booking(App $a,array $row,?array $defaults=null): void {
 }
 // Thêm lịch trên web (chủ dự án chốt 29/10/2026): mỗi khung giờ 1 khách. Mặc định 399/699 · 1 tiếng (khách tới mới chọn, ô Gói để trống);
 // Couple 999, 1499, 2999 phải chọn, chừa 2 tiếng (chụp + make up); Team 349k/người không có số tiếng cố định: chọn giữ chỗ 1–4 tiếng, ghi "Giữ N tiếng".
-// Chỉ Admin và người được Admin cấp quyền. Lịch mới vào hàng chờ; Apps Script lấy về mỗi phút, chèn dòng vào tab "Tháng N" rồi báo lại.
+// Admin, Quản lý và nhân viên được Admin cấp quyền. Lịch mới vào hàng chờ; Apps Script lấy về mỗi phút, chèn dòng vào tab "Tháng N" rồi báo lại.
 const BOOKING_WEB_PACKAGES=[399=>60,699=>60,999=>120,1499=>120,2999=>120];
 const BOOKING_TEAM_PRICE=349;
 const BOOKING_OPEN_MINUTES=540,BOOKING_CLOSE_MINUTES=1140;
@@ -129,9 +129,10 @@ function booking_check_slot(App $a,string $day,int $start,int $end,?string $excl
 }
 function booking_hm(int $minutes): string {return sprintf('%02d:%02d',intdiv($minutes,60),$minutes%60);}
 function booking_sheet_tab(string $day): string {return 'Tháng '.(int)substr($day,5,2);}
+// Admin và Quản lý luôn được lên lịch chụp (thêm, sửa, hủy, chọn gói); Nhân viên cần Admin tick "Lên lịch chụp" trong hồ sơ (chủ dự án chốt 30/10/2026).
 function booking_permissions(App $a): array {
- $admin=$a->user['role']==='admin';$granted=(bool)$a->one('SELECT user_id FROM {{booking_creators}} WHERE user_id=?',[$a->user['id']]);
- return ['can_create'=>$admin||$granted,'can_grant'=>$admin];
+ $full=in_array($a->user['role'],['admin','manager'],true);$granted=(bool)$a->one('SELECT user_id FROM {{booking_creators}} WHERE user_id=?',[$a->user['id']]);
+ return ['can_create'=>$full||$granted,'can_grant'=>$a->user['role']==='admin'];
 }
 // Từ đầu tháng trước đến 6 tháng tới: Apps Script đọc đúng các tab trong khoảng này nên tên "Tháng N" không bị nhầm năm.
 function booking_web_range(): array {$today=local_day(now_ms());return ['min'=>date('Y-m-d',strtotime(substr($today,0,7).'-01T12:00:00Z -1 month')),'max'=>local_day(day_time($today)+183*86400000)];}
@@ -359,7 +360,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  }
  if($path==='/bookings/creators'&&$method==='POST'){
   $a->requireAdmin();if(!is_int($b['user_id']??null)||!is_bool($b['enabled']??null))fail('Quyền thêm lịch không hợp lệ.');
-  $target=$a->target($b['user_id']);if($target['role']==='admin')fail('Admin luôn được thêm lịch.');
+  $target=$a->target($b['user_id']);if($target['role']!=='employee')fail('Admin và Quản lý luôn được thêm lịch.');
   if($b['enabled'])$a->run('INSERT INTO {{booking_creators}} VALUES(?,?,?) ON DUPLICATE KEY UPDATE granted_by=VALUES(granted_by),granted_at=VALUES(granted_at)',[$target['id'],$a->user['id'],now_ms()]);else $a->run('DELETE FROM {{booking_creators}} WHERE user_id=?',[$target['id']]);
   $a->audit($target['id'],$b['enabled']?'grant_booking_create':'revoke_booking_create');return [200,['ok'=>true]];
  }
