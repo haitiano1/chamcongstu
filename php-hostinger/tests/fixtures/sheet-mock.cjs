@@ -38,6 +38,7 @@ class Range{
  constructor(s,r,c,nr,nc){Object.assign(this,{s,r,c,nr,nc});}
  each(f){const out=[];for(let i=0;i<this.nr;i++){const row=[];for(let j=0;j<this.nc;j++)row.push(f(this.s.cell(this.r+i,this.c+j),i,j));out.push(row);}return out;}
  getDisplayValues(){return this.each(c=>display(c))}
+ getValues(){return this.each(c=>c.v==null?'':c.v)}
  getValue(){return this.s.cell(this.r,this.c).v}
  getDisplayValue(){return display(this.s.cell(this.r,this.c))}
  setValue(v){const c=this.s.cell(this.r,this.c);c.v=parseInput(v,c.fmt);c.formula='';return this;}

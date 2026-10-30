@@ -1,6 +1,7 @@
 /** Bound Google Apps Script. No public Sheet publication, OAuth client or service-account key needed.
  * Paste in Extensions > Apps Script of the booking sheet. Configure via menu; do not hardcode secrets.
- * Hai chiều (29/10/2026): gửi các tab "Tháng N" lên web; lấy lịch thêm/hủy trên web về ghi vào đúng tab, đúng ngày, đúng thứ tự giờ; lịch xóa trên web thì xóa dòng (30/10/2026).
+ * Hai chiều (29/10/2026): gửi các tab "Tháng N" lên web; lấy lịch thêm/hủy trên web về ghi vào đúng tab, đúng ngày, đúng thứ tự giờ; lịch xóa trên web thì xóa dòng,
+ * lịch sửa trên web thì ghi các ô được sửa, đổi ngày/giờ thì chuyển dòng sang đúng chỗ, kể cả lịch đã qua ở tab tháng cũ (30/10/2026).
  */
 const AG_BACK=1,AG_AHEAD=6;// Đồng bộ tab tháng trước đến 6 tháng tới: tên "Tháng 1" không bị nhầm năm.
 const AG_FORCE_MS=600000;// Tab không đổi vẫn gửi lại mỗi 10 phút.
@@ -133,18 +134,19 @@ function agOptions_(cell){
 }
 // Lịch cũ có Makeup chọn nhiều thì cách nhau ", " như dropdown chọn nhiều.
 function agPickOptions_(cell,text){const options=agOptions_(cell);return text.split(',').map(x=>x.trim()).filter(Boolean).map(x=>options.find(o=>agNormalize_(o)===agNormalize_(x))||x).join(', ');}
-function agWriteValues_(t,r,q,samples){
- const p=t.parsed,sheet=t.sheet,c=p.columns,v=q.values,written={};const cell=k=>sheet.getRange(r,c[k]+1);
- agWriteTime_(cell('time'),q.time,samples.time);written[c.time]=true;
- // Make up (Nam/Nữ/Làm tóc), Đặc biệt (Ô TÔ/Ngoại Cảnh…): Sheet có cột đó thì ghi vào cột, không thì ghép vào đầu Ghi chú.
+// keys: lịch sửa trên web, chỉ ghi các cột này và ô bỏ trống thì xóa chữ cũ. Không có keys (lịch mới): ghi đủ.
+function agWriteValues_(t,r,q,samples,keys){
+ const p=t.parsed,sheet=t.sheet,c=p.columns,v=q.values,written={};const cell=k=>sheet.getRange(r,c[k]+1),want=k=>!keys||keys.indexOf(k)!==-1;
+ if(want('time')){agWriteTime_(cell('time'),q.time,samples.time);written[c.time]=true;}
+ // Make up (Nam/Nữ/Làm tóc), Đặc biệt (Ô TÔ/Ngoại Cảnh…): Sheet có cột đó thì ghi vào cột, không thì ghép vào đầu Ghi chú (sửa chúng là ghi lại Ghi chú).
  const makeup=String(v.makeup||''),special=String(v.special||''),note=[c.special<0&&special?'Đặc biệt: '+special:'',c.makeup<0&&makeup?'Make up: '+makeup:'',String(v.note||'')].filter(Boolean).join(' · '),text={makeup:makeup,special:special,note:note};
- ['customer_name','customer_phone','main_alias','support_alias','note','makeup','special','package_label','deposit_label'].forEach(k=>{if(c[k]<0)return;written[c[k]]=true;const value=String(k in text?text[k]:v[k]||'');if(!value)return;
+ ['customer_name','customer_phone','main_alias','support_alias','note','makeup','special','package_label','deposit_label'].forEach(k=>{if(c[k]<0||!(want(k)||k==='note'&&(c.makeup<0&&want('makeup')||c.special<0&&want('special'))))return;written[c[k]]=true;const value=String(k in text?text[k]:v[k]||'');if(!value){if(keys)cell(k).setValue('');return;}
   // Gói/cọc đang là số trên Sheet thì ghi số (giữ công thức cộng tiền); còn lại ghi chữ để giữ số 0 đầu SĐT.
   const sample=samples[k]||null,number=/^\d[\d.,]*k?$/i.test(value)?Number(value.replace(/[.,]/g,'').replace(/k$/i,''))*(/k$/i.test(value)?1000:1):NaN;
   if(k==='makeup'||k==='special'){cell(k).setValue(agPickOptions_(cell(k),value));return;}
   const option=k==='package_label'?agOptions_(cell(k)).find(o=>agPrice_(o)===agPrice_(value)):null;if(option){cell(k).setValue(option);return;}
   if(sample&&typeof sample.value==='number'&&!isNaN(number))cell(k).setValue(k==='package_label'&&number>=10000&&sample.value<10000?number/1000:number);else cell(k).setNumberFormat('@').setValue(value);});
- sheet.getRange(r,p.idCol+1).setValue(q.booking_id);written[p.idCol]=true;
+ if(!keys){sheet.getRange(r,p.idCol+1).setValue(q.booking_id);written[p.idCol]=true;}
  return written;
 }
 function agFind_(book,tabs,id,tabName){
@@ -163,9 +165,9 @@ function agNewTab_(book,tabs,year,month){
  const t={sheet:sheet,name:name,year:year,month:month};tabs.push(t);tabs.sort((a,b)=>a.year*12+a.month-b.year*12-b.month);return agLoad_(t,{},false);
 }
 // Lịch thêm trên web → chèn dòng. Đã có mã trên Sheet (lần trước ghi rồi mà chưa kịp báo) thì không chèn lại.
-function agInsert_(book,tabs,q){
+function agInsert_(book,tabs,q,into){
  const found=agFind_(book,tabs,q.booking_id,q.tab);if(found)return {id:q.id,ok:true,tab:found.t.name,row:found.row};
- const [y,m]=q.day.split('-').map(Number);let t=tabs.find(x=>!x.legacy&&x.year===y&&x.month===m)||tabs.find(x=>x.legacy);
+ const [y,m]=q.day.split('-').map(Number);let t=into||tabs.find(x=>!x.legacy&&x.year===y&&x.month===m)||tabs.find(x=>x.legacy);
  if(t&&t.error)throw new Error('Tab '+t.name+' đang lỗi: '+t.error);if(!t)t=agNewTab_(book,tabs,y,m);
  const p=t.parsed,sheet=t.sheet,minutes=Number(q.time.slice(0,2))*60+Number(q.time.slice(3)),plan=agPlan_(p,q.day,minutes),dateCol=p.columns.date+1,width=Math.max(sheet.getLastColumn(),p.idCol+1),samples=agSamples_(tabs,t);let r;
  if(plan.op==='shift'){
@@ -192,18 +194,44 @@ function agCancel_(book,tabs,q){
  sheet.getRange(f.row,col+1).setValue('Hủy');if(t.parsed)agLoad_(t,{},false);return {id:q.id,ok:true,tab:t.name,row:f.row};
 }
 // Lịch xóa trên web → xóa dòng. Ô Ngày nằm ở dòng bị xóa (ô gộp hoặc chỉ ghi ở dòng đầu ngày) thì chuyển xuống dòng kế để các khách còn lại giữ đúng ngày.
-function agDelete_(book,tabs,q){
- const f=agFind_(book,tabs,q.booking_id,q.tab);
- if(!f){const bad=tabs.find(x=>x.error);if(bad)throw new Error('Tab '+bad.name+' đang lỗi: '+bad.error);return {id:q.id,ok:true,tab:q.tab,row:0};}// Dòng đã không còn trên Sheet.
- const t=f.t,sheet=t.sheet,r=f.row,values=sheet.getDataRange().getDisplayValues(),h=agHeader_(values);
+function agRemoveRow_(t,r){
+ const sheet=t.sheet,values=sheet.getDataRange().getDisplayValues(),h=agHeader_(values);
  if(h&&String(values[r-1][h.columns.date]||'').trim()){
   const c=h.columns,col=c.date+1,cell=sheet.getRange(r,col),merged=cell.getMergedRanges()[0];
-  if(merged&&merged.getLastRow()>r){const last=merged.getLastRow();merged.breakApart();cell.copyTo(sheet.getRange(r+1,col));sheet.deleteRow(r);if(last-1>r)sheet.getRange(r,col,last-r,1).merge();if(t.parsed)agLoad_(t,{},false);return {id:q.id,ok:true,tab:t.name,row:r};}
+  if(merged&&merged.getLastRow()>r){const last=merged.getLastRow();merged.breakApart();cell.copyTo(sheet.getRange(r+1,col));sheet.deleteRow(r);if(last-1>r)sheet.getRange(r,col,last-r,1).merge();if(t.parsed)agLoad_(t,{},false);return;}
   // Ô Ngày không gộp: dòng khách kế tiếp chưa ghi ngày (cùng ngày) thì nhận ô Ngày này.
   for(let i=r;i<values.length;i++){const v=values[i];if(String(v[c.date]||'').trim())break;if(String(v[c.time]||'').trim()||String(v[c.customer_name]||'').trim()){cell.copyTo(sheet.getRange(i+1,col));break;}}
  }
  if(sheet.getMaxRows()<=r)sheet.insertRowsAfter(r,1);// Sheets không cho xóa hết các dòng không cố định.
- sheet.deleteRow(r);if(t.parsed)agLoad_(t,{},false);return {id:q.id,ok:true,tab:t.name,row:r};
+ sheet.deleteRow(r);if(t.parsed)agLoad_(t,{},false);
+}
+function agDelete_(book,tabs,q){
+ const f=agFind_(book,tabs,q.booking_id,q.tab);
+ if(!f){const bad=tabs.find(x=>x.error);if(bad)throw new Error('Tab '+bad.name+' đang lỗi: '+bad.error);return {id:q.id,ok:true,tab:q.tab,row:0};}// Dòng đã không còn trên Sheet.
+ agRemoveRow_(f.t,f.row);return {id:q.id,ok:true,tab:f.t.name,row:f.row};
+}
+// Lịch sửa trên web → chỉ ghi các ô được sửa (q.changed). Đổi ngày, hoặc đổi giờ làm lệch thứ tự giờ trong ngày: chuyển dòng sang đúng chỗ
+// (sang tab tháng khác nếu đổi tháng), giữ nguyên các ô web không sửa (Thợ, Tip, Trạng thái, công thức…). Lịch đã qua ở tab tháng cũ
+// (ngoài khoảng đồng bộ) cũng sửa được: đọc riêng tab đó, năm lấy theo ngày lịch.
+function agUpdate_(book,tabs,q){
+ const f=agFind_(book,tabs,q.booking_id,q.tab);if(!f){const bad=tabs.find(x=>x.error);throw new Error(bad?'Tab '+bad.name+' đang lỗi: '+bad.error:'Không thấy dòng của lịch này trên Sheet (dòng đã bị xóa?).');}
+ const t=f.t,changed=q.changed||[],keys=changed.filter(k=>k!=='day');
+ if(f.raw){const m=agNormalize_(t.name).match(/^thang\s*0?(\d{1,2})\b/);t.year=Number(String(q.from_day||q.day).slice(0,4));t.month=m?Number(m[1]):0;agLoad_(t,{},false);}
+ const p=t.parsed,i=p.entries.findIndex(x=>x.id===q.booking_id);if(i<0)throw new Error('Không đọc được dòng của lịch này trên tab '+t.name+'.');
+ const e=p.entries[i],minutes=Number(q.time.slice(0,2))*60+Number(q.time.slice(3)),toDay=changed.indexOf('day')!==-1?q.day:e.day;
+ // Giờ mới vẫn nằm giữa khách trước và khách sau trong ngày thì sửa tại chỗ, không chuyển dòng.
+ const before=p.entries.slice(0,i).filter(x=>x.day===e.day&&x.minutes!==null).pop(),after=p.entries.slice(i+1).find(x=>x.day===e.day&&x.minutes!==null);
+ const move=toDay!==e.day||changed.indexOf('time')!==-1&&(before&&before.minutes>minutes||after&&after.minutes<minutes);
+ if(!move){agWriteValues_(t,f.row,q,agSamples_(tabs,t),keys);agLoad_(t,{},false);return {id:q.id,ok:true,tab:t.name,row:f.row};}
+ const sheet=t.sheet,width=Math.max(sheet.getLastColumn(),p.idCol+1),head=t.values[p.header].slice(),cells=sheet.getRange(f.row,1,1,width),values=cells.getValues()[0],formulas=cells.getFormulasR1C1()[0];
+ agRemoveRow_(t,f.row);
+ const [y,m]=toDay.split('-').map(Number),done=agInsert_(book,tabs,Object.assign({},q,{day:toDay}),f.raw&&t.year===y&&t.month===m?t:null),t2=done.tab===t.name?t:tabs.find(x=>x.name===done.tab),p2=t2.parsed,c2=p2.columns;
+ // Cột web vừa ghi (Ngày, Giờ, mã lịch, các ô được sửa) giữ giá trị mới; các cột khác trả lại như dòng cũ (cùng tab theo vị trí, tab khác theo tiêu đề).
+ const skip={};[c2.date,c2.time,p2.idCol].concat(keys.map(k=>c2[k])).forEach(c=>{if(c>=0)skip[c]=true;});
+ if(c2.note>=0&&(c2.makeup<0&&keys.indexOf('makeup')!==-1||c2.special<0&&keys.indexOf('special')!==-1))skip[c2.note]=true;
+ const names=t2.values[p2.header].map(agNormalize_);
+ for(let c=0;c<width;c++){if(c===p.idCol)continue;const to=t2===t?c:head[c]?names.indexOf(agNormalize_(head[c])):-1;if(to<0||skip[to])continue;const cell=t2.sheet.getRange(done.row,to+1);if(formulas[c])cell.setFormulaR1C1(formulas[c]);else cell.setValue(values[c]);}
+ agLoad_(t2,{},false);return done;
 }
 function dongBoAnhGau(e){
  const forced=!(e&&e.triggerUid),lock=LockService.getScriptLock();if(!lock.tryLock(1000))return;
@@ -220,7 +248,7 @@ function dongBoAnhGau(e){
   p.setProperty('AG_HASHES',JSON.stringify(hashes));
   const queue=agPost_(cfg,{sheet_id:cfg.AG_SHEET_ID,poll:true}).queue||[];
   if(queue.length){
-   const acks=queue.map(function(q){try{return q.action==='create'?agInsert_(book,tabs,q):q.action==='cancel'?agCancel_(book,tabs,q):q.action==='delete'?agDelete_(book,tabs,q):{id:q.id,ok:false,error:'Không hỗ trợ việc '+q.action};}catch(err){return {id:q.id,ok:false,error:String(err.message).slice(0,280)};}});
+   const acks=queue.map(function(q){try{return q.action==='create'?agInsert_(book,tabs,q):q.action==='update'?agUpdate_(book,tabs,q):q.action==='cancel'?agCancel_(book,tabs,q):q.action==='delete'?agDelete_(book,tabs,q):{id:q.id,ok:false,error:'Không hỗ trợ việc '+q.action};}catch(err){return {id:q.id,ok:false,error:String(err.message).slice(0,280)};}});
    agPost_(cfg,{sheet_id:cfg.AG_SHEET_ID,ack:acks});wrote=acks.filter(a=>a.ok).length;acks.filter(a=>!a.ok).forEach(a=>errors.push('Ghi lịch từ web: '+a.error));
   }
   if(errors.length)throw new Error(errors.join(' | '));

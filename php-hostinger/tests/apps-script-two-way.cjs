@@ -1,4 +1,4 @@
-// Sheet 2 chiều (29/10/2026): chạy AnhGauSync.gs trên Sheet giả lập — chèn lịch web, ghi Hủy, xóa dòng (30/10), tô trùng giờ, tab Tháng N. Chạy: node php-hostinger/tests/apps-script-two-way.cjs
+// Sheet 2 chiều (29/10/2026): chạy AnhGauSync.gs trên Sheet giả lập — chèn lịch web, ghi Hủy, xóa dòng, sửa lịch (30/10), tô trùng giờ, tab Tháng N. Chạy: node php-hostinger/tests/apps-script-two-way.cjs
 const {Book,load}=require('./fixtures/sheet-mock.cjs');
 const gs=process.argv[2]||'php-hostinger/google-sheets/AnhGauSync.gs';let pass=0,fail=0;
 const ok=(c,m)=>{if(c){pass++;console.log('  ✓ '+m);}else{fail++;console.log('  ✗ '+m);}};
@@ -145,4 +145,39 @@ x.cell(2,1).v='32/11';st5.queue=[del(6,ID(999))];st5.acks=[];run(c5);
 ok(st5.acks[0]&&!st5.acks[0].ok&&/Tháng 11 đang lỗi/.test(st5.acks[0].error),'tab đang lỗi: không báo xong, để thử lại: '+(st5.acks[0]&&st5.acks[0].error));
 const b6=new Book(),y=b6.add('Tháng 11',[H.concat(['_AG_BOOKING_ID']),['05/11','09:00','Chỉ 1',699,'','','','','','',ID(61)]]);y.maxRows=2;
 const st6={posts:[],queue:[del(7,ID(61))],acks:[],tabs:{}};ok(run(load(gs,b6,server(st6),cfg))===null&&y.rows().length===1&&st6.acks[0].ok,'tab chỉ còn 1 dòng khách: xóa được, giữ tiêu đề');
+console.log('12. Sửa lịch trên web → chỉ ghi ô được sửa; đổi giờ/ngày thì chuyển dòng, giữ các ô khác');
+const HU=['Ngày','Time','Tên khách','Gói','SĐT','Thợ chính','Thợ phụ','Makeup','Tip','Ghi chú','Còn lại','_AG_BOOKING_ID'],F={v:'=f',formula:'=R[0]C[-7]-1'};
+const b7=new Book(),u11=b7.add('Tháng 11',[HU,
+ ['05/11','09:00','A1',699,'0901','TÍN','',mk('Nam'),'50k','n1',{...F},ID(101)],['','11:00','A2',699,'','HUY','CƯỜNG',mk(''),'','',{...F},ID(102)],['','13:00','A3',1499,'','','',mk(''),'','',{...F},ID(103)],
+ ['06/11','10:00','B1',399,'','HUY','',mk(''),'','',{...F},ID(104)],['07/11','10:00','C1',399,'','HUY','',mk(''),'','',{...F},ID(105)]]);u11.merges.push({c:1,r1:2,r2:4});
+const u5=b7.add('Tháng 5',[HU,['03/05','10:00','Cũ',699,'','HUY','','','','x','',ID(201)],['','14:00','Cũ2',699,'','HUY','','','','y','',ID(202)]]);
+const upd=(n,id,day,time,changed,v,tab)=>({id:ID(700+n),booking_id:id,action:'update',tab:tab||'Tháng 11',day,time,length:60,changed,from_day:day,values:Object.assign({customer_name:'',customer_phone:'',package_label:'',main_alias:'HUY',support_alias:'CƯỜNG',deposit_label:'',note:'',makeup:'',special:''},v)});
+const st7={posts:[],queue:[],acks:[],tabs:{}},c7=load(gs,b7,server(st7),cfg),row7=(s,id)=>s.rows().findIndex(r=>r[11]===id)+1,cells=(s,id)=>s.rows()[row7(s,id)-1];
+st7.queue=[upd(1,ID(101),'2026-11-05','09:00',['customer_name','customer_phone','note'],{customer_name:'A1 mới',note:'ghi chú mới',makeup:'Nam'}),upd(2,ID(102),'2026-11-05','11:00',['makeup'],{customer_name:'A2',makeup:'Làm tóc'}),upd(3,ID(103),'2026-11-05','12:00',['time'],{customer_name:'A3'})];
+ok(run(c7)===null,'chạy không lỗi');let a1=cells(u11,ID(101));
+ok(a1[2]==='A1 mới'&&a1[4]===''&&a1[9]==='ghi chú mới','sửa tại chỗ: tên, xóa SĐT, ghi chú');
+ok(a1[5]==='TÍN'&&a1[8]==='50k'&&a1[7]==='Nam'&&a1[3]==='699','ô không sửa giữ nguyên (thợ TÍN trên Sheet, Tip, Makeup, Gói)');
+ok(cells(u11,ID(102))[7]==='Làm Tóc'&&cells(u11,ID(102))[2]==='A2','chỉ sửa Make up → ghi đúng chữ dropdown "Làm Tóc"');
+ok(row7(u11,ID(103))===4&&cells(u11,ID(103))[1]==='12:00','13:00 → 12:00 vẫn sau 11:00: sửa giờ tại chỗ, không chuyển dòng');
+ok(st7.acks.length===3&&st7.acks.every(a=>a.ok),'báo web 3 việc xong');
+st7.queue=[upd(4,ID(101),'2026-11-05','14:00',['time'],{customer_name:'A1 mới'})];st7.acks=[];ok(run(c7)===null,'chạy không lỗi');
+let r7=u11.rows().map(r=>[r[0],r[1],r[2]].join('|'));console.log('     Tháng 11:',JSON.stringify(r7));
+ok(r7[1]==='05/11|11:00|A2'&&r7[2]==='|12:00|A3'&&r7[3]==='|14:00|A1 mới'&&u11.merges.some(m=>m.r1===2&&m.r2===4),'09:00 → 14:00: chuyển xuống cuối ngày 05/11, ô Ngày chuyển cho A2, vẫn gộp 3 dòng');
+a1=cells(u11,ID(101));ok(a1[5]==='TÍN'&&a1[8]==='50k'&&a1[7]==='Nam'&&a1[9]==='ghi chú mới'&&u11.cell(row7(u11,ID(101)),11).formula==='=R[0]C[-7]-1','dòng chuyển giữ thợ, Tip, Makeup, Ghi chú, công thức');
+ok(st7.acks[0].ok&&st7.acks[0].tab==='Tháng 11'&&st7.acks[0].row===4,'báo web dòng mới: Tháng 11 dòng 4');
+st7.queue=[upd(5,ID(104),'2026-11-09','10:00',['day'],{customer_name:'B1'})];st7.acks=[];ok(run(c7)===null,'chạy không lỗi');r7=u11.rows().map(r=>[r[0],r[1],r[2]].join('|'));console.log('     Tháng 11:',JSON.stringify(r7));
+ok(!r7.some(r=>r.startsWith('06/11'))&&r7.indexOf('09/11|10:00|B1')>r7.indexOf('07/11|10:00|C1'),'06/11 → 09/11: dòng chuyển sau 07/11, ngày 06/11 không còn dòng');
+st7.queue=[upd(6,ID(102),'2026-12-03','15:00',['day','time'],{customer_name:'A2',makeup:'Làm tóc'})];st7.acks=[];ok(run(c7)===null,'chạy không lỗi');
+const u12=b7.getSheetByName('Tháng 12'),moved=u12&&cells(u12,ID(102));
+ok(moved&&moved[0]==='03/12'&&moved[1]==='15:00'&&moved[5]==='HUY'&&moved[6]==='CƯỜNG'&&moved[7]==='Làm Tóc'&&row7(u11,ID(102))===0,'đổi sang 03/12: tạo tab Tháng 12, dòng mang theo thợ, Makeup; Tháng 11 không còn');
+ok(st7.acks[0].ok&&st7.acks[0].tab==='Tháng 12','báo web tab mới Tháng 12');
+r7=u11.rows().map(r=>[r[0],r[1],r[2]].join('|'));ok(r7[1]==='05/11|12:00|A3'&&r7[2]==='|14:00|A1 mới','05/11 còn A3, A1 đúng ngày');
+console.log('13. Sửa lịch đã qua ở tab tháng cũ (ngoài khoảng đồng bộ) và các trường hợp lỗi');
+st7.queue=[upd(7,ID(201),'2026-05-03','10:00',['customer_name','package_label'],{customer_name:'Cũ sửa',package_label:'1499'},'Tháng 5'),upd(8,ID(202),'2026-05-03','08:00',['time'],{customer_name:'Cũ2'},'Tháng 5')];st7.acks=[];ok(run(c7)===null,'chạy không lỗi');
+const r5=u5.rows().map(r=>[r[0],r[1],r[2],r[3]].join('|'));console.log('     Tháng 5:',JSON.stringify(r5));
+ok(r5[1]==='03/05|08:00|Cũ2|699'&&r5[2]==='|10:00|Cũ sửa|1.499','tab Tháng 5 (ngoài khoảng): sửa tên, gói; 14:00 → 08:00 lên đầu ngày, giữ ô Ngày');
+ok(st7.acks.every(a=>a.ok&&a.tab==='Tháng 5'),'báo web xong, đúng tab Tháng 5');
+u11.getRange(row7(u11,ID(103)),2).setValue('12:30');st7.queue=[upd(9,ID(103),'2026-11-05','12:00',['customer_name'],{customer_name:'A3 mới'}),upd(10,ID(999),'2026-11-05','10:00',['customer_name'],{})];st7.acks=[];run(c7);
+ok(cells(u11,ID(103))[1]==='12:30'&&cells(u11,ID(103))[2]==='A3 mới','chỉ sửa tên: giờ vừa đổi tay trên Sheet (12:30) giữ nguyên');
+ok(st7.acks[1]&&!st7.acks[1].ok&&/Không thấy dòng/.test(st7.acks[1].error),'lịch không còn trên Sheet: báo lỗi về web');
 console.log(`\n${pass} đạt, ${fail} lỗi`);process.exit(fail?1:0);
