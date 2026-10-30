@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-// Việc / Nhắc nhở: Admin và Quản lý giao; người nhận xác nhận Đã xem hoặc Đã xong (ảnh bằng chứng tùy chọn).
+// Việc / Nhắc nhở: Admin và Quản lý giao và sửa (cả đổi người nhận); người nhận xác nhận Đã xem hoặc Đã xong (ảnh bằng chứng tùy chọn).
 const TASK_KINDS=['task','notice'];
 function task_uuid(): string {
  $h=bin2hex(random_bytes(16));$h[12]='4';$h[16]=dechex(8|hexdec($h[16])&3);
@@ -44,16 +44,21 @@ function task_mine(App $a,array $t): array {
 function task_audit(App $a,string $id,string $action,?array $before,?array $after,string $note='',?int $actor=null): void {
  $a->run('INSERT INTO {{task_audit}}(task_id,actor_id,action,before_json,after_json,note,time) VALUES(?,?,?,?,?,?,?)',[$id,$actor??$a->user['id'],$action,$before===null?null:json_encode($before,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$after===null?null:json_encode($after,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$note,now_ms()]);
 }
+// Người nhận: @all = mọi người đang làm trừ người giao; hoặc danh sách người cụ thể đang làm. Dùng chung khi giao và khi sửa việc.
+function task_recipient_ids(App $a,int $creator,mixed $audience,mixed $ids): array {
+ if(!in_array($audience,['all','people'],true))fail('Chọn người nhận.');
+ $active=array_column($a->all("SELECT id FROM {{users}} WHERE archived=0 AND status!='inactive'"),'id');
+ if($audience==='all')$ids=array_values(array_filter($active,fn($id)=>$id!==$creator));
+ else{if(!is_array($ids)||!$ids||count($ids)>200)fail('Chọn ít nhất một người nhận.');foreach($ids as $id)if(!is_int($id)||!in_array($id,$active,true))fail('Người nhận không tồn tại hoặc đã nghỉ.');$ids=array_values(array_unique($ids));}
+ if(!$ids)fail('Chưa có nhân viên nào để giao việc.');
+ return $ids;
+}
 // Tạo việc dùng chung cho web và lệnh Telegram; $me là người giao (Admin/Quản lý).
 function task_create(App $a,int $me,array $b,string $note=''): array {
   $kind=$b['kind']??'';if(!in_array($kind,TASK_KINDS,true))fail('Chọn loại: Task hoặc Nhắc nhở.');
   $title=task_text($b['title']??null,'Tiêu đề',3,150);$body=task_text($b['body']??'','Nội dung',0,2000);$due=task_due($b['due_at']??null,$kind);
   $photo=$kind==='task'?task_photo_count($b['require_photo']??false):0;
-  $audience=$b['audience']??'';if(!in_array($audience,['all','people'],true))fail('Chọn người nhận.');
-  $active=array_column($a->all("SELECT id FROM {{users}} WHERE archived=0 AND status!='inactive'"),'id');
-  if($audience==='all')$ids=array_values(array_filter($active,fn($id)=>$id!==$me));
-  else{$ids=$b['user_ids']??null;if(!is_array($ids)||!$ids||count($ids)>200)fail('Chọn ít nhất một người nhận.');foreach($ids as $id)if(!is_int($id)||!in_array($id,$active,true))fail('Người nhận không tồn tại hoặc đã nghỉ.');$ids=array_values(array_unique($ids));}
-  if(!$ids)fail('Chưa có nhân viên nào để giao việc.');
+  $audience=$b['audience']??'';$ids=task_recipient_ids($a,$me,$audience,$b['user_ids']??null);
   $id=task_uuid();$now=now_ms();
   $a->run("INSERT INTO {{tasks}}(id,kind,title,body,due_at,require_photo,audience,status,cancel_reason,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,'open','',?,?,?,?)",[$id,$kind,$title,$body,$due,$photo,$audience,$me,$now,$me,$now]);
   foreach($ids as $uid)$a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'','pending')",[$id,$uid]);
@@ -124,8 +129,19 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   $title=task_text($b['title']??null,'Tiêu đề',3,150);$body=task_text($b['body']??'','Nội dung',0,2000);
   $due=($b['due_at']??null)===$t['due_at']?$t['due_at']:task_due($b['due_at']??null,$t['kind']);
   $before=['title'=>$t['title'],'body'=>$t['body'],'due_at'=>$t['due_at']];$after=['title'=>$title,'body'=>$body,'due_at'=>$due];
-  if($before===$after)fail('Chưa có thay đổi nào.');
-  $a->run('UPDATE {{tasks}} SET title=?,body=?,due_at=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$title,$body,$due,$me,now_ms(),$t['id']]);
+  // Đổi người nhận (chủ dự án yêu cầu 30/10/2026): giao cho người khác. Người đã báo xong giữ lại; người mới nhận tin Telegram như việc mới.
+  $old=array_map('intval',array_column($a->all('SELECT user_id FROM {{task_recipients}} WHERE task_id=?',[$t['id']]),'user_id'));sort($old);$new=$old;$audience=$t['audience'];
+  if(array_key_exists('audience',$b)){$audience=$b['audience'];$new=task_recipient_ids($a,(int)$t['created_by'],$audience,$b['user_ids']??null);sort($new);
+   foreach($a->all('SELECT r.user_id,u.name FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=? AND r.done_at IS NOT NULL',[$t['id']]) as $x)if(!in_array((int)$x['user_id'],$new,true))fail($x['name'].' đã báo xong việc này nên không bỏ khỏi người nhận được.',409);}
+  if($before===$after&&$new===$old&&$audience===$t['audience'])fail('Chưa có thay đổi nào.');
+  $a->run('UPDATE {{tasks}} SET title=?,body=?,due_at=?,audience=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$title,$body,$due,$audience,$me,now_ms(),$t['id']]);
+  if($new!==$old){
+   foreach(array_diff($old,$new) as $uid){$a->run('DELETE FROM {{task_proofs}} WHERE task_id=? AND user_id=?',[$t['id'],$uid]);$a->run('DELETE FROM {{task_recipients}} WHERE task_id=? AND user_id=?',[$t['id'],$uid]);}
+   // Việc hằng ngày không nhắn Telegram (giống lúc tự tạo mỗi ngày).
+   foreach(array_diff($new,$old) as $uid)$a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'',?)",[$t['id'],$uid,$t['template_id']===null?'pending':'skipped']);
+   $names=fn(array $ids)=>$ids?array_column($a->all('SELECT name FROM {{users}} WHERE id IN ('.implode(',',array_fill(0,count($ids),'?')).') ORDER BY name',array_values($ids)),'name'):[];
+   $before['recipients']=$names($old);$after['recipients']=$names($new);
+  }
   task_audit($a,$t['id'],'edited',$before,$after);return [200,['ok'=>true]];
  }
  $reason=task_text($b['reason']??null,'Lý do hủy',3,500);
@@ -181,10 +197,14 @@ function daily_template_routes(App $a,string $path,array $b,string $method): ?ar
  $before=['title'=>$d['title'],'require_photo'=>(int)$d['require_photo'],'active'=>(int)$d['active']];
  // Việc hôm nay chưa xong thì đổi theo mẫu; việc đã xong và các ngày trước giữ nguyên.
  $todayTask=$a->one('SELECT t.id FROM {{tasks}} t JOIN {{task_recipients}} r ON r.task_id=t.id WHERE t.template_id=? AND t.task_day=? AND t.status=\'open\' AND r.done_at IS NULL',[$d['id'],$today]);
- if($m[2]==='edit'){$f=$fields();if($f===['title'=>$d['title'],'require_photo'=>(int)$d['require_photo']])fail('Chưa có thay đổi nào.');
-  $a->run('UPDATE {{task_templates}} SET title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$f['title'],$f['require_photo'],$me,now_ms(),$d['id']]);
-  if($todayTask)$a->run('UPDATE {{tasks}} SET title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$f['title'],$f['require_photo'],$me,now_ms(),$todayTask['id']]);
-  task_audit($a,$d['id'],'template_edited',$before,$f+['active'=>(int)$d['active']]);return [200,['ok'=>true]];}
+ if($m[2]==='edit'){$f=$fields();
+  // Đổi người làm (chủ dự án yêu cầu 30/10/2026): việc hôm nay chưa xong chuyển sang người mới; việc đã xong và các ngày trước giữ nguyên.
+  $was=(int)$d['user_id'];$uid=$b['user_id']??$was;if(!is_int($uid)||$uid!==$was&&!$a->one("SELECT id FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive'",[$uid]))fail('Chọn nhân viên đang làm.');
+  if($f===['title'=>$d['title'],'require_photo'=>(int)$d['require_photo']]&&$uid===$was)fail('Chưa có thay đổi nào.');
+  $a->run('UPDATE {{task_templates}} SET user_id=?,title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$uid,$f['title'],$f['require_photo'],$me,now_ms(),$d['id']]);
+  if($todayTask){$a->run('UPDATE {{tasks}} SET title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$f['title'],$f['require_photo'],$me,now_ms(),$todayTask['id']]);
+   if($uid!==$was)$a->run('UPDATE {{task_recipients}} SET user_id=?,seen_at=NULL WHERE task_id=? AND user_id=?',[$uid,$todayTask['id'],$was]);}
+  task_audit($a,$d['id'],'template_edited',$before+['user_id'=>$was],$f+['active'=>(int)$d['active'],'user_id'=>$uid]);return [200,['ok'=>true]];}
  $active=$m[2]==='resume'?1:0;if((int)$d['active']===$active)fail('Việc hằng ngày đã ở trạng thái này.',409);
  $a->run('UPDATE {{task_templates}} SET active=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$active,$me,now_ms(),$d['id']]);
  if(!$active&&$todayTask)$a->run("UPDATE {{tasks}} SET status='cancelled',cancel_reason='Ngừng việc hằng ngày',updated_by=?,updated_at=?,version=version+1 WHERE id=?",[$me,now_ms(),$todayTask['id']]);
@@ -194,7 +214,7 @@ function daily_template_routes(App $a,string $path,array $b,string $method): ?ar
 // Cron mỗi phút: ping Telegram cho người nhận việc mới. Không có token/liên kết thì bỏ qua, không gửi dồn việc cũ.
 function task_telegram_tick(App $a,?int $clock=null): void {
  $now=$clock??now_ms();$tg=new Telegram($a);
- $a->run("UPDATE {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id SET r.notify_state='skipped' WHERE r.notify_state='pending' AND (t.status!='open' OR t.created_at<?)",[$now-86400000]);
+ $a->run("UPDATE {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id SET r.notify_state='skipped' WHERE r.notify_state='pending' AND (t.status!='open' OR GREATEST(t.created_at,t.updated_at)<?)",[$now-86400000]);
  if(!$tg->configured())return;
  $a->run("UPDATE {{task_recipients}} r LEFT JOIN {{telegram_links}} l ON l.user_id=r.user_id SET r.notify_state='nolink' WHERE r.notify_state='pending' AND l.user_id IS NULL");
  $rows=$a->all("SELECT r.task_id,r.user_id,l.chat_id,t.kind,t.title,t.body,t.due_at,t.require_photo,(SELECT name FROM {{users}} WHERE id=t.created_by) creator_name FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id JOIN {{telegram_links}} l ON l.user_id=r.user_id WHERE r.notify_state='pending' ORDER BY t.created_at LIMIT 25");
