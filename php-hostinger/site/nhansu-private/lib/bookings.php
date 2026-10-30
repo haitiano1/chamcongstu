@@ -327,6 +327,21 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$id,$a->user['id'],'updated_web',json_encode($old,JSON_THROW_ON_ERROR),json_encode($row+['changed'=>$changed],JSON_THROW_ON_ERROR),now_ms()]);
   return [200,['ok'=>true,'changed'=>$changed,'tab'=>$old['source_tab'],'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
  }
+ // Gói khách chụp (chủ dự án yêu cầu 30/10/2026): khách thường tới studio mới chốt gói (399/699 hoặc gói cao hơn). Chọn trong popup lịch, cùng quyền Sửa lịch;
+ // chỉ đổi ô Gói trên web và Sheet, không kiểm tra trùng giờ vì khách đã tới chụp. Lịch đã qua cũng chọn được.
+ if($path==='/bookings/package'&&$method==='POST'){
+  if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền sửa lịch.',403);
+  $id=entry_uuid($b['id']??null);$old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);
+  if(!$old||$old['status']==='deleted')fail('Không tìm thấy lịch.',404);if($old['status']!=='active')fail('Lịch đã hủy, không sửa được.',409);
+  $price=$b['package']??null;if(!is_int($price)||!isset(BOOKING_WEB_PACKAGES[$price])&&$price!==BOOKING_TEAM_PRICE)fail('Chọn gói khách chụp: 399, 699, Couple 999, 1499, 2999 hoặc Team 349.');
+  if(booking_package_price($old['package_label'])===$price)return [200,['ok'=>true,'changed'=>[]]];
+  $label=(string)$price;$a->run('UPDATE {{shoot_bookings}} SET package_label=?,sheet_fields_json=?,updated_at=? WHERE id=?',[$label,booking_patch_fields($old['sheet_fields_json'],['package_label'=>$label]),now_ms(),$id]);
+  // Make up, Đặc biệt, Ghi chú không đổi: gửi lại đúng nội dung của việc ghi Sheet còn chờ (thêm/sửa lịch trước đó) để khi gộp việc không bị mất.
+  $wait=$a->scalar("SELECT payload_json FROM {{booking_sheet_queue}} WHERE booking_id=? AND action IN ('create','update') AND status IN ('pending','failed') ORDER BY created_at DESC,id DESC LIMIT 1",[$id]);
+  booking_enqueue_update($a,$id,$old['source_tab'],array_intersect_key(json_decode($wait?:'[]',true)?:[],['makeup'=>1,'special'=>1,'note'=>1])+['from_day'=>$old['shoot_day']],['package_label']);
+  $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$id,$a->user['id'],'package_web',json_encode(['package_label'=>$old['package_label']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),json_encode(['package_label'=>$label],JSON_THROW_ON_ERROR),now_ms()]);
+  return [200,['ok'=>true,'changed'=>['package_label'],'tab'=>$old['source_tab'],'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
+ }
  if($path==='/bookings/cancel'&&$method==='POST'){
   if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền hủy lịch.',403);
   $id=entry_uuid($b['id']??null);$reason=input_text($b['reason']??'','Lý do hủy',0,300);$old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);

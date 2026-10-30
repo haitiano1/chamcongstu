@@ -180,4 +180,15 @@ ok(st7.acks.every(a=>a.ok&&a.tab==='Tháng 5'),'báo web xong, đúng tab Tháng
 u11.getRange(row7(u11,ID(103)),2).setValue('12:30');st7.queue=[upd(9,ID(103),'2026-11-05','12:00',['customer_name'],{customer_name:'A3 mới'}),upd(10,ID(999),'2026-11-05','10:00',['customer_name'],{})];st7.acks=[];run(c7);
 ok(cells(u11,ID(103))[1]==='12:30'&&cells(u11,ID(103))[2]==='A3 mới','chỉ sửa tên: giờ vừa đổi tay trên Sheet (12:30) giữ nguyên');
 ok(st7.acks[1]&&!st7.acks[1].ok&&/Không thấy dòng/.test(st7.acks[1].error),'lịch không còn trên Sheet: báo lỗi về web');
+console.log('14. Gói khách chụp (popup lịch) → chỉ ghi ô Gói, đúng chữ dropdown');
+const GD={type:'VALUE_IN_LIST',values:['399','699','Couple 999','1499','2999','Team 349']},gk=v=>({v,fmt:'',dv:GD});
+const b8=new Book(),g11=b8.add('Tháng 11',[HU,['05/11','09:00','G1',gk(''),'0901','TÍN','',mk('Nữ'),'50k','n1',{...F},ID(301)],['','10:00','G2',gk(''),'','HUY','CƯỜNG',mk(''),'','',{...F},ID(302)],['','11:00','G3',gk(699),'','HUY','',mk(''),'','',{...F},ID(303)]]);
+const st8={posts:[],queue:[],acks:[],tabs:{}},c8=load(gs,b8,server(st8),cfg),g8=id=>g11.rows().find(r=>r[11]===id);
+st8.queue=[upd(11,ID(301),'2026-11-05','09:00',['package_label'],{customer_name:'G1',package_label:'1499'}),upd(12,ID(302),'2026-11-05','10:00',['package_label'],{customer_name:'G2',package_label:'999'}),upd(13,ID(303),'2026-11-05','11:00',['package_label'],{customer_name:'G3',package_label:'349'})];
+ok(run(c8)===null,'chạy không lỗi');
+ok(g8(ID(301))[3]==='1.499'&&g8(ID(302))[3]==='Couple 999'&&g8(ID(303))[3]==='Team 349','ghi đúng lựa chọn dropdown: 1499, Couple 999, Team 349 (699 → Team 349)');
+ok(g8(ID(301)).slice(0,3).join('|')==='05/11|09:00|G1'&&g8(ID(301))[4]==='0901'&&g8(ID(301))[5]==='TÍN'&&g8(ID(301))[7]==='Nữ'&&g8(ID(301))[8]==='50k'&&g8(ID(301))[9]==='n1'&&g11.cell(2,11).formula==='=R[0]C[-7]-1','ô khác giữ nguyên: ngày, giờ, tên, SĐT, thợ TÍN, Makeup, Tip, ghi chú, công thức');
+ok(g11.rows().slice(1).map(r=>r[11]).join()===[ID(301),ID(302),ID(303)].join(','),'không chuyển dòng');
+ok(st8.acks.length===3&&st8.acks.every(a=>a.ok&&a.tab==='Tháng 11'),'báo web 3 việc xong');
+st8.queue=[upd(14,ID(303),'2026-11-05','11:00',['package_label'],{customer_name:'G3',package_label:'399'})];st8.acks=[];ok(run(c8)===null&&g8(ID(303))[3]==='399','đổi Team 349 → 399: ghi "399"');
 console.log(`\n${pass} đạt, ${fail} lỗi`);process.exit(fail?1:0);
