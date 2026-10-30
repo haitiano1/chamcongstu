@@ -1,4 +1,4 @@
-// Sheet 2 chiều (29/10/2026): chạy AnhGauSync.gs trên Sheet giả lập — chèn lịch web, ghi Hủy, tô trùng giờ, tab Tháng N. Chạy: node php-hostinger/tests/apps-script-two-way.cjs
+// Sheet 2 chiều (29/10/2026): chạy AnhGauSync.gs trên Sheet giả lập — chèn lịch web, ghi Hủy, xóa dòng (30/10), tô trùng giờ, tab Tháng N. Chạy: node php-hostinger/tests/apps-script-two-way.cjs
 const {Book,load}=require('./fixtures/sheet-mock.cjs');
 const gs=process.argv[2]||'php-hostinger/google-sheets/AnhGauSync.gs';let pass=0,fail=0;
 const ok=(c,m)=>{if(c){pass++;console.log('  ✓ '+m);}else{fail++;console.log('  ✗ '+m);}};
@@ -123,4 +123,26 @@ ok(!red(3)&&!red(4),'các dòng Team cùng 10:00 không bị tô là trùng nhau
 ok(/dòng 5/.test(g.cell(2,2).note)&&!/dòng 3|dòng 4/.test(g.cell(2,2).note),'ghi chú dòng Team chỉ nhắc dòng khách lẻ');
 ok(red(6)&&red(7),'Couple (chữ, 2 tiếng) 13:00 trùng 399 lúc 14:00');
 ok(!red(8),'ô Gói trống 16:00 = 1 tiếng, không trùng');
+console.log('11. Xóa lịch trên web → xóa dòng, ô Ngày chuyển xuống khách còn lại');
+const b5=new Book(),x=b5.add('Tháng 11',[H.concat(['_AG_BOOKING_ID']),
+ ['05/11','09:00','A1',699,'','','','','','',ID(11)],['','11:00','A2',699,'','','','','','',ID(12)],['','13:00','A3',699,'','','','','','',ID(13)],
+ ['06/11','09:00','B1',699,'','','','','','',ID(21)],['','11:00','B2',699,'','','','','','',ID(22)],
+ ['07/11','09:00','C1',699,'','','','','','',ID(31)],['','',  '',  '','','','','','','',''],['','11:00','C2',699,'','','','','','',ID(32)],
+ ['08/11','09:00','D1',699,'','','','','','',ID(41)],['09/11','10:00','E1',699,'','','','','','',ID(51)]]);
+x.merges.push({c:1,r1:2,r2:4},{c:1,r1:5,r2:6});
+const del=(n,id,tab)=>({id:ID(800+n),booking_id:id,action:'delete',tab:tab||'Tháng 11',day:'',time:'',values:{}});
+const st5={posts:[],queue:[del(1,ID(11)),del(2,ID(22)),del(3,ID(31)),del(4,ID(41)),del(5,ID(777))],acks:[],tabs:{}},c5=load(gs,b5,server(st5),cfg);
+ok(run(c5)===null,'chạy không lỗi');
+const rx=x.rows().map(r=>[r[0],r[1],r[2]].join('|'));console.log('     Tháng 11:',JSON.stringify(rx));
+ok(rx[1]==='05/11|11:00|A2'&&rx[2]==='|13:00|A3'&&x.merges.some(m=>m.r1===2&&m.r2===3),'xóa khách đầu ngày (ô Ngày gộp 3 dòng) → A2 nhận ô Ngày, gộp lại 2 dòng');
+ok(rx[3]==='06/11|09:00|B1'&&!x.merges.some(m=>m.r1<=4&&m.r2>=5),'xóa dòng cuối của ô gộp → ngày 06/11 còn B1, giữ ô Ngày');
+ok(rx[4]==='||'&&rx[5]==='07/11|11:00|C2','ô Ngày không gộp: khách sau dòng trống nhận ngày 07/11');
+ok(rx[6]==='09/11|10:00|E1'&&!rx.some(r=>/D1/.test(r)),'xóa khách duy nhất của 08/11 → xóa dòng, ngày 09/11 giữ nguyên');
+ok(st5.acks.length===5&&st5.acks.every(a=>a.ok),'báo web đủ 5 việc thành công (mã không còn trên Sheet cũng xong)');
+st5.tabs={};ok(run(c5)===null,'chạy lại không lỗi');
+ok(JSON.stringify(st5.tabs['Tháng 11'].map(r=>r.day+' '+r.customer_name))===JSON.stringify(['2026-11-05 A2','2026-11-05 A3','2026-11-06 B1','2026-11-07 C2','2026-11-09 E1']),'web đọc lại đúng ngày của các khách còn lại');
+x.cell(2,1).v='32/11';st5.queue=[del(6,ID(999))];st5.acks=[];run(c5);
+ok(st5.acks[0]&&!st5.acks[0].ok&&/Tháng 11 đang lỗi/.test(st5.acks[0].error),'tab đang lỗi: không báo xong, để thử lại: '+(st5.acks[0]&&st5.acks[0].error));
+const b6=new Book(),y=b6.add('Tháng 11',[H.concat(['_AG_BOOKING_ID']),['05/11','09:00','Chỉ 1',699,'','','','','','',ID(61)]]);y.maxRows=2;
+const st6={posts:[],queue:[del(7,ID(61))],acks:[],tabs:{}};ok(run(load(gs,b6,server(st6),cfg))===null&&y.rows().length===1&&st6.acks[0].ok,'tab chỉ còn 1 dòng khách: xóa được, giữ tiêu đề');
 console.log(`\n${pass} đạt, ${fail} lỗi`);process.exit(fail?1:0);

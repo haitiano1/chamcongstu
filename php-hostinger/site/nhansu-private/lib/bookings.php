@@ -100,12 +100,12 @@ function booking_sheet_states(App $a,array $ids): array {
 function booking_queue_skip(App $a,string $booking,bool $unsentOnly=false): int {
  return $a->run("UPDATE {{booking_sheet_queue}} SET status='skipped',done_at=? WHERE booking_id=? AND status IN ('pending','failed')".($unsentOnly?" AND action='create' AND sent_at IS NULL":''),[now_ms(),$booking])->rowCount();
 }
-// Apps Script hỏi việc cần ghi: lịch mới (create) và lịch hủy trên web (cancel).
+// Apps Script hỏi việc cần ghi: lịch mới (create), lịch hủy (cancel) và lịch xóa trên web (delete: xóa dòng).
 function booking_queue_poll(App $a): array {
  $out=[];
  foreach($a->all("SELECT * FROM {{booking_sheet_queue}} WHERE status='pending' ORDER BY created_at,id LIMIT 20") as $q){
   $bk=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$q['booking_id']]);
-  if(!$bk||$bk['status']==='deleted'){$a->run("UPDATE {{booking_sheet_queue}} SET status='skipped',done_at=? WHERE id=?",[now_ms(),$q['id']]);continue;}
+  if(!$bk||($bk['status']==='deleted')!==($q['action']==='delete')){$a->run("UPDATE {{booking_sheet_queue}} SET status='skipped',done_at=? WHERE id=?",[now_ms(),$q['id']]);continue;}
   $a->run('UPDATE {{booking_sheet_queue}} SET sent_at=? WHERE id=?',[now_ms(),$q['id']]);$payload=json_decode($q['payload_json'],true)?:[];
   $out[]=['id'=>$q['id'],'booking_id'=>$q['booking_id'],'action'=>$q['action'],'tab'=>$q['action']==='create'?$q['tab']:$bk['source_tab'],'day'=>$bk['shoot_day'],'time'=>booking_hm((int)$bk['minutes']),'length'=>booking_length($bk['package_label'],$bk['note']),
    // Make up, Đặc biệt gửi riêng: Sheet có cột đó thì ghi vào cột, không thì script ghép vào Ghi chú.
@@ -120,7 +120,10 @@ function booking_queue_ack(App $a,array $acks,string $sheet): array {
   if(($k['ok']??null)===true){
    $a->run("UPDATE {{booking_sheet_queue}} SET status='done',error='',done_at=? WHERE id=?",[now_ms(),$q['id']]);$done++;
    if($q['action']==='create'){$tab=input_text($k['tab']??$q['tab'],'Tên tab',1,150);$row=is_int($k['row']??null)&&$k['row']>0?$k['row']:0;$a->run("UPDATE {{shoot_bookings}} SET source_sheet=?,source_tab=?,source_row=? WHERE id=? AND source_sheet IN (?,'web')",[$sheet,$tab,$row,$q['booking_id'],$sheet]);}
-  }else{$error=trim(preg_replace('/[\x00-\x1F\x7F]+/u',' ',is_string($k['error']??null)&&preg_match('//u',$k['error'])?$k['error']:'Apps Script không ghi được.'));$a->run("UPDATE {{booking_sheet_queue}} SET status='failed',error=?,done_at=? WHERE id=?",[mb_substr($error,0,300),now_ms(),$q['id']]);}
+  }else{$error=trim(preg_replace('/[\x00-\x1F\x7F]+/u',' ',is_string($k['error']??null)&&preg_match('//u',$k['error'])?$k['error']:'Apps Script không ghi được.'));
+   // Lịch đã xóa không còn popup để bấm Thử ghi lại: giữ việc xóa dòng ở hàng chờ, script tự thử lại lần sau.
+   if($q['action']==='delete')$a->run('UPDATE {{booking_sheet_queue}} SET error=?,sent_at=NULL WHERE id=?',[mb_substr($error,0,300),$q['id']]);
+   else $a->run("UPDATE {{booking_sheet_queue}} SET status='failed',error=?,done_at=? WHERE id=?",[mb_substr($error,0,300),now_ms(),$q['id']]);}
  }
  return ['acked'=>count($acks),'done'=>$done];
 }
@@ -274,10 +277,12 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  }
  if($path==='/bookings/import'&&$method==='POST'){$a->requireManager();$sheet=input_text($b['sheet_id']??'manual','Mã nguồn',1,80);return [200,import_bookings($a,$b,$sheet,$a->user['id'])];}
  if($path==='/bookings/delete'&&$method==='POST'){
-  // Xóa mềm: ẩn khỏi lịch, thống kê, đối soát và nhắc Telegram; giữ dòng và nhật ký trước/sau.
+  // Xóa mềm: ẩn khỏi lịch, thống kê, đối soát và nhắc Telegram; giữ dòng và nhật ký trước/sau trong database.
   $a->requireManager();$id=entry_uuid($b['id']??null);$reason=input_text($b['reason']??'','Lý do xóa',0,300);
   $old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);if(!$old)fail('Không tìm thấy lịch.',404);if($old['status']==='deleted')fail('Lịch này đã bị xóa.',409);
-  freeze_existing_booking_day($a,$old['shoot_day']);$a->run("UPDATE {{shoot_bookings}} SET status='deleted',updated_at=? WHERE id=?",[now_ms(),$id]);booking_queue_skip($a,$id);
+  freeze_existing_booking_day($a,$old['shoot_day']);$a->run("UPDATE {{shoot_bookings}} SET status='deleted',updated_at=? WHERE id=?",[now_ms(),$id]);
+  // Xóa luôn dòng trên Google Sheet. Lịch web chưa kịp ghi xuống Sheet thì chỉ bỏ việc ghi.
+  if(!booking_queue_skip($a,$id,true)){booking_queue_skip($a,$id);booking_enqueue($a,$id,'delete',$old['source_tab'],['reason'=>$reason]);}
   $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$id,$a->user['id'],'deleted',json_encode($old,JSON_THROW_ON_ERROR),json_encode(['status'=>'deleted','reason'=>$reason],JSON_THROW_ON_ERROR),now_ms()]);
   return [200,['ok'=>true]];
  }

@@ -1,6 +1,6 @@
 /** Bound Google Apps Script. No public Sheet publication, OAuth client or service-account key needed.
  * Paste in Extensions > Apps Script of the booking sheet. Configure via menu; do not hardcode secrets.
- * Hai chiều (29/10/2026): gửi các tab "Tháng N" lên web; lấy lịch thêm/hủy trên web về ghi vào đúng tab, đúng ngày, đúng thứ tự giờ.
+ * Hai chiều (29/10/2026): gửi các tab "Tháng N" lên web; lấy lịch thêm/hủy trên web về ghi vào đúng tab, đúng ngày, đúng thứ tự giờ; lịch xóa trên web thì xóa dòng (30/10/2026).
  */
 const AG_BACK=1,AG_AHEAD=6;// Đồng bộ tab tháng trước đến 6 tháng tới: tên "Tháng 1" không bị nhầm năm.
 const AG_FORCE_MS=600000;// Tab không đổi vẫn gửi lại mỗi 10 phút.
@@ -45,10 +45,12 @@ function agTabs_(book,cfg){
  const sheet=book.getSheetByName(cfg.AG_TAB);if(!sheet)throw new Error('Tab dữ liệu đã đổi tên hoặc không tồn tại.');return [{sheet:sheet,name:cfg.AG_TAB,year:Number(cfg.AG_YEAR),month:0,legacy:true}];
 }
 // Đọc một tab: hàng tiêu đề, các dòng lịch và vị trí từng ngày. ids dùng chung mọi tab: dòng sao chép mang theo mã của dòng khác thì cấp mã mới.
+function agHeader_(values){
+ for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0)return {header:i,columns:{date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))}};}
+ return null;
+}
 function agParse_(values,year,tabMonth,ids){
- let header=-1,columns;
- for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0){header=i;columns={date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))};break;}}
- if(header<0)throw new Error('Không tìm thấy hàng tiêu đề gồm Ngày, Time/Giờ, Tên khách.');
+ const found=agHeader_(values);if(!found)throw new Error('Không tìm thấy hàng tiêu đề gồm Ngày, Time/Giờ, Tên khách.');const header=found.header,columns=found.columns;
  let idCol=values[header].indexOf('_AG_BOOKING_ID');const addIdHeader=idCol<0;if(addIdHeader)idCol=values[header].length;
  const rows=[],newIds=[],entries=[];let lastDay='';
  for(let i=header+1;i<values.length;i++){
@@ -189,6 +191,20 @@ function agCancel_(book,tabs,q){
  if(col<0){col=Math.max(sheet.getLastColumn(),t.parsed.idCol+1);sheet.getRange(t.parsed.header+1,col+1).setValue('Trạng thái');}
  sheet.getRange(f.row,col+1).setValue('Hủy');if(t.parsed)agLoad_(t,{},false);return {id:q.id,ok:true,tab:t.name,row:f.row};
 }
+// Lịch xóa trên web → xóa dòng. Ô Ngày nằm ở dòng bị xóa (ô gộp hoặc chỉ ghi ở dòng đầu ngày) thì chuyển xuống dòng kế để các khách còn lại giữ đúng ngày.
+function agDelete_(book,tabs,q){
+ const f=agFind_(book,tabs,q.booking_id,q.tab);
+ if(!f){const bad=tabs.find(x=>x.error);if(bad)throw new Error('Tab '+bad.name+' đang lỗi: '+bad.error);return {id:q.id,ok:true,tab:q.tab,row:0};}// Dòng đã không còn trên Sheet.
+ const t=f.t,sheet=t.sheet,r=f.row,values=sheet.getDataRange().getDisplayValues(),h=agHeader_(values);
+ if(h&&String(values[r-1][h.columns.date]||'').trim()){
+  const c=h.columns,col=c.date+1,cell=sheet.getRange(r,col),merged=cell.getMergedRanges()[0];
+  if(merged&&merged.getLastRow()>r){const last=merged.getLastRow();merged.breakApart();cell.copyTo(sheet.getRange(r+1,col));sheet.deleteRow(r);if(last-1>r)sheet.getRange(r,col,last-r,1).merge();if(t.parsed)agLoad_(t,{},false);return {id:q.id,ok:true,tab:t.name,row:r};}
+  // Ô Ngày không gộp: dòng khách kế tiếp chưa ghi ngày (cùng ngày) thì nhận ô Ngày này.
+  for(let i=r;i<values.length;i++){const v=values[i];if(String(v[c.date]||'').trim())break;if(String(v[c.time]||'').trim()||String(v[c.customer_name]||'').trim()){cell.copyTo(sheet.getRange(i+1,col));break;}}
+ }
+ if(sheet.getMaxRows()<=r)sheet.insertRowsAfter(r,1);// Sheets không cho xóa hết các dòng không cố định.
+ sheet.deleteRow(r);if(t.parsed)agLoad_(t,{},false);return {id:q.id,ok:true,tab:t.name,row:r};
+}
 function dongBoAnhGau(e){
  const forced=!(e&&e.triggerUid),lock=LockService.getScriptLock();if(!lock.tryLock(1000))return;
  try{
@@ -204,7 +220,7 @@ function dongBoAnhGau(e){
   p.setProperty('AG_HASHES',JSON.stringify(hashes));
   const queue=agPost_(cfg,{sheet_id:cfg.AG_SHEET_ID,poll:true}).queue||[];
   if(queue.length){
-   const acks=queue.map(function(q){try{return q.action==='create'?agInsert_(book,tabs,q):q.action==='cancel'?agCancel_(book,tabs,q):{id:q.id,ok:false,error:'Không hỗ trợ việc '+q.action};}catch(err){return {id:q.id,ok:false,error:String(err.message).slice(0,280)};}});
+   const acks=queue.map(function(q){try{return q.action==='create'?agInsert_(book,tabs,q):q.action==='cancel'?agCancel_(book,tabs,q):q.action==='delete'?agDelete_(book,tabs,q):{id:q.id,ok:false,error:'Không hỗ trợ việc '+q.action};}catch(err){return {id:q.id,ok:false,error:String(err.message).slice(0,280)};}});
    agPost_(cfg,{sheet_id:cfg.AG_SHEET_ID,ack:acks});wrote=acks.filter(a=>a.ok).length;acks.filter(a=>!a.ok).forEach(a=>errors.push('Ghi lịch từ web: '+a.error));
   }
   if(errors.length)throw new Error(errors.join(' | '));

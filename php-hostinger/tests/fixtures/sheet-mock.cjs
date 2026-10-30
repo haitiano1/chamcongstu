@@ -24,6 +24,7 @@ class Sheet{
  getMaxRows(){return Math.max(this.maxRows,this.cells.length)}
  insertRowsAfter(r,n){for(let i=0;i<n;i++)this.insertRowAfter(r);return this;}
  deleteRows(start,n){this.cells.splice(start-1,n);this.maxRows-=n;this.merges=this.merges.filter(m=>!(m.r1>=start&&m.r2<=start+n-1)).map(m=>({c:m.c,r1:m.r1>=start+n?m.r1-n:Math.min(m.r1,start),r2:m.r2>=start+n?m.r2-n:Math.min(m.r2,start-1)})).filter(m=>m.r2>=m.r1);this.book.log.push(this.name+': deleteRows '+start+' '+n);return this;}
+ deleteRow(r){return this.deleteRows(r,1)}
  setName(n){this.name=n;return this}
  copyTo(book){const s=new Sheet(book,'Bản sao của '+this.name,[]);s.cells=this.cells.map(r=>r.map(c=>({...c})));s.merges=this.merges.map(m=>({...m}));s.frozen=this.frozen;s.widths={...this.widths};s.maxRows=this.maxRows;book.sheets.push(s);book.log.push('copyTo '+this.name);return s;}
  insertRowAfter(r){this.cells.splice(r,0,this.blank(r));this.maxRows++;for(const m of this.merges){if(m.r1>r)m.r1++;if(m.r2>r&&m.r1<=r)m.r2++;else if(m.r2>r)m.r2++;}this.book.log.push(this.name+': insertRowAfter '+r);return this;}
@@ -49,7 +50,7 @@ class Range{
  copyTo(t){const src=this.each(c=>({...c}));t.s.book.log.push('copyTo');for(let i=0;i<this.nr;i++)for(let j=0;j<this.nc;j++)Object.assign(t.s.cell(t.r+i,t.c+j),src[i][j]);}
  clearContent(){this.each(c=>{c.v='';c.formula=''});return this}
  getDataValidation(){const c=this.s.cell(this.r,this.c);return c.dv?{getCriteriaType:()=>c.dv.type,getCriteriaValues:()=>[c.dv.values]}:null}
- getMergedRanges(){return this.s.merges.filter(m=>m.c===this.c&&m.r1<=this.r&&m.r2>=this.r).map(m=>({getRow:()=>m.r1,getLastRow:()=>m.r2}))}
+ getMergedRanges(){return this.s.merges.filter(m=>m.c===this.c&&m.r1<=this.r&&m.r2>=this.r).map(m=>({getRow:()=>m.r1,getLastRow:()=>m.r2,breakApart:()=>{this.s.merges.splice(this.s.merges.indexOf(m),1);}}))}
  merge(){this.s.merges=this.s.merges.filter(m=>!(m.c===this.c&&m.r1>=this.r&&m.r2<=this.r+this.nr-1));this.s.merges.push({c:this.c,r1:this.r,r2:this.r+this.nr-1});return this}
  getFormulasR1C1(){return this.each(c=>c.formula||'')}
  setFormulaR1C1(f){const c=this.s.cell(this.r,this.c);c.formula=f;c.v='=f';return this}
