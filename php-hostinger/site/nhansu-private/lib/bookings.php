@@ -394,7 +394,9 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $rows=$a->all('SELECT b.* FROM {{shoot_bookings}} b WHERE '.$where.' ORDER BY b.shoot_day,b.minutes,b.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
   $states=booking_sheet_states($a,array_column($rows,'id'));$perms=booking_permissions($a);
   foreach($rows as &$row){if($perms['can_create']&&$row['status']==='active')$row['edit']=booking_form($row);$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['sheet_state']=$states[$row['id']]??null;$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
-  return [200,['rows'=>$rows,'total'=>$total,'page'=>$page,'start'=>$start,'end'=>$end,'permissions'=>$perms,'default_staff'=>booking_default_staff($a)]];
+  // Lịch của tôi: kèm ca đã Đăng ký ca và ca nghỉ gấp của chính mình trong tháng để hiện trên từng ngày (chủ dự án yêu cầu 31/10/2026; chỉ để xem).
+  $mine=$person!==null&&$page===1?['registered'=>$a->all('SELECT day,shift FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$person,$start,$end]),'urgent_cancels'=>$a->all('SELECT day,shift FROM {{shift_cancellations}} WHERE user_id=? AND day>=? AND day<=?',[$person,$start,$end])]:[];
+  return [200,['rows'=>$rows,'total'=>$total,'page'=>$page,'start'=>$start,'end'=>$end,'permissions'=>$perms,'default_staff'=>booking_default_staff($a)]+$mine];
  }
  return null;
 }
