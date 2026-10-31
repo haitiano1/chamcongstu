@@ -60,16 +60,34 @@ function booking_rate_save(App $a,int $user,int $rate): void {
 function booking_rates(App $a): array {
  booking_rates_seed($a);$out=[];foreach($a->all('SELECT user_id,rate FROM {{booking_rates}} WHERE rate>0') as $r)$out[(int)$r['user_id']]=(int)$r['rate'];return $out;
 }
+// Khoảng thời gian có mặt theo chấm công của từng người: [giờ chấm vào, giờ chấm ra] thật, không cắt theo khung ca.
+// Ca quên chấm ra coi như có mặt tới hạn checkout (14:30 / 19:30); OT đang mở tính tới hiện tại.
+function attendance_presence(App $a,array $users,string $from,string $to,int $now): array {
+ if(!$users)return [];$by=[];$out=[];
+ foreach($a->all('SELECT id,user_id,type,time,shift,work_date FROM {{events}} WHERE user_id IN ('.implode(',',array_fill(0,count($users),'?')).') AND time>=? AND time<?',[...$users,day_time($from)-86400000,day_time($to)+2*86400000]) as $e)$by[(int)$e['user_id']][]=['id'=>(int)$e['id'],'time'=>(int)$e['time']]+$e;
+ foreach($by as $id=>$events){$p=pairs($events);
+  foreach($p['pairs'] as $s)$out[$id][]=[(int)$s['entry']['time'],(int)$s['exit']['time']];
+  foreach($p['pending'] as $e){$w=$e['shift']==='ot'?null:bounds($e['work_date']??local_day($e['time']),$e['shift']??null);$out[$id][]=[$e['time'],$w?max($e['time'],$w['end']+1800000):($e['shift']==='ot'?$now:$e['time'])];}
+ }
+ return $out;
+}
 // Khách đã chụp trong tháng (lịch đang hoạt động, đã qua giờ chụp) của người có mức hoa hồng.
+// Chỉ tính khi thợ có mặt trong giờ chụp: chấm vào trước khi khách chụp xong và chưa chấm ra trước giờ khách tới. Đã chấm ra
+// (VD làm cả ngày, về 17h thì khách 18h, 19h) hoặc không chấm công hôm đó thì khách không tính, đếm vào 'absent' (chủ dự án chốt 31/10/2026).
 function booking_month_commissions(App $a,string $month,int $now): array {
  $rates=booking_rates($a);if(!$rates)return [];
- $start=valid_month($month).'-01';$end=date('Y-m-t',strtotime($start));$today=local_day($now);$minute=intdiv($now-day_time($today),60000);$out=[];
- foreach($a->all("SELECT DISTINCT s.user_id,b.id,b.shoot_day,b.minutes,b.package_label FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?",[$start,$end]) as $r){
-  $id=(int)$r['user_id'];if(!isset($rates[$id])||$r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute))continue;
+ $start=valid_month($month).'-01';$end=date('Y-m-t',strtotime($start));$today=local_day($now);$minute=intdiv($now-day_time($today),60000);$out=[];$rows=[];
+ foreach($a->all("SELECT DISTINCT s.user_id,b.id,b.shoot_day,b.minutes,b.package_label,b.note FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?",[$start,$end]) as $r)
+  if(isset($rates[(int)$r['user_id']])&&!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute)))$rows[]=$r;
+ $present=attendance_presence($a,array_values(array_unique(array_map(fn($r)=>(int)$r['user_id'],$rows))),$start,$end,$now);
+ foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'units'=>0,'unpriced'=>0,'absent'=>0,'rate'=>$rate];
+ foreach($rows as $r){$id=(int)$r['user_id'];
+  $from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;
+  $here=false;foreach($present[$id]??[] as [$in,$exit])if($in<$to&&$exit>$from){$here=true;break;}
+  if(!$here){$out[$id]['absent']++;continue;}
   $units=BOOKING_PACKAGE_UNITS[booking_package_price($r['package_label'])??0]??0;
-  $out[$id]??=['customers'=>0,'units'=>0,'unpriced'=>0,'rate'=>$rates[$id]];$out[$id]['customers']++;$out[$id]['units']+=$units;if(!$units)$out[$id]['unpriced']++;
+  $out[$id]['customers']++;$out[$id]['units']+=$units;if(!$units)$out[$id]['unpriced']++;
  }
- foreach($rates as $id=>$rate)$out[$id]??=['customers'=>0,'units'=>0,'unpriced'=>0,'rate'=>$rate];
  return $out;
 }
 // Các khoản thưởng tháng Admin/Quản lý nhập trong phiếu lương (chủ dự án yêu cầu 31/10/2026; sau này nối thêm từ Google Sheet, cột source).
@@ -102,7 +120,7 @@ function payroll_apply(App $a,string $month,array $rows,bool $money=true): array
  $progress=$month>=PROGRESS_BONUS_FROM;$bookings=$progress?booking_month_commissions($a,$month,now_ms()):[];$bonuses=$money?payroll_bonuses($a,$month):[];
  foreach($rows as &$p){$used=$kpi[$p['id']]??0;$p['kpi_quota']=KPI_MONTHLY_POINTS;$p['kpi_deducted']=$used;$p['kpi_left']=KPI_MONTHLY_POINTS-$used;
   if($progress&&$p['role']==='employee'){$p['attendance_target']=attendance_target($month);$p['attendance_bonus_vnd']=ATTENDANCE_BONUS_VND;$p['attendance_bonus']=$p['days']>=$p['attendance_target']?ATTENDANCE_BONUS_VND:0;}
-  if($b=$bookings[$p['id']]??null){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_commission']=$b['rate']*$b['units'];}
+  if($b=$bookings[$p['id']]??null){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_absent']=$b['absent'];$p['booking_commission']=$b['rate']*$b['units'];}
   if(!$money)continue;$extra=$bonuses[$p['id']]??[];$items=$extra['items']??[];$p['ot_rate']=$items['ot_rate']??0;$p['ot_bonus']=$p['otSessions']*$p['ot_rate'];unset($items['ot_rate']);$p['bonus_items']=$items;$p['bonus_updated_at']=$extra['at']??null;$p['bonus_updated_by']=$extra['by']??null;
   $p['bonus_total']=(int)$p['commission']+($p['booking_commission']??0)+($p['attendance_bonus']??0)+$p['ot_bonus']+array_sum($items);$p['kpi_money']=$used*KPI_POINT_VND;$p['kpi_applied']=max(0,min($p['kpi_money'],$p['bonus_total']));
   $p['gross_salary']=(int)$p['base_salary']+$p['bonus_total'];$p['salary']=$p['gross_salary']-$p['kpi_applied'];}
