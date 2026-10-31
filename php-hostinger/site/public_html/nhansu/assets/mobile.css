@@ -127,5 +127,27 @@ footer{display:none!important}
 .topbar .app-refresh svg{width:21px;height:21px;stroke-width:2}
 .topbar .app-refresh.spinning svg{animation:app-refresh-spin .8s linear infinite}
 @keyframes app-refresh-spin{to{transform:rotate(360deg)}}
+
+/* Bảng lương Admin/Quản lý: thẻ nhân viên + phiếu lương nối liền bên dưới */
+.pay-totals{gap:8px}.pay-totals>div{padding:10px 12px}.pay-totals strong{font-size:15px}
+.table-wrap table.payroll-admin tr.pay-row td:first-child{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;text-align:left}
+.table-wrap table.payroll-admin tr.pay-row td:first-child::before{display:none}
+.table-wrap table.payroll-admin tr.pay-row td:first-child small{flex-basis:100%}
+.table-wrap table.payroll-admin tr.pay-row td:first-child .pay-open-hint{flex-basis:auto;margin:0 0 0 auto;font-size:13px}
+.pay-name{font-size:16px}
+.payroll-admin .pay-cell{justify-items:end}
+.table-wrap table.payroll-admin tr.pay-row.open{border-radius:14px 14px 0 0;margin-bottom:0;border-bottom-color:#dce6f3}
+.table-wrap table.payroll-admin tr.pay-row.open td{background:none}
+.table-wrap table.payroll-admin tr.pay-slip{margin-top:-1px;border-radius:0 0 14px 14px;padding:10px 10px 12px;background:#f2f7fe}
+.table-wrap table.payroll-admin tr.pay-slip>td{padding:0!important;border:0!important;font-weight:400;font-size:14px;text-align:left;background:none}
+.slip{gap:10px}.slip-col{gap:10px}.slip section,.slip-sum{padding:8px 12px}
+.slip-line{grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;font-size:14px;min-height:44px}
+.slip-line small{grid-column:1;grid-row:2;justify-content:flex-start;text-align:left}
+.slip-line b{grid-column:2;grid-row:1/span 2}
+.slip-line small:empty{display:none}
+.pay-input{width:128px;min-height:42px!important}
+.slip-line small .pay-input{width:120px}
+.slip-actions .primary{flex:1;min-height:46px}
+.slip-actions small{flex-basis:100%;text-align:center}
 }
 @media(max-width:800px) and (prefers-reduced-motion:no-preference){.sidebar{transition:transform .22s cubic-bezier(.2,.8,.2,1)!important}}
