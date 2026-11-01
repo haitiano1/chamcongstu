@@ -13,7 +13,7 @@ function task_text(mixed $value,string $label,int $min,int $max): string {
  return $value;
 }
 function task_due(mixed $value,string $kind): ?int {
- if($value===null||$value===''||$kind==='notice')return null;
+ if($value===null||$value==='')return null;
  if(!is_int($value))fail('Hạn hoàn thành không hợp lệ.');
  if($value<now_ms()-300000)fail('Hạn hoàn thành đã qua. Chọn thời điểm sau hiện tại.');
  if($value>now_ms()+366*86400000)fail('Hạn hoàn thành tối đa trong 1 năm.');
@@ -83,7 +83,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
  if($path==='/tasks'&&$method==='GET'){
   $rows=$manager?$a->all(task_list_sql().'LEFT JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? ORDER BY t.created_at DESC LIMIT 300',[$me]):$a->all(task_list_sql().'JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? ORDER BY t.created_at DESC LIMIT 300',[$me]);
   foreach($rows as &$r){$r['mine']=(bool)$r['mine'];$r['my_has_proof']=(bool)$r['my_has_proof'];if(!$manager)unset($r['seen'],$r['done']);}unset($r);
-  return [200,['rows'=>$rows,'pending'=>task_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
+  return [200,['rows'=>$rows,'pending'=>task_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
  }
  if($path==='/tasks'&&$method==='POST'){
   $a->requireManager();$r=task_create($a,$me,$b);
@@ -104,7 +104,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   header('Content-Type: image/jpeg');header('Content-Disposition: inline');echo $photo;exit;
  }
  if(preg_match('~^/tasks/declines/([a-f0-9-]{36})/(approve|reject|withdraw)$~D',$path,$m)&&$method==='POST')return task_decline_review($a,$m[1],$m[2],$b);
- if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel|decline)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
+ if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel|decline|due)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
  $t=task_row($a,$m[1]);$action=$m[2];
  if($action==='seen'){$r=task_mine($a,$t);if($r['seen_at']===null)$a->run('UPDATE {{task_recipients}} SET seen_at=? WHERE task_id=? AND user_id=?',[now_ms(),$t['id'],$me]);return [200,['ok'=>true,'pending'=>task_pending($a)]];}
  if($action==='done'){
@@ -128,6 +128,13 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
  }
  if($action==='decline')return task_decline_request($a,$t,$b);
  $a->requireManager();entry_version($b,$t);if($t['status']!=='open')fail('Việc đã bị hủy.',409);
+ // Chỉnh hạn ở khung Theo dõi hạn (chủ dự án yêu cầu 01/11/2026): chỉ đổi hạn, để trống là bỏ hạn.
+ if($action==='due'){
+  $old=$t['due_at']===null?null:(int)$t['due_at'];$raw=$b['due_at']??null;$due=$raw===null||$raw===''?null:($raw===$old?$old:task_due($raw,$t['kind']));
+  if($due===$old)fail('Hạn chưa thay đổi.');
+  $a->run('UPDATE {{tasks}} SET due_at=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$due,$me,now_ms(),$t['id']]);
+  task_audit($a,$t['id'],'due_changed',['due_at'=>$old],['due_at'=>$due]);return [200,['ok'=>true]];
+ }
  if($action==='edit'){
   $title=task_text($b['title']??null,'Tiêu đề',3,150);$body=task_text($b['body']??'','Nội dung',0,2000);
   $due=($b['due_at']??null)===$t['due_at']?$t['due_at']:task_due($b['due_at']??null,$t['kind']);
@@ -161,6 +168,16 @@ function task_decline_list(App $a,?int $user): array {
  $sql="SELECT d.id,d.task_id,d.user_id,d.reason,d.status,d.requested_at,d.reviewed_at,d.review_note,u.name,t.title,t.kind,t.task_day,(SELECT name FROM {{users}} WHERE id=d.reviewed_by) reviewer_name FROM {{task_declines}} d JOIN {{users}} u ON u.id=d.user_id JOIN {{tasks}} t ON t.id=d.task_id WHERE ";
  if($user===null)return $a->all($sql."d.status='pending' AND t.status='open' AND EXISTS(SELECT 1 FROM {{task_recipients}} r WHERE r.task_id=d.task_id AND r.user_id=d.user_id) ORDER BY d.requested_at",[]);
  return $a->all($sql."d.user_id=? AND d.status!='withdrawn' AND (d.status='pending' OR d.reviewed_at>=?) ORDER BY d.requested_at DESC LIMIT 30",[$user,now_ms()-14*86400000]);
+}
+// Theo dõi hạn (chủ dự án yêu cầu 01/11/2026): Task / Nhắc nhở đã có yêu cầu từ chối được Duyệt hoặc Không duyệt vẫn hiện cho
+// Admin/Quản lý kèm hạn để tự chỉnh, tới khi mọi người nhận còn lại báo xong (Nhắc nhở: đã xem), việc bị hủy hoặc việc hằng ngày đã qua ngày.
+function task_decline_followups(App $a): array {
+ $open="(t.kind='task' AND r.done_at IS NULL OR t.kind='notice' AND r.seen_at IS NULL)";
+ $rows=$a->all("SELECT t.id,t.kind,t.title,t.due_at,t.version,t.task_day FROM {{tasks}} t WHERE t.status='open' AND (t.task_day IS NULL OR t.task_day>=?) AND EXISTS(SELECT 1 FROM {{task_declines}} d WHERE d.task_id=t.id AND d.status IN ('approved','rejected')) AND EXISTS(SELECT 1 FROM {{task_recipients}} r WHERE r.task_id=t.id AND $open) ORDER BY t.due_at IS NULL,t.due_at,t.created_at DESC LIMIT 50",[local_day(now_ms())]);
+ foreach($rows as &$r){
+  $r['declines']=$a->all("SELECT d.status,d.reviewed_at,d.review_note,u.name,(SELECT name FROM {{users}} WHERE id=d.reviewed_by) reviewer_name FROM {{task_declines}} d JOIN {{users}} u ON u.id=d.user_id WHERE d.task_id=? AND d.status IN ('approved','rejected') ORDER BY d.reviewed_at",[$r['id']]);
+  $r['waiting']=array_column($a->all("SELECT u.name FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=? AND $open ORDER BY u.name",[$r['id']]),'name');
+ }unset($r);return $rows;
 }
 function task_decline_notify(App $a,array $chats,string $text,?Telegram $tg=null): void {
  if(!$chats||!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;
@@ -249,7 +266,7 @@ function daily_template_routes(App $a,string $path,array $b,string $method): ?ar
   $id=task_uuid();$now=now_ms();$a->run('INSERT INTO {{task_templates}}(id,user_id,title,require_photo,active,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,1,?,?,?,?)',[$id,$uid,$f['title'],$f['require_photo'],$me,$now,$me,$now]);
   task_audit($a,$id,'template_created',null,['user_id'=>$uid]+$f);daily_tasks_ensure($a,$today,$uid);return [201,['id'=>$id]];
  }
- if(!preg_match('~^/tasks/templates/([a-f0-9-]{36})/(edit|pause|resume)$~D',$path,$m))fail('Không tìm thấy chức năng Việc hằng ngày.',404);
+ if(!preg_match('~^/tasks/templates/([a-f0-9-]{36})/(edit|pause|resume|delete)$~D',$path,$m))fail('Không tìm thấy chức năng Việc hằng ngày.',404);
  $d=$a->one('SELECT * FROM {{task_templates}} WHERE id=?',[entry_uuid($m[1])]);if(!$d)fail('Không tìm thấy việc hằng ngày.',404);entry_version($b,$d);
  $before=['title'=>$d['title'],'require_photo'=>(int)$d['require_photo'],'active'=>(int)$d['active']];
  // Việc hôm nay chưa xong thì đổi theo mẫu; việc đã xong và các ngày trước giữ nguyên.
@@ -262,6 +279,12 @@ function daily_template_routes(App $a,string $path,array $b,string $method): ?ar
   if($todayTask){$a->run('UPDATE {{tasks}} SET title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$f['title'],$f['require_photo'],$me,now_ms(),$todayTask['id']]);
    if($uid!==$was)$a->run('UPDATE {{task_recipients}} SET user_id=?,seen_at=NULL WHERE task_id=? AND user_id=?',[$uid,$todayTask['id'],$was]);}
   task_audit($a,$d['id'],'template_edited',$before+['user_id'=>$was],$f+['active'=>(int)$d['active'],'user_id'=>$uid]);return [200,['ok'=>true]];}
+ // Xóa việc hằng ngày (chủ dự án yêu cầu 01/11/2026): bỏ mẫu, từ mai không giao nữa; việc hôm nay chưa xong thì hủy, việc đã xong và các ngày trước giữ nguyên.
+ if($m[2]==='delete'){
+  if($todayTask)$a->run("UPDATE {{tasks}} SET status='cancelled',cancel_reason='Đã xóa việc hằng ngày',updated_by=?,updated_at=?,version=version+1 WHERE id=?",[$me,now_ms(),$todayTask['id']]);
+  $a->run('DELETE FROM {{task_templates}} WHERE id=?',[$d['id']]);
+  task_audit($a,$d['id'],'template_deleted',$before+['user_id'=>(int)$d['user_id']],null);return [200,['ok'=>true]];
+ }
  $active=$m[2]==='resume'?1:0;if((int)$d['active']===$active)fail('Việc hằng ngày đã ở trạng thái này.',409);
  $a->run('UPDATE {{task_templates}} SET active=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$active,$me,now_ms(),$d['id']]);
  if(!$active&&$todayTask)$a->run("UPDATE {{tasks}} SET status='cancelled',cancel_reason='Ngừng việc hằng ngày',updated_by=?,updated_at=?,version=version+1 WHERE id=?",[$me,now_ms(),$todayTask['id']]);
@@ -309,9 +332,15 @@ function log_telegram_command(App $a,Telegram $tg,array $m,string $args): bool {
   if(count($parts)<2||$parts[0]===''||$parts[1]==='')fail("Thiếu nội dung hoặc người liên quan.\n\n".LOG_TG_HELP);
   if(count($parts)>3)fail('Dùng tối đa 3 phần: nội dung | người liên quan | luật hoặc điểm.');
   $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive'");
-  $targets=array_values(array_filter(array_map('trim',preg_split('/\s*(?:,|;|\s+và\s+)\s*/u',$parts[1]))));
-  $all=count($targets)===1&&in_array(task_fold(ltrim($targets[0],'@')),['all','tat ca','ca studio','moi nguoi','studio','chung'],true);
-  $subjects=[];if(!$all)foreach($targets as $tk){$p=task_find_person($a,$people,$tk);$subjects[$p['id']]=$p;}
+  $resolve=function(string $text)use($a,$people): array {
+   $targets=array_values(array_filter(array_map('trim',preg_split('/\s*(?:,|;|\s+và\s+)\s*/u',$text))));
+   $all=count($targets)===1&&in_array(task_fold(ltrim($targets[0],'@')),['all','tat ca','ca studio','moi nguoi','studio','chung'],true);
+   $subjects=[];if(!$all)foreach($targets as $tk){$p=task_find_person($a,$people,$tk);$subjects[$p['id']]=$p;}
+   return [$all,$subjects];
+  };
+  // Gõ ngược thứ tự (tên | nội dung, giống /task) thì tự đổi lại (chủ dự án gặp 01/11/2026).
+  try{[$all,$subjects]=$resolve($parts[1]);}
+  catch(HttpError $e){try{[$all,$subjects]=$resolve($parts[0]);}catch(HttpError){throw $e;}[$parts[0],$parts[1]]=[$parts[1],$parts[0]];}
   $extra=['deduction'=>0];$rule=null;$kpi=$parts[2]??'';
   if($kpi!==''){
    if(preg_match('/^\d+$/D',$kpi)){if(!in_array((int)$kpi,[0,20,100,300],true))fail('Điểm KPI cần là 20, 100 hoặc 300.');$extra=['deduction'=>(int)$kpi];}
