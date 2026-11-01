@@ -32,7 +32,8 @@ COLUMNS = [
     ('Thợ chính', 11, '@', True, 'Tên đã ghép trên web (HUY, CƯỜNG…). Lịch thêm trên web tự ghi HUY.'),
     ('Thợ phụ', 11, '@', True, 'Lịch thêm trên web tự ghi CƯỜNG.'),
     ('Makeup', 14, '@', True, 'Không bắt buộc. Chọn 1: Nam / Nữ / Làm Tóc.'),
-    ('Tip', 10, '#,##0', True, 'Tiền tip khách cho (nếu có), VD 50000.'),
+    ('Phụ thu', 10, '#,##0', True, 'Phụ thu (nếu có), VD 100000. Nhập ở Sửa lịch trên web (script tự ghi) hoặc gõ ở đây.'),
+    ('Tip', 10, '#,##0', True, 'Tiền tip khách cho (nếu có), VD 50000. Nhập ở Sửa lịch trên web (script tự ghi) hoặc gõ ở đây.'),
     ('Trạng thái', 11, '@', True, 'Khách hủy: chọn Hủy. Không xóa dòng (xóa dòng không xóa lịch trên web).'),
     ('Ghi chú', 34, '@', False, 'Ghi chú tự do. Team ghi "Giữ 3 tiếng" để khóa đủ giờ.'),
     ('_AG_BOOKING_ID', 38, '@', False, 'Cột ẩn: script tự ghi mã lịch. Không sửa, không xóa.'),
@@ -111,6 +112,9 @@ def build(path, example_json=None):
         ['', '', t(9, 0), 'Thành viên 3 · team ABC', '', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', '', None, '', ''],
         ['', '', t(13, 0), 'Anh Tuấn cọc 200k', '0977111222', '2999', 'Ô TÔ', 'HUY', 'CƯỜNG', 'Nam', None, '', ''],
     ]
+    # Cột Phụ thu (đứng trước Tip) để trống trong ví dụ.
+    tip_at = [c for c, *_ in COLUMNS].index('Tip')
+    rows = [r[:tip_at - 1] + [None] + r[tip_at - 1:] for r in rows]
     explain = [
         'Gói để trống = 399/699, khách tới mới chọn → giữ 1 tiếng (09:00–10:00). Ngày chỉ ghi ở dòng đầu của ngày.',
         'Couple 999 giữ 2 tiếng (10:00–12:00). Ô Ngày trống = cùng ngày với dòng trên. Đặc Biệt chọn 1 hoặc để trống.',
@@ -175,7 +179,8 @@ def build(path, example_json=None):
         ('Đặc Biệt', '', 'Chọn 1: Ô TÔ / Ngoại Cảnh / Nhóm tại Stu / Sản Phẩm, hoặc để trống.', 'Lựa chọn đã chọn (hoặc trống)'),
         ('Thợ chính / Thợ phụ', '', 'Tên đã ghép trên web (HUY, CƯỜNG, TÍN…). Đổi thợ thì sửa ở đây, web tự cập nhật.', 'HUY / CƯỜNG'),
         ('Makeup', '', 'Chọn 1: Nam / Nữ / Làm Tóc, hoặc để trống.', 'Lựa chọn đã chọn (hoặc trống)'),
-        ('Tip', '', 'Số tiền tip (VD 50000).', '(không ghi)'),
+        ('Phụ thu', '', 'Số tiền phụ thu (VD 100000). Chụp xong nhập ở Sửa lịch trên web hoặc gõ ở đây.', 'Số nhập ở Sửa lịch'),
+        ('Tip', '', 'Số tiền tip (VD 50000). Chụp xong nhập ở Sửa lịch trên web hoặc gõ ở đây.', 'Số nhập ở Sửa lịch'),
         ('Trạng thái', '', 'Chọn Hủy khi khách hủy. Không xóa dòng.', 'Hủy, khi hủy trên web'),
         ('Ghi chú', '', 'Ghi chú tự do. Team: ghi "Giữ 3 tiếng" để khóa đủ giờ.', 'Ghi chú + "Giữ N tiếng" (Team)'),
         ('_AG_BOOKING_ID', '', 'Cột ẩn, script tự ghi mã lịch. Không sửa, không xóa.', 'Mã lịch'),

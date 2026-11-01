@@ -47,7 +47,7 @@ function agTabs_(book,cfg){
 }
 // Đọc một tab: hàng tiêu đề, các dòng lịch và vị trí từng ngày. ids dùng chung mọi tab: dòng sao chép mang theo mã của dòng khác thì cấp mã mới.
 function agHeader_(values){
- for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0)return {header:i,columns:{date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),weekday:agFindHeader_(r,['thu','thu trong tuan','weekday']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))}};}
+ for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0)return {header:i,columns:{date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),weekday:agFindHeader_(r,['thu','thu trong tuan','weekday']),surcharge:agFindHeader_(r,['phu thu','phu phi']),tip:agFindHeader_(r,['tip','tips','tien tip']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))}};}
  return null;
 }
 function agParse_(values,year,tabMonth,ids){
@@ -60,6 +60,8 @@ function agParse_(values,year,tabMonth,ids){
   if(!lastDay)throw new Error('Thiếu ngày ở dòng '+(i+1));if(!time)throw new Error('Thiếu giờ ở dòng '+(i+1));
   let id=String(r[idCol]||'').trim().toLowerCase();if(!/^[a-f0-9-]{36}$/.test(id)||ids[id]){id=Utilities.getUuid().toLowerCase();newIds.push({row:i,id:id});}ids[id]=true;
   const item={id:id,day:lastDay,time:agTime_(time),source_row:i+1};['customer_name','package_label','customer_phone','main_alias','support_alias','note','deposit_label','received_label'].forEach(k=>{item[k]=columns[k]>=0?String(r[columns[k]]||'').trim():'';});
+  // Phụ thu, Tip: chỉ gửi khi Sheet có cột (không có cột thì web giữ số đã nhập).
+  [['surcharge','surcharge_label'],['tip','tip_label']].forEach(([k,f])=>{if(columns[k]>=0)item[f]=String(r[columns[k]]||'').trim();});
   // Gửi đủ mọi ô có dữ liệu theo tiêu đề cột để popup hiện nguyên thông tin Sheet; ô trống bỏ qua.
   item.sheet_fields=[];r.forEach((v,c)=>{const value=String(v||'').trim();if(c===idCol||c===columns.weekday||!value)return;item.sheet_fields.push({label:String(values[header][c]||'').trim()||agColumn_(c),value:value});});
   const state=columns.status>=0?agNormalize_(r[columns.status]):'';item.status=['huy','da huy','cancel','cancelled'].indexOf(state)!==-1?'cancelled':'active';rows.push(item);
@@ -130,7 +132,7 @@ function agSample_(tabs,t,column){
  for(const x of [t].concat(tabs.filter(y=>y!==t&&y.parsed)))if(x.parsed&&x.parsed.columns[column]>=0){const c=x.parsed.columns[column],e=x.parsed.entries.find(e=>String(x.values[e.row][c]||'')!=='');if(e){const cell=x.sheet.getRange(e.row+1,c+1);return {value:cell.getValue(),format:cell.getNumberFormat(),shown:cell.getDisplayValue()};}}
  return null;
 }
-function agSamples_(tabs,t){const out={};['date','time','package_label','deposit_label'].forEach(k=>{out[k]=agSample_(tabs,t,k);});return out;}
+function agSamples_(tabs,t){const out={};['date','time','package_label','deposit_label','surcharge','tip'].forEach(k=>{out[k]=agSample_(tabs,t,k);});return out;}
 function agIsDate_(v){return Object.prototype.toString.call(v)==='[object Date]';}
 function agWriteDate_(cell,day,sample){
  const [y,m,d]=day.split('-').map(Number);
@@ -161,6 +163,12 @@ function agWriteValues_(t,r,q,samples,keys){
   if(k==='makeup'||k==='special'){cell(k).setValue(agPickOptions_(cell(k),value));return;}
   const option=k==='package_label'?agOptions_(cell(k)).find(o=>agPrice_(o)===agPrice_(value)):null;if(option){cell(k).setValue(option);return;}
   if(sample&&typeof sample.value==='number'&&!isNaN(number))cell(k).setValue(k==='package_label'&&number>=10000&&sample.value<10000?number/1000:number);else cell(k).setNumberFormat('@').setValue(value);});
+ // Phụ thu, Tip (nhập ở Sửa lịch trên web; dòng chuyển chỗ thì ghi lại số đang có): Sheet chưa có cột thì thêm cột ở cuối. Số tiền (100000, 100.000, 100k) ghi dạng số để cộng được.
+ [['surcharge','Phụ thu'],['tip','Tip']].forEach(([k,label])=>{if(keys&&keys.indexOf(k)===-1)return;const value=String(v[k]||'').trim();if(!keys&&!value)return;
+  if(c[k]<0){if(!value)return;c[k]=Math.max(sheet.getLastColumn(),p.idCol+1);sheet.getRange(p.header+1,c[k]+1).setValue(label);}
+  written[c[k]]=true;const target=sheet.getRange(r,c[k]+1);if(!value){target.setValue('');return;}
+  const m=value.replace(/\s/g,'').match(/^(\d[\d.,]*)(k|đ|d|vnđ)?$/i),amount=m?Number(m[1].replace(/[.,]/g,''))*(/^k$/i.test(m[2]||'')?1000:1):NaN;
+  if(!isNaN(amount)){if(samples[k]&&samples[k].format&&samples[k].format!=='@')target.setNumberFormat(samples[k].format);else if(target.getNumberFormat()==='@')target.setNumberFormat('#,##0');target.setValue(amount);}else target.setNumberFormat('@').setValue(value);});
  if(!keys){sheet.getRange(r,p.idCol+1).setValue(q.booking_id);written[p.idCol]=true;}
  return written;
 }

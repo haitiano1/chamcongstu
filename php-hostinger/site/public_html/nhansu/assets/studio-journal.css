@@ -100,3 +100,6 @@
 /* Giờ chụp in đậm, to hơn cho nhân viên dễ thấy (chủ dự án yêu cầu 01/11/2026). */
 .booking-page .booking-calendar .booking-card .booking-card-line>strong.booking-card-time{font-weight:800;font-size:14px;letter-spacing:.2px}
 @media(max-width:800px){.booking-page .booking-calendar .booking-card .booking-card-line>strong.booking-card-time{font-size:16px}}
+/* Sửa lịch → Sau khi chụp: Phụ thu, Tip (chủ dự án yêu cầu 01/11/2026). */
+.booking-money{display:grid;grid-template-columns:1fr 1fr;gap:10px}.booking-money label{margin:0!important;font-size:11px}.booking-money input{width:100%;min-height:44px;font-size:16px}
+.booking-create-step .booking-money+.hint{margin:6px 0 0;font-size:12px}
