@@ -98,6 +98,13 @@ function booking_form(array $row): array {
   $plain[]=$part;}
  return ['day'=>$row['shoot_day'],'time'=>booking_hm((int)$row['minutes']),'package'=>$package,'hold'=>$package===BOOKING_TEAM_PRICE?($hold??60):null,'customer_name'=>$row['customer_name'],'customer_phone'=>$row['customer_phone'],'makeup'=>$code($makeup,BOOKING_MAKEUP),'special'=>$code($special,BOOKING_SPECIAL),'note'=>implode(' · ',$plain)];
 }
+// Thẻ lịch hiện "Có MK" / "Không MK" (chủ dự án yêu cầu 01/11/2026): ô Makeup trên Sheet có chọn (Nam / Nữ / Làm Tóc…) là có make up;
+// Sheet không có cột Makeup thì đọc "Make up: …" trong Ghi chú (lịch thêm trên web chưa đồng bộ cũng ghi như vậy). Trống hoặc "Không" là không.
+function booking_has_makeup(array $row): bool {
+ $raw=null;foreach(json_decode($row['sheet_fields_json']??'null',true)?:[] as $f)if(preg_match('/^(make ?up|trang diem)\b/',booking_fold((string)($f['label']??'')))){$raw=(string)($f['value']??'');break;}
+ if($raw===null&&preg_match('/(?:^|·)\s*make ?up\s*:\s*([^·]*)/iu',(string)$row['note'],$m))$raw=$m[1];
+ $v=booking_fold(trim((string)$raw));return $v!==''&&!in_array($v,['khong','không','ko','k','none','no','-','0','x'],true)&&!preg_match('/^(khong|không) /u',$v);
+}
 // Sửa trên web: cập nhật luôn bản chụp các cột Sheet của lịch để popup và form sửa hiện đúng ngay; lần đồng bộ sau thay bằng dữ liệu thật trên Sheet.
 function booking_patch_fields(?string $json,array $set): ?string {
  $fields=json_decode($json??'null',true);if(!is_array($fields))return $json;
@@ -525,7 +532,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   // Mọi role xem đủ thông tin Sheet trong popup; chỉ Quản lý/Admin được xóa lịch.
   $rows=$a->all('SELECT b.* FROM {{shoot_bookings}} b WHERE '.$where.' ORDER BY b.shoot_day,b.minutes,b.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
   $states=booking_sheet_states($a,array_column($rows,'id'));$perms=booking_permissions($a);
-  foreach($rows as &$row){if($perms['can_create']&&$row['status']==='active')$row['edit']=booking_form($row);$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['sheet_state']=$states[$row['id']]??null;$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
+  foreach($rows as &$row){if($perms['can_create']&&$row['status']==='active')$row['edit']=booking_form($row);$row['makeup']=booking_has_makeup($row);$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['sheet_state']=$states[$row['id']]??null;$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
   // Lịch của tôi: kèm ca đã Đăng ký ca và ca nghỉ gấp của chính mình trong tháng để hiện trên từng ngày (chủ dự án yêu cầu 31/10/2026; chỉ để xem).
   $mine=$person!==null&&$page===1?['registered'=>$a->all('SELECT day,shift FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$person,$start,$end]),'urgent_cancels'=>$a->all('SELECT day,shift FROM {{shift_cancellations}} WHERE user_id=? AND day>=? AND day<=?',[$person,$start,$end])]:[];
   return [200,['rows'=>$rows,'total'=>$total,'page'=>$page,'start'=>$start,'end'=>$end,'permissions'=>$perms,'default_staff'=>booking_default_staff($a)]+$mine];
