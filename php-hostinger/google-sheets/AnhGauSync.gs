@@ -69,17 +69,16 @@ function agParse_(values,year,tabMonth,ids){
  return {header:header,columns:columns,idCol:idCol,addIdHeader:addIdHeader,rows:rows,newIds:newIds,entries:entries};
 }
 // Cột Thứ (chủ dự án yêu cầu 01/11/2026): đặt bên phải cột Ngày, tiêu đề "Thứ". Đi cùng ô Ngày khi chèn / xóa / chuyển dòng (kể cả ô gộp);
-// dòng có Ngày mà ô Thứ trống hoặc ghi sai thứ thì script tự ghi, giữ kiểu viết đang dùng trên tab (Thứ 2 / T2 / Thứ Hai). Chữ khác (không phải thứ) thì để nguyên.
+// dòng có Ngày mà ô Thứ trống, ghi sai thứ hoặc viết kiểu khác (Thứ 2, Thứ Hai…) thì script ghi lại kiểu tắt T2 … T7, CN (chủ dự án chốt 01/11/2026). Chữ khác (không phải thứ) thì để nguyên.
 function agDayCols_(c){return c.weekday>=0?[c.date,c.weekday]:[c.date];}
 function agDow_(day){const [y,m,d]=day.split('-').map(Number);return new Date(Date.UTC(y,m-1,d)).getUTCDay();}
 function agWeekdayIndex_(v){const s=agNormalize_(v).replace(/\./g,'');let m;if(s==='cn'||s==='chu nhat')return 0;if((m=s.match(/^(?:thu|t) ?([2-7])$/)))return Number(m[1])-1;const w=['','hai','ba','tu','nam','sau','bay'],i=w.indexOf(s.replace(/^thu /,''));return /^thu /.test(s)&&i>0?i:-1;}
-function agWeekdayStyle_(values,p){const c=p.columns.weekday;for(let i=p.header+1;i<values.length;i++){const s=agNormalize_(values[i][c]||'').replace(/\./g,'');if(!s||agWeekdayIndex_(s)<0)continue;return /^(t ?\d|cn)$/.test(s)?'short':/^thu (hai|ba|tu|nam|sau|bay|chu nhat)$/.test(s)?'word':'num';}return 'num';}
-function agWeekdayText_(i,style){if(style==='short')return i===0?'CN':'T'+(i+1);if(style==='word')return i===0?'Chủ nhật':'Thứ '+['','Hai','Ba','Tư','Năm','Sáu','Bảy'][i];return i===0?'Chủ nhật':'Thứ '+(i+1);}
+function agWeekdayText_(i){return i===0?'CN':'T'+(i+1);}
 function agFillWeekdays_(t){
- const p=t.parsed,c=p.columns;if(!p||c.weekday<0)return 0;const style=agWeekdayStyle_(t.values,p);let n=0;
+ const p=t.parsed,c=p.columns;if(!p||c.weekday<0)return 0;let n=0;
  for(let i=p.header+1;i<t.values.length;i++){const r=t.values[i],shown=String(r[c.date]||'').trim();if(!shown)continue;let day;try{day=agDate_(shown,t.year,t.month);}catch(e){continue;}
-  const want=agDow_(day),cur=String(r[c.weekday]||'').trim(),has=cur?agWeekdayIndex_(cur):-2;if(has===want||has===-1)continue;
-  const text=agWeekdayText_(want,style);t.sheet.getRange(i+1,c.weekday+1).setNumberFormat('@').setValue(text);r[c.weekday]=text;n++;}
+  const text=agWeekdayText_(agDow_(day)),cur=String(r[c.weekday]||'').trim();if(cur===text||cur&&agWeekdayIndex_(cur)===-1)continue;
+  t.sheet.getRange(i+1,c.weekday+1).setNumberFormat('@').setValue(text);r[c.weekday]=text;n++;}
  return n;
 }
 // Các khoảng cột liên tiếp (đánh số từ 1) trừ các cột skip (chỉ số 0).

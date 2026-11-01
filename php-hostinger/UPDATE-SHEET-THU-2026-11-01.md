@@ -6,7 +6,7 @@ Chỉ đổi **script Google Sheet** (`AnhGauSync.gs`) và Sheet mẫu. Web/host
 
 - Sheet có thể có thêm cột **Thứ** (đặt bên phải cột Ngày, tiêu đề đúng chữ `Thứ`).
 - **Không cần gõ thứ**: mỗi lần đồng bộ (khoảng 1 phút), script tự ghi thứ cho mọi dòng có Ngày, và tự sửa nếu thứ ghi sai hoặc ngày bị đổi.
-  - Mặc định viết `Thứ 2` … `Thứ 7`, `Chủ nhật`. Muốn kiểu `T2` / `CN` hoặc `Thứ Hai` thì gõ tay 1 ô theo kiểu đó, script viết theo kiểu đang dùng của tab.
+  - Viết tắt: `T2` `T3` `T4` `T5` `T6` `T7` `CN` (chủ dự án chốt). Ô đã ghi kiểu dài (`Thứ 5`, `Chủ nhật`) cũng được đổi sang kiểu tắt.
   - Ô Thứ ghi chữ khác (không phải thứ) thì script để nguyên.
 - Lịch thêm / sửa / xóa trên web: ô Thứ đi cùng ô Ngày.
   - Khách sớm nhất ngày thì ô Ngày và ô Thứ giữ ở dòng đầu.
@@ -31,9 +31,9 @@ Chỉ đổi **script Google Sheet** (`AnhGauSync.gs`) và Sheet mẫu. Web/host
    - Bấm lại **Đồng bộ ngay** để script ghi lại chữ thứ vào ô gộp.
 5. Thử: trên web thêm 1 lịch vào một ngày mới → khoảng 1 phút sau dòng trên Sheet có Ngày và Thứ đúng.
 
-Đã thử trên Sheet giả lập (script thật chạy trong Node), 27 kiểm thử đạt:
-- Tự ghi `Thứ 5` cho 05/11; sửa `Thứ 3` sai của 09/11 thành `Thứ 2`; dòng có ngày chưa có khách cũng ghi; chữ khác trong ô Thứ để nguyên; dòng không có ngày không ghi.
-- Tab đang viết `T3` thì ghi `T4`; đọc đúng giờ và tên khách khi có thêm cột; không gửi cột Thứ vào popup; tab không có cột Thứ thì không đổi gì.
-- Lịch web 08:00 (sớm nhất ngày, ô gộp): ô Ngày và Thứ giữ dòng đầu, gộp giãn 3 dòng. Lịch web cuối ngày: gộp cả hai cột giãn 4 dòng. Ngày mới 07/11 ghi `Thứ 7`.
-- Xóa khách đầu ngày (ô gộp và không gộp): khách kế tiếp nhận Ngày và Thứ, gộp lại đúng. Đổi ngày 11/11 → 12/11: dòng mới `Thứ 5`, không mang ô Thứ cũ.
+Đã thử trên Sheet giả lập (script thật chạy trong Node), 28 kiểm thử đạt:
+- Tự ghi `T5` cho 05/11; sửa `Thứ 3` sai của 09/11 thành `T2`; `Thứ 5` đúng thứ của 03/12 đổi thành `T5`, `chủ nhật` thành `CN`; dòng có ngày chưa có khách cũng ghi; chữ khác trong ô Thứ để nguyên; dòng không có ngày không ghi.
+- 01/12 giữ `T3`, 02/12 ghi `T4`; đọc đúng giờ và tên khách khi có thêm cột; không gửi cột Thứ vào popup; tab không có cột Thứ thì không đổi gì.
+- Lịch web 08:00 (sớm nhất ngày, ô gộp): ô Ngày và Thứ giữ dòng đầu, gộp giãn 3 dòng. Lịch web cuối ngày: gộp cả hai cột giãn 4 dòng. Ngày mới 07/11 ghi `T7`.
+- Xóa khách đầu ngày (ô gộp và không gộp): khách kế tiếp nhận Ngày và Thứ, gộp lại đúng. Đổi ngày 11/11 → 12/11: dòng mới `T5`, không mang ô Thứ cũ.
 - Kiểm thử script cũ: 12 kiểm thử giao thức đạt; bộ 2 chiều 96 đạt. 1 mục (tab "Tháng 5" ngoài khoảng đồng bộ) lỗi giống hệt trước khi sửa: mục đó viết cho tháng 10, sang tháng 11 thì Tháng 5 năm sau đã vào khoảng 6 tháng tới. Không liên quan cột Thứ.
