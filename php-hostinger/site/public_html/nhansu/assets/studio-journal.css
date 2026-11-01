@@ -97,3 +97,6 @@
 .booking-reg>span{padding:2px 8px;border-radius:999px;background:#e3f4e9;color:#1d7444;font-weight:600;white-space:nowrap}
 .booking-reg>span.cx{background:#fdecec;color:#b42318}
 @media(max-width:1000px){.booking-page .booking-calendar:not([data-mode=month]) .booking-day.empty-day .booking-reg{margin:0 0 3px;justify-content:flex-end}}
+/* Giờ chụp in đậm, to hơn cho nhân viên dễ thấy (chủ dự án yêu cầu 01/11/2026). */
+.booking-page .booking-calendar .booking-card .booking-card-line>strong.booking-card-time{font-weight:800;font-size:14px;letter-spacing:.2px}
+@media(max-width:800px){.booking-page .booking-calendar .booking-card .booking-card-line>strong.booking-card-time{font-size:16px}}
