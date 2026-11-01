@@ -1,8 +1,10 @@
-# Cập nhật 01/11/2026 (lần 5) — Công theo khách cả studio, Theo dõi hạn việc, Xóa việc hằng ngày, /log gõ ngược
+# Cập nhật 01/11/2026 (lần 5, bản v1.3.41) — Công theo khách cả studio, Theo dõi hạn việc, Xóa việc hằng ngày, /log gõ ngược
 
-Gói này **cộng dồn** mọi gói hôm nay (web v1.3.34 → v1.3.40) và script Google Sheet. Chưa upload gói nào hôm nay thì **chỉ cần làm theo gói này**.
+> **Bản v1.3.41 (sửa sau v1.3.40):** duyệt từ chối của người nhận **duy nhất** không còn tự hủy việc. Việc vẫn mở và hiện ở khung Theo dõi hạn với dòng vàng **Chưa có người làm**: chọn **Giao cho** + hạn → **Giao việc** (người mới nhận Telegram như việc mới), hoặc **Hủy việc**. Đã upload v1.3.40 thì chỉ cần upload lại gói này (đủ 4 ZIP). Việc đã duyệt lúc còn bản v1.3.40 đã bị hủy, cần làm thì tạo việc mới.
 
-## Thay đổi mới (v1.3.40)
+Gói này **cộng dồn** mọi gói hôm nay (web v1.3.34 → v1.3.41) và script Google Sheet. Chưa upload gói nào hôm nay thì **chỉ cần làm theo gói này**.
+
+## Thay đổi mới (v1.3.40 – v1.3.41)
 
 ### Công: tính theo khách của cả studio
 
@@ -16,7 +18,8 @@ Gói này **cộng dồn** mọi gói hôm nay (web v1.3.34 → v1.3.40) và scr
 - Admin / Quản lý duyệt hoặc không duyệt **Xin từ chối** xong, việc đó hiện ở khung xanh **Theo dõi hạn sau yêu cầu từ chối** (mục Việc, dưới khung chờ duyệt).
 - Mỗi việc ghi: kết quả duyệt (người xin, người duyệt, giờ, ghi chú), **còn chờ ai** báo xong (Nhắc nhở: bấm Đã xem), hạn hiện tại (đỏ khi quá hạn).
 - Chọn hạn mới → **Lưu hạn**. **Bỏ hạn** để xóa hạn. Lịch sử của việc ghi "Đổi hạn" cũ → mới.
-- Khung tự ẩn khi người còn lại báo xong (Nhắc nhở: đã xem), khi việc bị hủy, hoặc việc hằng ngày đã qua ngày. Duyệt mà không còn ai nhận thì việc tự hủy, không hiện.
+- **Duyệt người nhận duy nhất** (v1.3.41): việc không tự hủy mà hiện dòng vàng **⚠️ Chưa có người làm** (cả ở thẻ việc trong danh sách). Chọn **Giao cho** một người + hạn → **Giao việc**: người đó nhận Telegram như việc mới; hoặc bấm **Hủy việc** (ghi lý do).
+- Khung tự ẩn khi người còn lại báo xong (Nhắc nhở: đã xem), khi việc bị hủy, hoặc việc hằng ngày đã qua ngày.
 - **Nhắc nhở cũng có hạn** (hạn đọc): quá hạn mà chưa xem thì hiện "Quá hạn". Sửa Nhắc nhở đã có hạn thì thấy ô hạn.
 - Chỉ Admin / Quản lý thấy và chỉnh hạn.
 
@@ -133,7 +136,7 @@ Giải nén từng ZIP trên máy, upload **các file bên trong** vào đúng t
 
 1. Thay theo thứ tự 1 → 2 → 3 → 4. Giữ nguyên config.php, storage, database và WordPress. Cron giữ như cũ (mỗi phút).
 2. Mở https://anhgaustudio.com/nhansu/kiemtra-capnhat.php, tất cả dòng phải xanh.
-3. Điện thoại bấm ↻; máy tính Ctrl + F5. Góc menu hiện **v1.3.40 · 01/11/2026**.
+3. Điện thoại bấm ↻; máy tính Ctrl + F5. Góc menu hiện **v1.3.41 · 01/11/2026**.
 
 ### Bước 2. Script Google Sheet
 
@@ -145,17 +148,17 @@ Giải nén từng ZIP trên máy, upload **các file bên trong** vào đúng t
 ### Thử
 
 - Công & lương tháng 11 → Tín: hôm nay làm 2 ca có khách thì hiện **1 công**, lương theo công 100.000đ, không còn chữ "2 ca không khách".
-- Mục Việc: không duyệt một yêu cầu từ chối → việc hiện ở khung **Theo dõi hạn**, đổi hạn → Lưu hạn.
+- Mục Việc: không duyệt một yêu cầu từ chối → việc hiện ở khung **Theo dõi hạn**, đổi hạn → Lưu hạn. Duyệt yêu cầu của việc chỉ một người nhận → hiện **Chưa có người làm**, chọn người + hạn → Giao việc.
 - Việc hằng ngày → nút **Xóa**.
 - Telegram: `/log Huy | Thử ghi log gõ ngược` → bot báo ✅ Đã ghi Event log (xóa log thử trên web sau đó).
 
 ## Đã thử trên bản dev
 
 - Công theo khách cả studio, 5 kiểm thử máy chủ đạt (trong giao dịch rồi hoàn tác, lương 3.000.000đ): studio không có khách → 0 công, 2 ca không khách; khách ca 1 do người khác chụp → 0,5 công = 50.000đ, thợ chụp cũng 0,5 công; thêm khách ca 2 chưa gán thợ → 1 công = **100.000đ**; lịch hủy không tính là có khách.
-- Theo dõi hạn + Xóa việc hằng ngày, 33 kiểm thử máy chủ đạt: đang chờ duyệt chưa hiện; không duyệt → hiện, còn chờ đúng người; nhân viên không chỉnh hạn được; đặt / đổi / bỏ hạn, phiên bản cũ bị chặn, hạn đã qua bị chặn, lịch sử Đổi hạn trước/sau; báo xong → ẩn; duyệt gỡ người, người còn lại xong → ẩn; việc tự hủy không hiện; Nhắc nhở đặt hạn, đã xem → ẩn; hủy việc → ẩn, không chỉnh hạn việc đã hủy; nhân viên không nhận danh sách. Xóa việc hằng ngày: nhân viên không xóa được, phiên bản cũ bị chặn, việc hôm nay chưa xong bị hủy, đã xong và ngày trước giữ nguyên, ngày mai không tạo lại, lịch sử ghi Xóa.
+- Theo dõi hạn + Giao người làm thay + Xóa việc hằng ngày, 43 kiểm thử máy chủ đạt: duyệt người nhận duy nhất → việc vẫn mở, hiện Chưa có người làm; nhân viên không giao được; phải chọn người; giao kèm hạn, Telegram báo người mới, lịch sử ghi Giao người làm thay; giao trùng bị báo; người mới báo xong → ẩn; hủy việc chưa có người làm → ẩn; đang chờ duyệt chưa hiện; không duyệt → hiện, còn chờ đúng người; nhân viên không chỉnh hạn được; đặt / đổi / bỏ hạn, phiên bản cũ bị chặn, hạn đã qua bị chặn, lịch sử Đổi hạn trước/sau; báo xong → ẩn; duyệt gỡ người, người còn lại xong → ẩn; Nhắc nhở đặt hạn, đã xem → ẩn; hủy việc → ẩn, không chỉnh hạn việc đã hủy; nhân viên không nhận danh sách. Xóa việc hằng ngày: nhân viên không xóa được, phiên bản cũ bị chặn, việc hôm nay chưa xong bị hủy, đã xong và ngày trước giữ nguyên, ngày mai không tạo lại, lịch sử ghi Xóa.
 - Telegram /log, 6 kiểm thử đạt (Telegram giả lập): đúng thứ tự; gõ ngược `tên | nội dung` ghi đúng người và nội dung; gõ ngược kèm điểm 20; cả hai phần không phải tên vẫn báo lỗi như cũ; `all | nội dung` cũng được.
-- Giao diện điện thoại 390px (tài khoản Quản lý test, dữ liệu thử đã xóa): khung Theo dõi hạn có kết quả duyệt, người còn chờ, ô hạn, Lưu hạn, Bỏ hạn; việc hằng ngày có nút Xóa đỏ; không lỗi JS.
-- Chạy lại kiểm thử cũ: task-decline 32, rules 32, booking-summary 13, booking-presence 7, resume-early 32, late-checkin 35, customer-schedule 21, availability-telegram 20, legacy-edit 7, upgrade-preservation 10, booking-money 17, booking-makeup 10 đạt.
+- Giao diện điện thoại 390px (tài khoản Quản lý test, dữ liệu thử đã xóa): khung Theo dõi hạn có kết quả duyệt, người còn chờ, ô hạn, Lưu hạn, Bỏ hạn; việc đã duyệt không còn ai làm có dòng vàng, ô Giao cho, Giao việc, Hủy việc, thẻ việc ghi Chưa có người làm; việc hằng ngày có nút Xóa đỏ; không lỗi JS.
+- Chạy lại kiểm thử cũ: task-decline 32 (sửa mục duyệt: việc vẫn mở thay vì tự hủy), rules 32, booking-summary 13, booking-presence 7, resume-early 32, late-checkin 35, customer-schedule 21, availability-telegram 20, legacy-edit 7, upgrade-preservation 10, booking-money 17, booking-makeup 10 đạt.
 
 ### Kiểm thử của các gói trước hôm nay
 

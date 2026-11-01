@@ -87,3 +87,6 @@
 .task-due-form .task-actions{margin-top:0}
 .daily-btn.delete{color:#b42318;border-color:#f3c7c3}
 .daily-btn.delete:hover{background:#fff0f0}
+.task-followup-empty{background:#fff6e5;color:#92400e;border-radius:9px;padding:8px 10px;font-weight:600}
+.task-due-form select{min-height:42px;width:100%;box-sizing:border-box}
+.text-button.danger{color:#b42318}

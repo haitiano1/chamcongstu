@@ -35,8 +35,21 @@ try{$a->tx(function()use($a){
  $as($m);$route("/tasks/declines/$d2/approve",['note'=>'']);$f=$follow();verify(isset($f[$t2])&&$f[$t2]['waiting']===['TF hai']&&$f[$t2]['declines'][0]['status']==='approved','Duyệt → còn TF hai, vẫn hiện Theo dõi hạn');
  $route("/tasks/$t2/due",['version'=>$ver($t2),'due_at'=>now_ms()+86400000]);verify($due($t2)!==null,'Chỉnh hạn sau khi duyệt');
  $as($e2);$route("/tasks/$t2/done",['note'=>'']);verify(!isset($follow()[$t2]),'Người còn lại xong → hết hiện');
+ // Người nhận duy nhất được duyệt: việc vẫn mở, hiện "chưa có người làm" để giao người khác (kèm hạn) hoặc hủy.
  $t3=$task([(int)$e['id']]);$as($e);$d3=$route("/tasks/$t3/decline",['reason'=>'Em xin nghỉ hôm nay'])[1]['id'];$as($admin);$route("/tasks/declines/$d3/approve",['note'=>'']);
- verify(!isset($follow()[$t3]),'Việc tự hủy (không còn ai nhận) không hiện');
+ verify($a->scalar('SELECT status FROM {{tasks}} WHERE id=?',[$t3])==='open','Duyệt người duy nhất: việc không tự hủy');
+ $f=$follow();verify(isset($f[$t3])&&$f[$t3]['waiting']===[]&&$f[$t3]['declines'][0]['status']==='approved','Hiện Theo dõi hạn, chưa có người làm');
+ $as($e);denied(fn()=>$route("/tasks/$t3/assign",['version'=>$ver($t3),'user_ids'=>[(int)$e2['id']]]),403,'Nhân viên không giao người được');
+ $as($m);denied(fn()=>$route("/tasks/$t3/assign",['version'=>$ver($t3),'user_ids'=>[]]),400,'Phải chọn người');
+ $at3=now_ms()+5*3600000;$r=$route("/tasks/$t3/assign",['version'=>$ver($t3),'user_ids'=>[(int)$e2['id']],'due_at'=>$at3]);
+ $rec=$a->one('SELECT * FROM {{task_recipients}} WHERE task_id=? AND user_id=?',[$t3,$e2['id']]);
+ verify($r[0]===200&&$rec&&$rec['notify_state']==='pending'&&(int)$due($t3)===$at3,'Giao TF hai kèm hạn, Telegram báo như việc mới');
+ verify($a->scalar('SELECT audience FROM {{tasks}} WHERE id=?',[$t3])==='people'&&(bool)$a->one("SELECT id FROM {{task_audit}} WHERE task_id=? AND action='assigned'",[$t3]),'Lịch sử ghi Giao người làm thay');
+ $f=$follow();verify($f[$t3]['waiting']===['TF hai'],'Sau khi giao: còn chờ TF hai');
+ denied(fn()=>$route("/tasks/$t3/assign",['version'=>$ver($t3),'user_ids'=>[(int)$e2['id']]]),400,'Giao trùng người đang nhận bị báo');
+ $as($e2);verify(task_pending($a)>=1,'Người mới thấy việc cần làm');$route("/tasks/$t3/done",['note'=>'']);verify(!isset($follow()[$t3]),'Người mới báo xong → hết hiện');
+ $t6=$task([(int)$e['id']]);$as($e);$d6=$route("/tasks/$t6/decline",['reason'=>'Em xin nghỉ ca chiều'])[1]['id'];$as($admin);$route("/tasks/declines/$d6/approve",['note'=>'']);
+ $as($m);$route("/tasks/$t6/cancel",['version'=>$ver($t6),'reason'=>'Không còn ai làm']);verify(!isset($follow()[$t6]),'Hủy việc chưa có người làm → hết hiện');
 
  // Nhắc nhở: không duyệt → hiện tới khi bấm Đã xem; đặt được hạn xem.
  $t4=$task([(int)$e['id']],'notice','Nhắc đeo thẻ');$as($e);$d4=$route("/tasks/$t4/decline",['reason'=>'Em đã đeo rồi ạ'])[1]['id'];$as($m);$route("/tasks/declines/$d4/reject",['note'=>'Vẫn đọc lại nhé']);
@@ -70,4 +83,4 @@ try{$a->tx(function()use($a){
  denied(fn()=>$route("/tasks/templates/$p2/delete",['version'=>1]),404,'Xóa lần nữa báo không tìm thấy');
  throw new Rollback();
 });}catch(Rollback){}
-echo "PASS $n task follow-up / daily delete checks\n";
+echo "PASS $n task follow-up / reassign / daily delete checks\n";

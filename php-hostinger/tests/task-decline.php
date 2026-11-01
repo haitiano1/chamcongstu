@@ -1,5 +1,5 @@
 <?php
-// Xin từ chối Task / Nhắc nhở: người nhận ghi lý do, Admin/Quản lý khác duyệt; duyệt thì gỡ người đó (không còn ai nhận thì tự hủy việc),
+// Xin từ chối Task / Nhắc nhở: người nhận ghi lý do, Admin/Quản lý khác duyệt; duyệt thì gỡ người đó (không còn ai nhận thì việc vẫn mở, chờ giao người khác),
 // không duyệt thì việc vẫn treo (Nhắc nhở quay lại Chưa xem); rút yêu cầu; báo xong tự rút; Telegram báo hai chiều.
 // Chạy trong giao dịch rồi hoàn tác; Telegram giả lập, không gửi tin thật.
 foreach(['bootstrap','telegram','bookings','people-finance','tasks'] as $f)require_once __DIR__.'/../site/nhansu-private/lib/'.$f.'.php';
@@ -33,9 +33,9 @@ try{$a->tx(function()use($a){
  $as($e);verify(task_pending($a)===$pending,'Việc vẫn trong danh sách cần làm');$mine=$route('/tasks',[],'GET')[1];verify($mine['my_declines'][0]['status']==='rejected'&&$mine['my_declines'][0]['review_note']==='Ca 2 hôm nay em vẫn đi làm, làm giúp anh'&&$mine['my_declines'][0]['reviewer_name']==='TC quanly','Người gửi thấy lý do và người không duyệt');
  verify($a->one("SELECT 1 FROM {{task_audit}} WHERE task_id=? AND action='decline_rejected'",[$t1])!==null&&$a->one("SELECT 1 FROM {{task_audit}} WHERE task_id=? AND action='decline_requested'",[$t1])!==null,'Lịch sử việc ghi xin từ chối và không duyệt');
  denied(fn()=>$route("/tasks/declines/$d1/approve"),409,'Yêu cầu đã xử lý thì không duyệt lại');
- // Gửi lại và được duyệt: gỡ khỏi việc; việc chỉ có một người nhận thì tự hủy.
+ // Gửi lại và được duyệt: gỡ khỏi việc; việc chỉ có một người nhận thì vẫn mở, không còn ai nhận.
  $d2=$route("/tasks/$t1/decline",['reason'=>'Em xin đổi người vì đang chụp khách'])[1]['id'];$as($m);$route("/tasks/declines/$d2/approve",['note'=>'']);
- verify($state($d2)==='approved'&&$recipient($t1,$e)===null,'Duyệt thì gỡ người nhận');verify($a->one('SELECT status,cancel_reason FROM {{tasks}} WHERE id=?',[$t1])['status']==='cancelled','Việc không còn ai nhận thì tự hủy');
+ verify($state($d2)==='approved'&&$recipient($t1,$e)===null,'Duyệt thì gỡ người nhận');verify($a->one('SELECT status FROM {{tasks}} WHERE id=?',[$t1])['status']==='open'&&!(int)$a->scalar('SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=?',[$t1]),'Việc không còn ai nhận vẫn mở, chờ giao người khác');
  $as($e);verify(task_pending($a)===$pending-1,'Được duyệt thì bớt việc cần làm');$mine=$route('/tasks',[],'GET')[1];verify($mine['my_declines'][0]['status']==='approved','Người gửi thấy đã duyệt');
  // Việc nhiều người nhận: duyệt chỉ gỡ người xin, việc vẫn mở cho người khác.
  $t2=$task([(int)$e['id'],(int)$e2['id']]);$as($e);$d3=$route("/tasks/$t2/decline",['reason'=>'Em không biết làm phần này'])[1]['id'];$as($admin);$route("/tasks/declines/$d3/approve",['note'=>'Để Hai làm']);
@@ -66,4 +66,4 @@ try{$a->tx(function()use($a){
  verify(str_contains(task_decline_result_text(['kind'=>'notice','title'=>'Mai họp'],true,'Alex',''),'Alex đã duyệt, bạn không cần làm việc này nữa.'),'Tin đã duyệt');
  throw new RuntimeException('ROLLBACK');
 });}catch(RuntimeException $e){if($e->getMessage()!=='ROLLBACK')throw $e;}
-echo "PASS $n task decline checks: request, review, reject keeps task, approve removes/cancels, notice reset, withdraw, Telegram\n";
+echo "PASS $n task decline checks: request, review, reject keeps task, approve removes (kept open), notice reset, withdraw, Telegram\n";

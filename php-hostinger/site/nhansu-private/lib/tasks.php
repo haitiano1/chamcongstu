@@ -104,7 +104,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   header('Content-Type: image/jpeg');header('Content-Disposition: inline');echo $photo;exit;
  }
  if(preg_match('~^/tasks/declines/([a-f0-9-]{36})/(approve|reject|withdraw)$~D',$path,$m)&&$method==='POST')return task_decline_review($a,$m[1],$m[2],$b);
- if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel|decline|due)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
+ if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel|decline|due|assign)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
  $t=task_row($a,$m[1]);$action=$m[2];
  if($action==='seen'){$r=task_mine($a,$t);if($r['seen_at']===null)$a->run('UPDATE {{task_recipients}} SET seen_at=? WHERE task_id=? AND user_id=?',[now_ms(),$t['id'],$me]);return [200,['ok'=>true,'pending'=>task_pending($a)]];}
  if($action==='done'){
@@ -135,6 +135,18 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   $a->run('UPDATE {{tasks}} SET due_at=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$due,$me,now_ms(),$t['id']]);
   task_audit($a,$t['id'],'due_changed',['due_at'=>$old],['due_at'=>$due]);return [200,['ok'=>true]];
  }
+ // Giao người làm thay ở Theo dõi hạn (việc không còn ai nhận sau khi duyệt từ chối); đặt hạn cùng lúc.
+ if($action==='assign'){
+  $ids=task_recipient_ids($a,(int)$t['created_by'],'people',$b['user_ids']??null);
+  $have=array_map('intval',array_column($a->all('SELECT user_id FROM {{task_recipients}} WHERE task_id=?',[$t['id']]),'user_id'));
+  $add=array_values(array_diff($ids,$have));if(!$add)fail('Người này đang nhận việc rồi.');
+  $old=$t['due_at']===null?null:(int)$t['due_at'];$raw=$b['due_at']??null;$due=!array_key_exists('due_at',$b)?$old:($raw===null||$raw===''?null:($raw===$old?$old:task_due($raw,$t['kind'])));
+  $a->run("UPDATE {{tasks}} SET audience='people',due_at=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?",[$due,$me,now_ms(),$t['id']]);
+  // Việc hằng ngày không nhắn Telegram (giống lúc tự tạo mỗi ngày); việc thường nhắn như việc mới.
+  foreach($add as $uid)$a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'',?)",[$t['id'],$uid,$t['template_id']===null?'pending':'skipped']);
+  $names=array_column($a->all('SELECT name FROM {{users}} WHERE id IN ('.implode(',',array_fill(0,count($add),'?')).') ORDER BY name',$add),'name');
+  task_audit($a,$t['id'],'assigned',['due_at'=>$old],['recipients'=>$names,'due_at'=>$due]);return [200,['ok'=>true]];
+ }
  if($action==='edit'){
   $title=task_text($b['title']??null,'Tiêu đề',3,150);$body=task_text($b['body']??'','Nội dung',0,2000);
   $due=($b['due_at']??null)===$t['due_at']?$t['due_at']:task_due($b['due_at']??null,$t['kind']);
@@ -161,7 +173,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
  return [200,['ok'=>true]];
 }
 // Xin từ chối Task / Nhắc nhở (chủ dự án yêu cầu 01/11/2026): người nhận ghi lý do / ý kiến, Admin hoặc Quản lý khác duyệt.
-// Duyệt: gỡ người đó khỏi việc (việc không còn ai nhận thì tự hủy). Không duyệt: việc vẫn treo cho người đó tới khi báo xong;
+// Duyệt: gỡ người đó khỏi việc (không còn ai nhận thì việc vẫn mở, chờ giao người khác ở Theo dõi hạn). Không duyệt: việc vẫn treo cho người đó tới khi báo xong;
 // Nhắc nhở bị không duyệt thì quay lại Chưa xem. Báo xong trong lúc chờ thì yêu cầu tự rút. Telegram báo Admin/Quản lý khi gửi, báo người gửi khi có kết quả.
 const TASK_DECLINE_STATUS=['pending'=>'Chờ duyệt','approved'=>'Đã duyệt','rejected'=>'Không duyệt','withdrawn'=>'Đã rút'];
 function task_decline_list(App $a,?int $user): array {
@@ -171,9 +183,10 @@ function task_decline_list(App $a,?int $user): array {
 }
 // Theo dõi hạn (chủ dự án yêu cầu 01/11/2026): Task / Nhắc nhở đã có yêu cầu từ chối được Duyệt hoặc Không duyệt vẫn hiện cho
 // Admin/Quản lý kèm hạn để tự chỉnh, tới khi mọi người nhận còn lại báo xong (Nhắc nhở: đã xem), việc bị hủy hoặc việc hằng ngày đã qua ngày.
+// Duyệt mà không còn ai nhận thì việc vẫn mở, hiện ở đây để giao người khác (assign) hoặc hủy.
 function task_decline_followups(App $a): array {
  $open="(t.kind='task' AND r.done_at IS NULL OR t.kind='notice' AND r.seen_at IS NULL)";
- $rows=$a->all("SELECT t.id,t.kind,t.title,t.due_at,t.version,t.task_day FROM {{tasks}} t WHERE t.status='open' AND (t.task_day IS NULL OR t.task_day>=?) AND EXISTS(SELECT 1 FROM {{task_declines}} d WHERE d.task_id=t.id AND d.status IN ('approved','rejected')) AND EXISTS(SELECT 1 FROM {{task_recipients}} r WHERE r.task_id=t.id AND $open) ORDER BY t.due_at IS NULL,t.due_at,t.created_at DESC LIMIT 50",[local_day(now_ms())]);
+ $rows=$a->all("SELECT t.id,t.kind,t.title,t.due_at,t.version,t.task_day FROM {{tasks}} t WHERE t.status='open' AND (t.task_day IS NULL OR t.task_day>=?) AND EXISTS(SELECT 1 FROM {{task_declines}} d WHERE d.task_id=t.id AND d.status IN ('approved','rejected')) AND (EXISTS(SELECT 1 FROM {{task_recipients}} r WHERE r.task_id=t.id AND $open) OR NOT EXISTS(SELECT 1 FROM {{task_recipients}} r WHERE r.task_id=t.id)) ORDER BY t.due_at IS NULL,t.due_at,t.created_at DESC LIMIT 50",[local_day(now_ms())]);
  foreach($rows as &$r){
   $r['declines']=$a->all("SELECT d.status,d.reviewed_at,d.review_note,u.name,(SELECT name FROM {{users}} WHERE id=d.reviewed_by) reviewer_name FROM {{task_declines}} d JOIN {{users}} u ON u.id=d.user_id WHERE d.task_id=? AND d.status IN ('approved','rejected') ORDER BY d.reviewed_at",[$r['id']]);
   $r['waiting']=array_column($a->all("SELECT u.name FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=? AND $open ORDER BY u.name",[$r['id']]),'name');
@@ -214,8 +227,7 @@ function task_decline_review(App $a,string $id,string $action,array $b): array {
  if($action==='approve'){
   $a->run('DELETE FROM {{task_proofs}} WHERE task_id=? AND user_id=?',[$t['id'],$uid]);$a->run('DELETE FROM {{task_recipients}} WHERE task_id=? AND user_id=?',[$t['id'],$uid]);$close('approved',$note);
   task_audit($a,$t['id'],'decline_approved',['recipient'=>$person['name']],null,'Lý do của '.$person['name'].': '.$d['reason'].($note!==''?' | Ghi chú duyệt: '.$note:''));
-  if(!(int)$a->scalar('SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=?',[$t['id']])){$reason='Người nhận duy nhất ('.$person['name'].') đã được duyệt từ chối.';
-   $a->run("UPDATE {{tasks}} SET status='cancelled',cancel_reason=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?",[$reason,$me,$now,$t['id']]);task_audit($a,$t['id'],'cancelled',['status'=>'open'],['status'=>'cancelled'],$reason);}
+  // Không còn ai nhận thì việc vẫn mở (chủ dự án yêu cầu 01/11/2026): hiện ở Theo dõi hạn để giao người khác, chỉnh hạn hoặc hủy.
  }else{
   $close('rejected',$note);if($t['kind']==='notice')$a->run('UPDATE {{task_recipients}} SET seen_at=NULL WHERE task_id=? AND user_id=?',[$t['id'],$uid]);
   task_audit($a,$t['id'],'decline_rejected',null,null,'Lý do của '.$person['name'].': '.$d['reason'].' | Không duyệt: '.$note);
