@@ -47,7 +47,7 @@ function agTabs_(book,cfg){
 }
 // Đọc một tab: hàng tiêu đề, các dòng lịch và vị trí từng ngày. ids dùng chung mọi tab: dòng sao chép mang theo mã của dòng khác thì cấp mã mới.
 function agHeader_(values){
- for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0)return {header:i,columns:{date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))}};}
+ for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0)return {header:i,columns:{date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),weekday:agFindHeader_(r,['thu','thu trong tuan','weekday']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))}};}
  return null;
 }
 function agParse_(values,year,tabMonth,ids){
@@ -61,13 +61,29 @@ function agParse_(values,year,tabMonth,ids){
   let id=String(r[idCol]||'').trim().toLowerCase();if(!/^[a-f0-9-]{36}$/.test(id)||ids[id]){id=Utilities.getUuid().toLowerCase();newIds.push({row:i,id:id});}ids[id]=true;
   const item={id:id,day:lastDay,time:agTime_(time),source_row:i+1};['customer_name','package_label','customer_phone','main_alias','support_alias','note','deposit_label','received_label'].forEach(k=>{item[k]=columns[k]>=0?String(r[columns[k]]||'').trim():'';});
   // Gửi đủ mọi ô có dữ liệu theo tiêu đề cột để popup hiện nguyên thông tin Sheet; ô trống bỏ qua.
-  item.sheet_fields=[];r.forEach((v,c)=>{const value=String(v||'').trim();if(c===idCol||!value)return;item.sheet_fields.push({label:String(values[header][c]||'').trim()||agColumn_(c),value:value});});
+  item.sheet_fields=[];r.forEach((v,c)=>{const value=String(v||'').trim();if(c===idCol||c===columns.weekday||!value)return;item.sheet_fields.push({label:String(values[header][c]||'').trim()||agColumn_(c),value:value});});
   const state=columns.status>=0?agNormalize_(r[columns.status]):'';item.status=['huy','da huy','cancel','cancelled'].indexOf(state)!==-1?'cancelled':'active';rows.push(item);
   entries.push({row:i,day:lastDay,minutes:Number(item.time.slice(0,2))*60+Number(item.time.slice(3)),length:agLength_(item.package_label,item.note),team:agPrice_(item.package_label)===349,active:item.status==='active',name:item.customer_name,id:id});
  }
  if(rows.length>5000)throw new Error('Tab vượt 5.000 lịch.');
  return {header:header,columns:columns,idCol:idCol,addIdHeader:addIdHeader,rows:rows,newIds:newIds,entries:entries};
 }
+// Cột Thứ (chủ dự án yêu cầu 01/11/2026): đặt bên phải cột Ngày, tiêu đề "Thứ". Đi cùng ô Ngày khi chèn / xóa / chuyển dòng (kể cả ô gộp);
+// dòng có Ngày mà ô Thứ trống hoặc ghi sai thứ thì script tự ghi, giữ kiểu viết đang dùng trên tab (Thứ 2 / T2 / Thứ Hai). Chữ khác (không phải thứ) thì để nguyên.
+function agDayCols_(c){return c.weekday>=0?[c.date,c.weekday]:[c.date];}
+function agDow_(day){const [y,m,d]=day.split('-').map(Number);return new Date(Date.UTC(y,m-1,d)).getUTCDay();}
+function agWeekdayIndex_(v){const s=agNormalize_(v).replace(/\./g,'');let m;if(s==='cn'||s==='chu nhat')return 0;if((m=s.match(/^(?:thu|t) ?([2-7])$/)))return Number(m[1])-1;const w=['','hai','ba','tu','nam','sau','bay'],i=w.indexOf(s.replace(/^thu /,''));return /^thu /.test(s)&&i>0?i:-1;}
+function agWeekdayStyle_(values,p){const c=p.columns.weekday;for(let i=p.header+1;i<values.length;i++){const s=agNormalize_(values[i][c]||'').replace(/\./g,'');if(!s||agWeekdayIndex_(s)<0)continue;return /^(t ?\d|cn)$/.test(s)?'short':/^thu (hai|ba|tu|nam|sau|bay|chu nhat)$/.test(s)?'word':'num';}return 'num';}
+function agWeekdayText_(i,style){if(style==='short')return i===0?'CN':'T'+(i+1);if(style==='word')return i===0?'Chủ nhật':'Thứ '+['','Hai','Ba','Tư','Năm','Sáu','Bảy'][i];return i===0?'Chủ nhật':'Thứ '+(i+1);}
+function agFillWeekdays_(t){
+ const p=t.parsed,c=p.columns;if(!p||c.weekday<0)return 0;const style=agWeekdayStyle_(t.values,p);let n=0;
+ for(let i=p.header+1;i<t.values.length;i++){const r=t.values[i],shown=String(r[c.date]||'').trim();if(!shown)continue;let day;try{day=agDate_(shown,t.year,t.month);}catch(e){continue;}
+  const want=agDow_(day),cur=String(r[c.weekday]||'').trim(),has=cur?agWeekdayIndex_(cur):-2;if(has===want||has===-1)continue;
+  const text=agWeekdayText_(want,style);t.sheet.getRange(i+1,c.weekday+1).setNumberFormat('@').setValue(text);r[c.weekday]=text;n++;}
+ return n;
+}
+// Các khoảng cột liên tiếp (đánh số từ 1) trừ các cột skip (chỉ số 0).
+function agSpans_(width,skip){const out=[];let a=0;for(let c=1;c<=width+1;c++){if(c<=width&&skip.indexOf(c-1)===-1){if(!a)a=c;}else if(a){out.push([a,c-1]);a=0;}}return out;}
 function agLoad_(t,ids,writeIds){
  t.values=t.sheet.getDataRange().getDisplayValues();t.parsed=agParse_(t.values,t.year,t.month,ids);const p=t.parsed;
  if(writeIds){if(p.addIdHeader)t.sheet.getRange(p.header+1,p.idCol+1).setValue('_AG_BOOKING_ID');p.newIds.forEach(x=>t.sheet.getRange(x.row+1,p.idCol+1).setValue(x.id));}
@@ -169,21 +185,21 @@ function agInsert_(book,tabs,q,into){
  const found=agFind_(book,tabs,q.booking_id,q.tab);if(found)return {id:q.id,ok:true,tab:found.t.name,row:found.row};
  const [y,m]=q.day.split('-').map(Number);let t=into||tabs.find(x=>!x.legacy&&x.year===y&&x.month===m)||tabs.find(x=>x.legacy);
  if(t&&t.error)throw new Error('Tab '+t.name+' đang lỗi: '+t.error);if(!t)t=agNewTab_(book,tabs,y,m);
- const p=t.parsed,sheet=t.sheet,minutes=Number(q.time.slice(0,2))*60+Number(q.time.slice(3)),plan=agPlan_(p,q.day,minutes),dateCol=p.columns.date+1,width=Math.max(sheet.getLastColumn(),p.idCol+1),samples=agSamples_(tabs,t);let r;
+ const p=t.parsed,sheet=t.sheet,minutes=Number(q.time.slice(0,2))*60+Number(q.time.slice(3)),plan=agPlan_(p,q.day,minutes),dateCol=p.columns.date+1,dayCols=agDayCols_(p.columns),width=Math.max(sheet.getLastColumn(),p.idCol+1),samples=agSamples_(tabs,t);let r;
  if(plan.op==='shift'){
   // Khách sớm nhất ngày: chèn dưới dòng đầu, chuyển nội dung dòng đầu (trừ ô Ngày) xuống, ghi lịch mới vào dòng đầu.
-  r=plan.row+1;sheet.insertRowAfter(r);[[1,dateCol-1],[dateCol+1,width]].forEach(([a,b])=>{if(b<a)return;sheet.getRange(r,a,1,b-a+1).copyTo(sheet.getRange(r+1,a,1,b-a+1));sheet.getRange(r,a,1,b-a+1).clearContent();});
+  r=plan.row+1;sheet.insertRowAfter(r);agSpans_(width,dayCols).forEach(([a,b])=>{sheet.getRange(r,a,1,b-a+1).copyTo(sheet.getRange(r+1,a,1,b-a+1));sheet.getRange(r,a,1,b-a+1).clearContent();});
  }else if(plan.op==='fill'){r=plan.row+1;if(sheet.getMaxRows()<r)sheet.insertRowAfter(r-1);}
  else if(plan.op==='before'){r=plan.row+1;sheet.insertRowBefore(r);}
  else{
-  const last=plan.row+1,merged=!plan.date&&last>p.header+1?sheet.getRange(last,dateCol).getMergedRanges()[0]:null;sheet.insertRowAfter(last);r=last+1;
-  if(merged&&merged.getLastRow()===last)sheet.getRange(merged.getRow(),dateCol,last-merged.getRow()+2,1).merge();
+  const last=plan.row+1,merges=!plan.date&&last>p.header+1?dayCols.map(c=>[c+1,sheet.getRange(last,c+1).getMergedRanges()[0]]):[];sheet.insertRowAfter(last);r=last+1;
+  merges.forEach(([col,merged])=>{if(merged&&merged.getLastRow()===last)sheet.getRange(merged.getRow(),col,last-merged.getRow()+2,1).merge();});
  }
  if(plan.date)agWriteDate_(sheet.getRange(r,dateCol),q.day,samples.date);
  const written=agWriteValues_(t,r,q,samples),near=plan.op==='fill'?r:plan.op==='after'?r-1:r+1;
  // Cột công thức (VD Còn lại = Giá − Cọc): chép công thức của dòng lịch kế bên.
- if(near>p.header+1&&near!==r){const f=sheet.getRange(near,1,1,width).getFormulasR1C1()[0];f.forEach((x,c)=>{if(x&&!written[c]&&c!==dateCol-1)sheet.getRange(r,c+1).setFormulaR1C1(x);});}
- agLoad_(t,{},false);return {id:q.id,ok:true,tab:t.name,row:r};
+ if(near>p.header+1&&near!==r){const f=sheet.getRange(near,1,1,width).getFormulasR1C1()[0];f.forEach((x,c)=>{if(x&&!written[c]&&dayCols.indexOf(c)===-1)sheet.getRange(r,c+1).setFormulaR1C1(x);});}
+ agLoad_(t,{},false);agFillWeekdays_(t);return {id:q.id,ok:true,tab:t.name,row:r};
 }
 // Lịch hủy trên web → ghi "Hủy" vào cột Trạng thái (chưa có cột thì thêm ở cuối).
 function agCancel_(book,tabs,q){
@@ -195,15 +211,16 @@ function agCancel_(book,tabs,q){
 }
 // Lịch xóa trên web → xóa dòng. Ô Ngày nằm ở dòng bị xóa (ô gộp hoặc chỉ ghi ở dòng đầu ngày) thì chuyển xuống dòng kế để các khách còn lại giữ đúng ngày.
 function agRemoveRow_(t,r){
- const sheet=t.sheet,values=sheet.getDataRange().getDisplayValues(),h=agHeader_(values);
+ const sheet=t.sheet,values=sheet.getDataRange().getDisplayValues(),h=agHeader_(values),remerge=[];
  if(h&&String(values[r-1][h.columns.date]||'').trim()){
-  const c=h.columns,col=c.date+1,cell=sheet.getRange(r,col),merged=cell.getMergedRanges()[0];
-  if(merged&&merged.getLastRow()>r){const last=merged.getLastRow();merged.breakApart();cell.copyTo(sheet.getRange(r+1,col));sheet.deleteRow(r);if(last-1>r)sheet.getRange(r,col,last-r,1).merge();if(t.parsed)agLoad_(t,{},false);return;}
-  // Ô Ngày không gộp: dòng khách kế tiếp chưa ghi ngày (cùng ngày) thì nhận ô Ngày này.
-  for(let i=r;i<values.length;i++){const v=values[i];if(String(v[c.date]||'').trim())break;if(String(v[c.time]||'').trim()||String(v[c.customer_name]||'').trim()){cell.copyTo(sheet.getRange(i+1,col));break;}}
+  // Ô gộp: tách, chép xuống dòng kế, xóa dòng rồi gộp lại. Không gộp: dòng khách kế tiếp chưa ghi ngày (cùng ngày) nhận ô Ngày (và ô Thứ).
+  const c=h.columns;let next=0;for(let i=r;i<values.length;i++){const v=values[i];if(String(v[c.date]||'').trim())break;if(String(v[c.time]||'').trim()||String(v[c.customer_name]||'').trim()){next=i+1;break;}}
+  agDayCols_(c).forEach(c0=>{const col=c0+1,cell=sheet.getRange(r,col),merged=cell.getMergedRanges()[0];
+   if(merged&&merged.getLastRow()>r){const last=merged.getLastRow();merged.breakApart();cell.copyTo(sheet.getRange(r+1,col));if(last-1>r)remerge.push([col,last]);}
+   else if(next)cell.copyTo(sheet.getRange(next,col));});
  }
  if(sheet.getMaxRows()<=r)sheet.insertRowsAfter(r,1);// Sheets không cho xóa hết các dòng không cố định.
- sheet.deleteRow(r);if(t.parsed)agLoad_(t,{},false);
+ sheet.deleteRow(r);remerge.forEach(([col,last])=>sheet.getRange(r,col,last-r,1).merge());if(t.parsed)agLoad_(t,{},false);
 }
 function agDelete_(book,tabs,q){
  const f=agFind_(book,tabs,q.booking_id,q.tab);
@@ -227,10 +244,10 @@ function agUpdate_(book,tabs,q){
  agRemoveRow_(t,f.row);
  const [y,m]=toDay.split('-').map(Number),done=agInsert_(book,tabs,Object.assign({},q,{day:toDay}),f.raw&&t.year===y&&t.month===m?t:null),t2=done.tab===t.name?t:tabs.find(x=>x.name===done.tab),p2=t2.parsed,c2=p2.columns;
  // Cột web vừa ghi (Ngày, Giờ, mã lịch, các ô được sửa) giữ giá trị mới; các cột khác trả lại như dòng cũ (cùng tab theo vị trí, tab khác theo tiêu đề).
- const skip={};[c2.date,c2.time,p2.idCol].concat(keys.map(k=>c2[k])).forEach(c=>{if(c>=0)skip[c]=true;});
+ const skip={};[c2.date,c2.weekday,c2.time,p2.idCol].concat(keys.map(k=>c2[k])).forEach(c=>{if(c>=0)skip[c]=true;});
  if(c2.note>=0&&(c2.makeup<0&&keys.indexOf('makeup')!==-1||c2.special<0&&keys.indexOf('special')!==-1))skip[c2.note]=true;
  const names=t2.values[p2.header].map(agNormalize_);
- for(let c=0;c<width;c++){if(c===p.idCol)continue;const to=t2===t?c:head[c]?names.indexOf(agNormalize_(head[c])):-1;if(to<0||skip[to])continue;const cell=t2.sheet.getRange(done.row,to+1);if(formulas[c])cell.setFormulaR1C1(formulas[c]);else cell.setValue(values[c]);}
+ for(let c=0;c<width;c++){if(c===p.idCol||c===p.columns.weekday)continue;const to=t2===t?c:head[c]?names.indexOf(agNormalize_(head[c])):-1;if(to<0||skip[to])continue;const cell=t2.sheet.getRange(done.row,to+1);if(formulas[c])cell.setFormulaR1C1(formulas[c]);else cell.setValue(values[c]);}
  agLoad_(t2,{},false);return done;
 }
 function dongBoAnhGau(e){
@@ -240,7 +257,7 @@ function dongBoAnhGau(e){
   const book=SpreadsheetApp.openById(cfg.AG_SHEET_ID),tabs=agTabs_(book,cfg),ids={},errors=[],hashes=JSON.parse(cfg.AG_HASHES||'{}'),now=Date.now();let sent=0,clashes=0,wrote=0;
   tabs.forEach(function(t){
    try{
-    agLoad_(t,ids,true);clashes+=agMarkConflicts_(t);
+    agLoad_(t,ids,true);agFillWeekdays_(t);clashes+=agMarkConflicts_(t);
     const rows=t.parsed.rows,hash=agHash_(JSON.stringify(rows)),old=hashes[t.name];if(!forced&&old&&old.h===hash&&now-old.t<AG_FORCE_MS)return;
     for(let i=0;i<Math.max(1,rows.length);i+=100)sent+=agPost_(cfg,{sheet_id:cfg.AG_SHEET_ID,tab:t.name,rows:rows.slice(i,i+100)}).received;hashes[t.name]={h:hash,t:now};
    }catch(err){t.error=String(err.message);errors.push(t.name+': '+t.error);}

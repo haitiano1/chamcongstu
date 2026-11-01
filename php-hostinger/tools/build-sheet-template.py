@@ -23,6 +23,7 @@ SPECIAL = ['Ô TÔ', 'Ngoại Cảnh', 'Nhóm tại Stu', 'Sản Phẩm']
 # (tiêu đề, độ rộng, định dạng số, căn giữa, ghi chú ở ô tiêu đề)
 COLUMNS = [
     ('Ngày', 9, 'dd/mm', True, 'Ngày chụp dạng 05/11. Chỉ ghi ở dòng đầu của mỗi ngày; các dòng sau cùng ngày để trống (hoặc gộp ô).'),
+    ('Thứ', 10, '@', True, 'Không cần gõ: script tự ghi thứ theo cột Ngày (Thứ 2 … Chủ nhật) và tự sửa nếu ghi sai. Gộp ô giống cột Ngày nếu muốn.'),
     ('Giờ', 8, 'hh:mm', True, 'Giờ bắt đầu, dạng 10:00 hoặc 11:30.'),
     ('Tên khách', 30, '@', False, 'Tên khách, ghi luôn tiền cọc. VD: Chị Lan cọc 200k'),
     ('SĐT', 14, '@', True, 'Số điện thoại, giữ số 0 đầu.'),
@@ -101,14 +102,14 @@ def build(path, example_json=None):
     d1, d2, t = dt.date(2026, 11, 5), dt.date(2026, 11, 6), dt.time
     # Ví dụ: 05/11 và 06/11, không có dòng nào trùng giờ (script sẽ không tô đỏ).
     rows = [
-        [d1, t(9, 0), 'Chị Lan cọc 200k', '0901234567', '', '', 'HUY', 'CƯỜNG', 'Nữ', None, '', ''],
-        ['', t(10, 0), 'Anh Minh & chị Thảo cọc 500k', '0912345678', 'Couple 999', 'Ngoại Cảnh', 'HUY', 'CƯỜNG', 'Nữ', None, '', 'Chụp áo dài'],
-        ['', t(13, 0), 'Chị Hoa cọc 300k', '0987654321', '1499', '', 'HUY', 'CƯỜNG', 'Làm Tóc', 50000, '', ''],
-        ['', t(15, 30), 'Chị Vy', '0934567890', '', '', 'HUY', 'CƯỜNG', '', None, 'Hủy', 'Khách dời sang tháng sau'],
-        [d2, t(9, 0), 'Team công ty ABC cọc 1tr', '0909888777', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', '', None, '', 'Giữ 3 tiếng'],
-        ['', t(9, 0), 'Thành viên 2 · team ABC', '', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', 'Nữ', None, '', ''],
-        ['', t(9, 0), 'Thành viên 3 · team ABC', '', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', '', None, '', ''],
-        ['', t(13, 0), 'Anh Tuấn cọc 200k', '0977111222', '2999', 'Ô TÔ', 'HUY', 'CƯỜNG', 'Nam', None, '', ''],
+        [d1, 'Thứ 5', t(9, 0), 'Chị Lan cọc 200k', '0901234567', '', '', 'HUY', 'CƯỜNG', 'Nữ', None, '', ''],
+        ['', '', t(10, 0), 'Anh Minh & chị Thảo cọc 500k', '0912345678', 'Couple 999', 'Ngoại Cảnh', 'HUY', 'CƯỜNG', 'Nữ', None, '', 'Chụp áo dài'],
+        ['', '', t(13, 0), 'Chị Hoa cọc 300k', '0987654321', '1499', '', 'HUY', 'CƯỜNG', 'Làm Tóc', 50000, '', ''],
+        ['', '', t(15, 30), 'Chị Vy', '0934567890', '', '', 'HUY', 'CƯỜNG', '', None, 'Hủy', 'Khách dời sang tháng sau'],
+        [d2, 'Thứ 6', t(9, 0), 'Team công ty ABC cọc 1tr', '0909888777', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', '', None, '', 'Giữ 3 tiếng'],
+        ['', '', t(9, 0), 'Thành viên 2 · team ABC', '', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', 'Nữ', None, '', ''],
+        ['', '', t(9, 0), 'Thành viên 3 · team ABC', '', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', '', None, '', ''],
+        ['', '', t(13, 0), 'Anh Tuấn cọc 200k', '0977111222', '2999', 'Ô TÔ', 'HUY', 'CƯỜNG', 'Nam', None, '', ''],
     ]
     explain = [
         'Gói để trống = 399/699, khách tới mới chọn → giữ 1 tiếng (09:00–10:00). Ngày chỉ ghi ở dòng đầu của ngày.',
@@ -121,8 +122,9 @@ def build(path, example_json=None):
         'Gói 2999 giữ 2 tiếng (13:00–15:00).',
     ]
     ex = data_sheet(wb, 'Ví dụ', rows, 20, explain)
-    ex.merge_cells('A2:A5')
-    ex.merge_cells('A6:A9')
+    for col in ('A', 'B'):  # Ngày và Thứ gộp ô theo ngày
+        ex.merge_cells(f'{col}2:{col}5')
+        ex.merge_cells(f'{col}6:{col}9')
     data_sheet(wb, 'Mẫu trống', [], 500, rule_rows=1000)
 
     guide.column_dimensions['A'].width = 4
@@ -165,6 +167,7 @@ def build(path, example_json=None):
         cell.border = BORDER
     table = [
         ('Ngày', 'Có', 'dd/mm (VD 05/11). Chỉ ghi ở dòng đầu của mỗi ngày; các dòng sau để trống hoặc gộp ô.', 'Chèn đúng ngày, đúng thứ tự giờ'),
+        ('Thứ', '', 'Không cần gõ. Script tự ghi thứ theo Ngày và tự sửa nếu sai; giữ kiểu viết đang dùng (Thứ 2 / T2 / Thứ Hai).', 'Thứ của ngày đó'),
         ('Giờ', 'Có', 'HH:mm (VD 10:00, 11:30).', 'Giờ đã chọn'),
         ('Tên khách', 'Có', 'Tên + tiền cọc (VD Chị Lan cọc 200k).', 'Tên khách đã nhập'),
         ('SĐT', '', 'Giữ số 0 đầu.', 'SĐT'),
