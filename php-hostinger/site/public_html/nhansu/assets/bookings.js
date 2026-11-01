@@ -93,8 +93,8 @@ export function bindBookings({api,user,toast}){
    const x=clash(toMinutes(chosen),len);note.className='booking-slot-state '+(x?'bad':'good');note.textContent=x?`${chosen}–${clock(toMinutes(chosen)+len)} trùng lịch ${who(x)}. Chọn giờ khác.`:`${chosen}–${clock(toMinutes(chosen)+len)} còn trống · ${r?'Google Sheet sẽ sửa theo':`sẽ ghi vào tab ${info.tab} của Google Sheet`}${info.sheet_connected?'':' (Sheet chưa kết nối)'}.`;
   }
   async function fetchDay(){const n=++request,day=f.elements.day.value;info=null;draw();if(!day)return;try{const x=await api('bookings/slots?'+new URLSearchParams({day}));if(n!==request)return;info=x;f.elements.day.min=x.range.min;f.elements.day.max=x.range.max;
-    // Thợ mặc định Huy (chính) - Cường (phụ); đổi thợ thì sửa trên Sheet.
-    const staff=[x.staff.main_alias,x.staff.support_alias].filter(Boolean);d.querySelector('.booking-create-staff').textContent=r?`Thợ chụp: ${photographerNames(r)}. Đổi thợ thì sửa trên Google Sheet.`:staff.length?`Thợ chụp: ${staff.map(shortName).join(' - ')} (mặc định). Đổi thợ thì sửa trên Google Sheet.`:'Chưa ghép tên Huy/Cường với nhân viên: lịch sẽ chưa có thợ.';
+    // Thợ mặc định Huy (chính) - Cường (phụ); Sheet của studio không có cột Thợ (chủ dự án chốt 01/11/2026).
+    const staff=[x.staff.main_alias,x.staff.support_alias].filter(Boolean);d.querySelector('.booking-create-staff').textContent=r?`Thợ chụp: ${photographerNames(r)}.`:staff.length?`Thợ chụp: ${staff.map(shortName).join(' - ')} (mặc định).`:'Chưa ghép tên Huy/Cường với nhân viên: lịch sẽ chưa có thợ.';
     if(chosen&&clash(toMinutes(chosen),length()||60)&&!f.elements.other_time.value)chosen='';draw();}catch(error){if(n===request){grid.innerHTML=`<p class="hint">${esc(error.message)}</p>`;}}}
   const changed=()=>{d.querySelector('.booking-hold').hidden=!team();if(chosen&&!f.elements.other_time.value&&info&&clash(toMinutes(chosen),length()))chosen='';draw();};
   for(const x of [...f.elements.package,...f.elements.hold])x.onchange=changed;d.querySelector('.booking-hold').hidden=!team();

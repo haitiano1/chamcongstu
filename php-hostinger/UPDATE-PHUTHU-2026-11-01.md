@@ -1,15 +1,23 @@
 # Cập nhật 01/11/2026 (lần 4) — Phụ thu, Tip ở Sửa lịch (gồm mọi thay đổi hôm nay + script Sheet)
 
-Gói này **cộng dồn** mọi gói hôm nay (web v1.3.34 → v1.3.38) và script Google Sheet (cột Thứ). Chưa upload gói nào hôm nay thì **chỉ cần làm theo gói này**.
+Gói này **cộng dồn** mọi gói hôm nay (web v1.3.34 → v1.3.39) và script Google Sheet (cột Thứ). Chưa upload gói nào hôm nay thì **chỉ cần làm theo gói này**.
 
-## Thay đổi (v1.3.38)
+## Thay đổi (v1.3.39)
+
+### Định dạng Sheet lịch chụp (không cần cột Thợ)
+
+- Sheet hiện tại của studio đã đúng định dạng: **Ngày · Time · Tên khách · SĐT · Gói · Đặc Biệt · Phụ thu · Makeup · Tip · Ghi chú · Trạng thái**. Không cần cột Thợ: lịch nào cũng mặc định Huy chính - Cường phụ.
+- Chỉ thêm (không bắt buộc) cột **Thứ** ngay bên phải cột Ngày, script tự điền T2 … CN.
+- Giữ đúng chữ tiêu đề ở dòng tiêu đề. Script tự thêm cột ẩn `_AG_BOOKING_ID` ở cuối để giữ mã lịch: không sửa, không xóa cột này.
+- Form Thêm / Sửa lịch trên web bỏ câu "Đổi thợ thì sửa trên Google Sheet", chỉ ghi "Thợ chụp: Huy - Cường (mặc định)".
+- Sheet mẫu `Mau-lich-chup-AnhGau.xlsx` làm lại đúng thứ tự cột trên, bỏ cột Thợ chính / Thợ phụ.
 
 ### Phụ thu, Tip ở Sửa lịch
 
 - Lịch chụp → bấm thẻ lịch → **Sửa lịch** có thêm mục **4. Sau khi chụp** với 2 ô **Phụ thu** và **Tip**. Thêm lịch thì không có, vì chụp xong mới biết.
 - Ghi số tiền: `100000`, `100.000` hoặc `100k`. Để trống là không có; xóa số đi rồi Lưu là xóa.
 - Bấm **Lưu thay đổi**: web lưu ngay (popup lịch hiện Phụ thu, Tip), khoảng 1 phút sau script ghi vào cột **Phụ thu** và **Tip** trên Google Sheet, dạng số để cộng tổng được.
-  - Sheet đã có cột Tip thì ghi vào đó. Chưa có cột Phụ thu thì script tự thêm cột "Phụ thu" ở cuối bảng. Muốn đẹp thì chèn sẵn cột **Phụ thu** cạnh cột Tip, script tìm theo tên tiêu đề.
+  - Ghi vào cột Phụ thu và Tip đang có trên Sheet (tìm theo tên tiêu đề). Sheet nào chưa có cột thì script tự thêm ở cuối bảng.
   - Chỉ ghi 2 ô này, các ô khác trên dòng giữ nguyên. Lịch đã qua cũng sửa được. Chỉ sửa Phụ thu / Tip thì không bị báo trùng giờ.
   - Gõ thẳng trên Sheet cũng được: web đọc về theo cột Phụ thu / Tip.
 - Phiếu lương: khoản Tips vẫn nhập tay như cũ (số Tip ở lịch chưa tự cộng vào lương).
@@ -95,14 +103,14 @@ Giải nén từng ZIP trên máy, upload **các file bên trong** vào đúng t
 
 1. Thay theo thứ tự 1 → 2 → 3 → 4. Giữ nguyên config.php, storage, database và WordPress. Cron giữ như cũ (mỗi phút).
 2. Mở https://anhgaustudio.com/nhansu/kiemtra-capnhat.php, tất cả dòng phải xanh.
-3. Điện thoại bấm ↻; máy tính Ctrl + F5. Góc menu hiện **v1.3.38 · 01/11/2026**.
+3. Điện thoại bấm ↻; máy tính Ctrl + F5. Góc menu hiện **v1.3.39 · 01/11/2026**.
 
 ### Bước 2. Script Google Sheet (bắt buộc để ghi Phụ thu, Tip và cột Thứ)
 
 1. Google Sheet lịch → **Tiện ích mở rộng → Apps Script** → mở file script, **xóa hết nội dung**, dán toàn bộ `AnhGauSync.gs` trong gói này → **Lưu** (Ctrl + S). Kết nối và tự đồng bộ giữ nguyên.
-2. (Không bắt buộc) Chèn cột **Phụ thu** cạnh cột Tip (tiêu đề đúng chữ `Phụ thu`).
-3. Cột Thứ: chuột phải chữ cột của cột **Ngày** → **Chèn 1 cột bên phải** → gõ tiêu đề **Thứ** → menu **Anh Gấu Studio → Đồng bộ ngay**. Script tự điền T2 … CN.
-4. Sheet mẫu mới (`Mau-lich-chup-AnhGau.xlsx`) đã có cột Thứ, Phụ thu, Tip để tham khảo.
+2. Sheet đã có cột Phụ thu, Tip: không cần làm gì thêm.
+3. (Không bắt buộc) Cột Thứ: chuột phải chữ cột của cột **Ngày** → **Chèn 1 cột bên phải** → gõ tiêu đề **Thứ** → menu **Anh Gấu Studio → Đồng bộ ngay**. Script tự điền T2 … CN.
+4. Sheet mẫu mới (`Mau-lich-chup-AnhGau.xlsx`) đúng thứ tự cột của studio, có cột Thứ, không có cột Thợ.
 
 ### Thử
 
@@ -112,6 +120,7 @@ Giải nén từng ZIP trên máy, upload **các file bên trong** vào đúng t
 
 ## Đã thử trên bản dev
 
+- Sheet mẫu đúng bố cục studio (không cột Thợ) chạy qua script: đọc đủ 8 lịch, đúng ngày giờ, gói, Phụ thu 100000, Tip 50000, dòng Hủy; thợ để trống → web gán Huy - Cường mặc định; cột Thứ tự điền T5, T6.
 - Phụ thu, Tip, 17 kiểm thử máy chủ đạt (trong giao dịch rồi hoàn tác): form điền sẵn; chỉ đổi 2 ô thì việc ghi Sheet chỉ gồm 2 ô, gửi đúng số cho script; popup hiện ngay; không đổi thì không ghi; bản web cũ không gửi 2 ô thì giữ nguyên; chữ không phải số tiền bị chặn; xóa được; lịch chồng giờ vẫn nhập được; lịch chưa đồng bộ vẫn lưu; Sheet cũ không đè lúc đang chờ ghi; Sheet không có cột / script cũ thì giữ số web; sửa trên Sheet thì web cập nhật; đổi gói không mất số.
 - Script Sheet (Sheet giả lập) 19 kiểm thử đạt: đọc cột Tip có sẵn, chưa có cột Phụ thu thì không gửi; nhập Phụ thu 100k / Tip 50.000 → ghi số 100000 / 50000 đúng định dạng cột, thêm cột Phụ thu ở cuối, ô khác giữ nguyên; web đọc lại đúng; xóa Tip; đổi giờ chuyển dòng thì Tip đi theo; đổi giờ và nhập Tip cùng lúc ghi đúng dòng mới.
 - Giao diện điện thoại 390px (tài khoản Quản lý test, dữ liệu thử đã xóa): Sửa lịch có mục 4 Sau khi chụp với 2 ô; Lưu thay đổi → web lưu Phụ thu 100k, Tip 50000, việc ghi Sheet chỉ gồm 2 ô.
