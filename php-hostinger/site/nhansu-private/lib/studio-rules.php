@@ -25,6 +25,7 @@ function studio_rule_routes(App $a,string $path,array $b,string $method): ?array
  if($path!=='/studio-rules'&&!str_starts_with($path,'/studio-rules/'))return null;
  $admin=$a->user['role']==='admin';
  if($path==='/studio-rules'&&$method==='GET'){
+  if(function_exists('late_rule_seed'))late_rule_seed($a);
   $rows=$a->all('SELECT r.id,r.code,r.name,r.category,r.content,r.points,r.status,r.created_at,r.updated_at,r.version,(SELECT name FROM {{users}} WHERE id=r.updated_by) updater_name FROM {{studio_rules}} r'.($admin?" WHERE r.status!='deleted'":" WHERE r.status='active'").' ORDER BY r.category,r.code');
   return [200,['rows'=>$rows,'categories'=>array_values(array_unique(array_column($rows,'category'))),'can_edit'=>$admin,'can_delete'=>$admin||$a->user['role']==='manager']];
  }

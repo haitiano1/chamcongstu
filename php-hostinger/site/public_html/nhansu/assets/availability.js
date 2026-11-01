@@ -11,7 +11,7 @@ const URGENT_WARNING=`<div class="avail-warning" role="alert"><strong>Bạn ch�
 
 function dialog(title,body,cls=''){const d=document.createElement('dialog');d.className='workflow-dialog finance-dialog '+cls;d.innerHTML=`<div class="dialog-heading"><h2>${esc(title)}</h2><button class="dialog-close" aria-label="Đóng" type="button">×</button></div>${body}`;document.body.append(d);d.querySelector('.dialog-close').onclick=()=>d.close();d.addEventListener('close',()=>d.remove(),{once:true});d.showModal();return d;}
 
-export function availabilityPage(user){return `<section class="finance-page avail-page" data-page="availability" hidden><div class="finance-heading"><div><span class="eyebrow">ANH GẤU STUDIO · ĐĂNG KÝ CA</span><h1>Đăng ký ca</h1><p>Tick những ca bạn chắc chắn đi làm trong tuần, tối thiểu 10 ca, rồi bấm Chốt.</p></div></div>
+export function availabilityPage(user){return `<section class="finance-page avail-page" data-page="availability" hidden><div class="finance-heading"><div><span class="eyebrow">ANH GẤU STUDIO · ĐĂNG KÝ CA</span><h1>Đăng ký ca</h1><p>Tick những ca bạn chắc chắn đi làm trong tuần, tối thiểu 10 ca, rồi bấm Chốt. Ca đã chọn hiện ở Lịch chụp → Lịch của tôi.</p></div></div>
 <div class="card avail-week-bar"><button class="secondary" type="button" id="avail-prev" aria-label="Tuần trước">‹</button><div><strong id="avail-week-title">Tuần</strong><small id="avail-week-range"></small></div><button class="secondary" type="button" id="avail-next" aria-label="Tuần sau">›</button></div>
 ${user.role!=='admin'?`<section class="card avail-mine"><div class="avail-status"><div><span id="avail-badge" class="avail-badge"></span><p id="avail-count" class="avail-count"></p></div><div class="avail-progress"><i id="avail-progress"></i></div></div><p class="hint" id="avail-hint"></p><div id="avail-grid" class="avail-grid" aria-live="polite"></div><button class="primary" type="button" id="avail-commit">Chốt đăng ký tuần</button></section>`:''}
 ${user.role!=='employee'?`<section class="card avail-team"><div class="section-head"><h2>Đăng ký của nhân viên</h2></div><div id="avail-cancels"></div><div id="avail-team-list"></div></section>`:''}
@@ -19,7 +19,8 @@ ${user.role!=='employee'?`<section class="card avail-team"><div class="section-h
 
 export function bindAvailability({api,user,toast}){
  const page=document.querySelector('[data-page="availability"]');if(!page)return;
- let week=null,data=null,busy=false;
+ // Thứ 7 và Chủ nhật mở thẳng tuần tới (tuần này đã khóa), cùng tuần với popup và tin nhắc Telegram.
+ let week=(()=>{const vn=new Date(Date.now()+7*3600000),dow=vn.getUTCDay();return dow===6||dow===0?addDays(vn.toISOString().slice(0,10),dow===6?2:1):null;})(),data=null,busy=false;
  const $=s=>page.querySelector(s);
  // Còn ≤ urgent_days ngày tới ngày của ca (tính theo ngày Việt Nam) thì bỏ ca là nghỉ gấp.
  const isUrgent=day=>(Date.parse(day+'T00:00:00Z')-Date.parse(new Date(data.now+7*3600000).toISOString().slice(0,10)+'T00:00:00Z'))/86400000<=data.urgent_days;

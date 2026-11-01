@@ -91,3 +91,15 @@
 .booking-chip input:checked+span{border-color:#c2417a;background:#fdf0f6;color:#a3335f;font-weight:600}.booking-chip input:checked+span::before{border-color:#c2417a;background:#c2417a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E") center/12px no-repeat}.booking-chip input:focus-visible+span{outline:3px solid #c4a256;outline-offset:2px}
 .booking-create-staff{margin:12px 0 0!important;font-size:12px!important}
 .booking-hold{margin:12px 0 0}.booking-hold>span{display:block;font-size:11px;color:#7c8ca2;margin-bottom:6px}.booking-hold>div{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.booking-hold .booking-chip span{width:100%;justify-content:center;padding:0 6px}.booking-chip.plain span::before{display:none}.booking-hold .booking-chip input:checked+span{border-color:#176db3;background:#eaf3fc;color:#176db3;font-weight:600}
+/* Lịch của tôi: ca đã Đăng ký ca (31/10/2026). */
+.booking-reg{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:0 0 8px;font-size:11px;line-height:1.3}
+.booking-reg>small{font-size:10px;color:#6b7f99}
+.booking-reg>span{padding:2px 8px;border-radius:999px;background:#e3f4e9;color:#1d7444;font-weight:600;white-space:nowrap}
+.booking-reg>span.cx{background:#fdecec;color:#b42318}
+@media(max-width:1000px){.booking-page .booking-calendar:not([data-mode=month]) .booking-day.empty-day .booking-reg{margin:0 0 3px;justify-content:flex-end}}
+/* Giờ chụp in đậm, to hơn cho nhân viên dễ thấy (chủ dự án yêu cầu 01/11/2026). */
+.booking-page .booking-calendar .booking-card .booking-card-line>strong.booking-card-time{font-weight:800;font-size:14px;letter-spacing:.2px}
+@media(max-width:800px){.booking-page .booking-calendar .booking-card .booking-card-line>strong.booking-card-time{font-size:16px}}
+/* Sửa lịch → Sau khi chụp: Phụ thu, Tip (chủ dự án yêu cầu 01/11/2026). */
+.booking-money{display:grid;grid-template-columns:1fr 1fr;gap:10px}.booking-money label{margin:0!important;font-size:11px}.booking-money input{width:100%;min-height:44px;font-size:16px}
+.booking-create-step .booking-money+.hint{margin:6px 0 0;font-size:12px}

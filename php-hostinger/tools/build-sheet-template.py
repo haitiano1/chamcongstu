@@ -17,27 +17,27 @@ from openpyxl.worksheet.datavalidation import DataValidation
 
 FONT = 'Arial'
 PACKAGES = ['399', '699', 'Couple 999', '1499', '2999', 'Team 349']
-STAFF = ['HUY', 'CƯỜNG', 'TÍN']
 MAKEUP = ['Nam', 'Nữ', 'Làm Tóc']
 SPECIAL = ['Ô TÔ', 'Ngoại Cảnh', 'Nhóm tại Stu', 'Sản Phẩm']
 # (tiêu đề, độ rộng, định dạng số, căn giữa, ghi chú ở ô tiêu đề)
+# Đúng thứ tự cột Sheet lịch chụp của studio (chủ dự án gửi 01/11/2026). Không có cột Thợ: lịch nào cũng mặc định Huy chính - Cường phụ.
 COLUMNS = [
     ('Ngày', 9, 'dd/mm', True, 'Ngày chụp dạng 05/11. Chỉ ghi ở dòng đầu của mỗi ngày; các dòng sau cùng ngày để trống (hoặc gộp ô).'),
-    ('Giờ', 8, 'hh:mm', True, 'Giờ bắt đầu, dạng 10:00 hoặc 11:30.'),
+    ('Thứ', 7, '@', True, 'Không cần gõ: script tự ghi thứ theo cột Ngày (T2 … T7, CN) và tự sửa nếu ghi sai. Gộp ô giống cột Ngày nếu muốn.'),
+    ('Time', 8, 'hh:mm', True, 'Giờ bắt đầu, dạng 10:00 hoặc 11:30.'),
     ('Tên khách', 30, '@', False, 'Tên khách, ghi luôn tiền cọc. VD: Chị Lan cọc 200k'),
     ('SĐT', 14, '@', True, 'Số điện thoại, giữ số 0 đầu.'),
     ('Gói', 12, '@', True, 'Để trống = 399/699, khách tới mới chọn (giữ 1 tiếng).\nCouple 999 / 1499 / 2999 = giữ 2 tiếng.\nTeam 349 = giữ theo "Giữ N tiếng" ở Ghi chú.'),
     ('Đặc Biệt', 13, '@', True, 'Không bắt buộc. Chọn 1: Ô TÔ / Ngoại Cảnh / Nhóm tại Stu / Sản Phẩm.'),
-    ('Thợ chính', 11, '@', True, 'Tên đã ghép trên web (HUY, CƯỜNG…). Lịch thêm trên web tự ghi HUY.'),
-    ('Thợ phụ', 11, '@', True, 'Lịch thêm trên web tự ghi CƯỜNG.'),
-    ('Makeup', 14, '@', True, 'Không bắt buộc. Chọn 1: Nam / Nữ / Làm Tóc.'),
-    ('Tip', 10, '#,##0', True, 'Tiền tip khách cho (nếu có), VD 50000.'),
-    ('Trạng thái', 11, '@', True, 'Khách hủy: chọn Hủy. Không xóa dòng (xóa dòng không xóa lịch trên web).'),
+    ('Phụ thu', 10, '#,##0', True, 'Phụ thu (nếu có), VD 100000. Nhập ở Sửa lịch trên web (script tự ghi) hoặc gõ ở đây.'),
+    ('Makeup', 12, '@', True, 'Không bắt buộc. Chọn 1: Nam / Nữ / Làm Tóc.'),
+    ('Tip', 10, '#,##0', True, 'Tiền tip khách cho (nếu có), VD 50000. Nhập ở Sửa lịch trên web (script tự ghi) hoặc gõ ở đây.'),
     ('Ghi chú', 34, '@', False, 'Ghi chú tự do. Team ghi "Giữ 3 tiếng" để khóa đủ giờ.'),
+    ('Trạng thái', 11, '@', True, 'Khách hủy: chọn Hủy. Không xóa dòng (xóa dòng không xóa lịch trên web).'),
     ('_AG_BOOKING_ID', 38, '@', False, 'Cột ẩn: script tự ghi mã lịch. Không sửa, không xóa.'),
 ]
 COL = {name: get_column_letter(i) for i, (name, *_) in enumerate(COLUMNS, 1)}
-LAST = COL['Ghi chú']  # cột cuối người dùng thấy; sau đó là _AG_BOOKING_ID ẩn
+LAST = COL['Trạng thái']  # cột cuối người dùng thấy; sau đó là _AG_BOOKING_ID ẩn
 line = Side(style='thin', color='D5DCE6')
 BORDER = Border(left=line, right=line, top=line, bottom=line)
 HEAD_FILL = PatternFill('solid', fgColor='FFFF00')
@@ -71,7 +71,6 @@ def data_sheet(wb, title, rows, blank_rows, explain=None, rule_rows=0):
     end = max(total + 1, rule_rows)  # dropdown phủ rộng hơn vùng kẻ sẵn để dòng thêm sau vẫn có
     rules = [('Gói', PACKAGES, 'Chọn gói trong danh sách (để trống nếu khách chưa chọn 399/699).'),
              ('Đặc Biệt', SPECIAL, 'Ô TÔ / Ngoại Cảnh / Nhóm tại Stu / Sản Phẩm.'),
-             ('Thợ chính', STAFF, 'Chọn tên thợ đã ghép trên web.'), ('Thợ phụ', STAFF, 'Chọn tên thợ đã ghép trên web.'),
              ('Makeup', MAKEUP, 'Nam / Nữ / Làm Tóc.'), ('Trạng thái', ['Hủy'], 'Chỉ chọn Hủy khi khách hủy.')]
     for name, options, message in rules:
         col = COL[name]
@@ -100,20 +99,22 @@ def build(path, example_json=None):
     guide.title = 'Hướng dẫn'
     d1, d2, t = dt.date(2026, 11, 5), dt.date(2026, 11, 6), dt.time
     # Ví dụ: 05/11 và 06/11, không có dòng nào trùng giờ (script sẽ không tô đỏ).
-    rows = [
-        [d1, t(9, 0), 'Chị Lan cọc 200k', '0901234567', '', '', 'HUY', 'CƯỜNG', 'Nữ', None, '', ''],
-        ['', t(10, 0), 'Anh Minh & chị Thảo cọc 500k', '0912345678', 'Couple 999', 'Ngoại Cảnh', 'HUY', 'CƯỜNG', 'Nữ', None, '', 'Chụp áo dài'],
-        ['', t(13, 0), 'Chị Hoa cọc 300k', '0987654321', '1499', '', 'HUY', 'CƯỜNG', 'Làm Tóc', 50000, '', ''],
-        ['', t(15, 30), 'Chị Vy', '0934567890', '', '', 'HUY', 'CƯỜNG', '', None, 'Hủy', 'Khách dời sang tháng sau'],
-        [d2, t(9, 0), 'Team công ty ABC cọc 1tr', '0909888777', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', '', None, '', 'Giữ 3 tiếng'],
-        ['', t(9, 0), 'Thành viên 2 · team ABC', '', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', 'Nữ', None, '', ''],
-        ['', t(9, 0), 'Thành viên 3 · team ABC', '', 'Team 349', 'Nhóm tại Stu', 'HUY', 'CƯỜNG', '', None, '', ''],
-        ['', t(13, 0), 'Anh Tuấn cọc 200k', '0977111222', '2999', 'Ô TÔ', 'HUY', 'CƯỜNG', 'Nam', None, '', ''],
+    # Mỗi dòng ghi theo tên cột; cột không ghi để trống.
+    examples = [
+        {'Ngày': d1, 'Thứ': 'T5', 'Time': t(9, 0), 'Tên khách': 'Chị Lan cọc 200k', 'SĐT': '0901234567', 'Makeup': 'Nữ'},
+        {'Time': t(10, 0), 'Tên khách': 'Anh Minh & chị Thảo cọc 500k', 'SĐT': '0912345678', 'Gói': 'Couple 999', 'Đặc Biệt': 'Ngoại Cảnh', 'Makeup': 'Nữ', 'Ghi chú': 'Chụp áo dài'},
+        {'Time': t(13, 0), 'Tên khách': 'Chị Hoa cọc 300k', 'SĐT': '0987654321', 'Gói': '1499', 'Phụ thu': 100000, 'Makeup': 'Làm Tóc', 'Tip': 50000},
+        {'Time': t(15, 30), 'Tên khách': 'Chị Vy', 'SĐT': '0934567890', 'Trạng thái': 'Hủy', 'Ghi chú': 'Khách dời sang tháng sau'},
+        {'Ngày': d2, 'Thứ': 'T6', 'Time': t(9, 0), 'Tên khách': 'Team công ty ABC cọc 1tr', 'SĐT': '0909888777', 'Gói': 'Team 349', 'Đặc Biệt': 'Nhóm tại Stu', 'Ghi chú': 'Giữ 3 tiếng'},
+        {'Time': t(9, 0), 'Tên khách': 'Thành viên 2 · team ABC', 'Gói': 'Team 349', 'Đặc Biệt': 'Nhóm tại Stu', 'Makeup': 'Nữ'},
+        {'Time': t(9, 0), 'Tên khách': 'Thành viên 3 · team ABC', 'Gói': 'Team 349', 'Đặc Biệt': 'Nhóm tại Stu'},
+        {'Time': t(13, 0), 'Tên khách': 'Anh Tuấn cọc 200k', 'SĐT': '0977111222', 'Gói': '2999', 'Đặc Biệt': 'Ô TÔ', 'Makeup': 'Nam'},
     ]
+    rows = [[x.get(name, '') for name, *_ in COLUMNS[:-1]] for x in examples]
     explain = [
         'Gói để trống = 399/699, khách tới mới chọn → giữ 1 tiếng (09:00–10:00). Ngày chỉ ghi ở dòng đầu của ngày.',
         'Couple 999 giữ 2 tiếng (10:00–12:00). Ô Ngày trống = cùng ngày với dòng trên. Đặc Biệt chọn 1 hoặc để trống.',
-        'Gói 1499 giữ 2 tiếng (13:00–15:00). Cột Tip ghi số tiền khách tip.',
+        'Gói 1499 giữ 2 tiếng (13:00–15:00). Phụ thu, Tip: chụp xong nhập ở Sửa lịch trên web (hoặc gõ ở đây).',
         'Khách hủy: chọn Hủy ở Trạng thái (dòng tự mờ đi). Không xóa dòng. Giờ lẻ 15:30 ghi được.',
         'Team: dòng đầu ghi "Giữ 3 tiếng" ở Ghi chú → khóa 09:00–12:00 với khách khác.',
         'Các thành viên team điền thêm cùng giờ, gói Team 349: không bị báo trùng nhau.',
@@ -121,8 +122,9 @@ def build(path, example_json=None):
         'Gói 2999 giữ 2 tiếng (13:00–15:00).',
     ]
     ex = data_sheet(wb, 'Ví dụ', rows, 20, explain)
-    ex.merge_cells('A2:A5')
-    ex.merge_cells('A6:A9')
+    for col in ('A', 'B'):  # Ngày và Thứ gộp ô theo ngày
+        ex.merge_cells(f'{col}2:{col}5')
+        ex.merge_cells(f'{col}6:{col}9')
     data_sheet(wb, 'Mẫu trống', [], 500, rule_rows=1000)
 
     guide.column_dimensions['A'].width = 4
@@ -165,16 +167,17 @@ def build(path, example_json=None):
         cell.border = BORDER
     table = [
         ('Ngày', 'Có', 'dd/mm (VD 05/11). Chỉ ghi ở dòng đầu của mỗi ngày; các dòng sau để trống hoặc gộp ô.', 'Chèn đúng ngày, đúng thứ tự giờ'),
-        ('Giờ', 'Có', 'HH:mm (VD 10:00, 11:30).', 'Giờ đã chọn'),
+        ('Thứ', '', 'Không cần gõ. Script tự ghi thứ theo Ngày (T2 … T7, CN) và tự sửa nếu sai.', 'Thứ của ngày đó'),
+        ('Time', 'Có', 'HH:mm (VD 10:00, 11:30). Tiêu đề ghi Time hoặc Giờ đều được.', 'Giờ đã chọn'),
         ('Tên khách', 'Có', 'Tên + tiền cọc (VD Chị Lan cọc 200k).', 'Tên khách đã nhập'),
         ('SĐT', '', 'Giữ số 0 đầu.', 'SĐT'),
         ('Gói', '', 'Để trống = 399/699 khách tới chọn (1 tiếng). Couple 999 / 1499 / 2999 = 2 tiếng. Team 349 = theo "Giữ N tiếng" ở Ghi chú.', 'Trống (399/699) hoặc gói đã chọn'),
         ('Đặc Biệt', '', 'Chọn 1: Ô TÔ / Ngoại Cảnh / Nhóm tại Stu / Sản Phẩm, hoặc để trống.', 'Lựa chọn đã chọn (hoặc trống)'),
-        ('Thợ chính / Thợ phụ', '', 'Tên đã ghép trên web (HUY, CƯỜNG, TÍN…). Đổi thợ thì sửa ở đây, web tự cập nhật.', 'HUY / CƯỜNG'),
+        ('Phụ thu', '', 'Số tiền phụ thu (VD 100000). Chụp xong nhập ở Sửa lịch trên web hoặc gõ ở đây.', 'Số nhập ở Sửa lịch'),
         ('Makeup', '', 'Chọn 1: Nam / Nữ / Làm Tóc, hoặc để trống.', 'Lựa chọn đã chọn (hoặc trống)'),
-        ('Tip', '', 'Số tiền tip (VD 50000).', '(không ghi)'),
-        ('Trạng thái', '', 'Chọn Hủy khi khách hủy. Không xóa dòng.', 'Hủy, khi hủy trên web'),
+        ('Tip', '', 'Số tiền tip (VD 50000). Chụp xong nhập ở Sửa lịch trên web hoặc gõ ở đây.', 'Số nhập ở Sửa lịch'),
         ('Ghi chú', '', 'Ghi chú tự do. Team: ghi "Giữ 3 tiếng" để khóa đủ giờ.', 'Ghi chú + "Giữ N tiếng" (Team)'),
+        ('Trạng thái', '', 'Chọn Hủy khi khách hủy. Không xóa dòng.', 'Hủy, khi hủy trên web'),
         ('_AG_BOOKING_ID', '', 'Cột ẩn, script tự ghi mã lịch. Không sửa, không xóa.', 'Mã lịch'),
     ]
     for row in table:
@@ -189,6 +192,7 @@ def build(path, example_json=None):
         'Mỗi khung giờ 1 khách. Lịch chồng giờ (kể cả điền tay) bị script tô đỏ ô Giờ và ghi chú dòng bị trùng.',
         'Team: chỉ cần 1 dòng có "Giữ N tiếng"; thêm các dòng thành viên cùng giờ với gói Team 349.',
         'Được thêm cột khác hoặc đổi thứ tự cột, miễn giữ đúng tên tiêu đề ở dòng 1.',
+        'Không cần cột Thợ: lịch nào cũng mặc định Huy chính - Cường phụ (cả lịch điền tay trên Sheet).',
     ]
     for text in notes:
         r += 1

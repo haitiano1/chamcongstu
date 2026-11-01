@@ -35,9 +35,44 @@ function avail_cancel_rows(App $a,string $from,string $to,?int $user=null): arra
  foreach($rows as &$r){$prior=(int)$a->scalar('SELECT COUNT(*) FROM {{shift_cancellations}} WHERE user_id=? AND cancelled_at<? AND cancelled_at>=?',[$r['user_id'],$r['cancelled_at'],day_time(substr(local_day($r['cancelled_at']),0,7).'-01')]);$r['ordinal']=$prior+1;$r['suggested_deduction']=$prior?300:100;}unset($r);
  return $rows;
 }
-function avail_notify_managers(App $a,string $text): void {
- if(!class_exists('Telegram'))return;$tg=new Telegram($a);if(!$tg->configured())return;
- foreach($a->all("SELECT l.chat_id FROM {{telegram_links}} l JOIN {{users}} u ON u.id=l.user_id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' AND u.id!=?",[$a->user['id']]) as $m){try{$tg->message($m['chat_id'],$text);}catch(Throwable){}}
+function avail_notify_managers(App $a,string $text,?Telegram $tg=null): void {
+ if(!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;
+ foreach($a->all("SELECT l.chat_id FROM {{telegram_links}} l JOIN {{users}} u ON u.id=l.user_id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' AND u.id!=?",[$a->user['id']]) as $m){try{$tg->call('sendMessage',['chat_id'=>$m['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở Đăng ký ca',$a->config['app_url'].'/#availability'));}catch(Throwable){}}
+}
+function avail_week_label(string $week): string {return date('d/m',strtotime($week.'T00:00:00Z')).' – '.date('d/m',strtotime($week.'T00:00:00Z')+6*86400);}
+// Các ca đã chọn trong tuần, mỗi ngày một dòng: "T2 02/11: Ca 1, Ca 2".
+function avail_shift_lines(App $a,int $user,string $week): string {
+ $days=avail_days($week);$names=['day_first'=>'Ca 1','day_second'=>'Ca 2'];$short=['T2','T3','T4','T5','T6','T7','CN'];$by=[];
+ foreach($a->all('SELECT day,shift FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=? ORDER BY day,shift',[$user,$days[0],$days[6]]) as $r)$by[$r['day']][]=$names[$r['shift']]??$r['shift'];
+ $out=[];foreach($days as $i=>$d)if(isset($by[$d]))$out[]=$short[$i].' '.date('d/m',strtotime($d.'T00:00:00Z')).': '.implode(', ',$by[$d]);return implode("\n",$out);
+}
+// Telegram nhắc Đăng ký ca (chủ dự án yêu cầu 31/10/2026). Cron mỗi phút: thứ 7 và Chủ nhật lúc 9h và 20h nhắn riêng từng người chưa chốt
+// tuần tới (Nhân viên và Quản lý, như popup trên web); 20h Chủ nhật gửi Admin/Quản lý danh sách người chưa chốt. Cron lỡ giờ thì gửi bù
+// trong 3 tiếng. Mỗi tin giữ chỗ trong telegram_deliveries (kind 'avail', shift avail_9 / avail_20 / avail_list) nên không gửi lặp.
+const AVAIL_REMIND_HOURS=[9,20];
+function avail_telegram_send(App $a,Telegram $tg,int $user,string $chat,string $day,string $slot,string $text,int $now): bool {
+ if(!$a->run("INSERT IGNORE INTO {{telegram_deliveries}}(user_id,day,shift,kind,state,attempted_at) VALUES(?,?,?,'avail','pending',?)",[$user,$day,$slot,$now])->rowCount())return false;
+ try{$tg->call('sendMessage',['chat_id'=>$chat,'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở Đăng ký ca',$a->config['app_url'].'/#availability'));
+  $a->run("UPDATE {{telegram_deliveries}} SET state='sent',sent_at=?,error=NULL WHERE user_id=? AND day=? AND shift=? AND kind='avail'",[$now,$user,$day,$slot]);}
+ catch(Throwable $e){$a->run("UPDATE {{telegram_deliveries}} SET state='failed',error=? WHERE user_id=? AND day=? AND shift=? AND kind='avail'",[mb_substr($e->getMessage(),0,500),$user,$day,$slot]);$a->meta('telegram_error',$e->getMessage());}
+ return true;
+}
+function availability_telegram_tick(App $a,?int $clock=null,?Telegram $tg=null): void {
+ if(!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;
+ $now=$clock??now_ms();$day=local_day($now);$dow=(int)date('N',strtotime($day.'T00:00:00Z'));if($dow<6)return;
+ $hour=intdiv($now-day_time($day),3600000);$slot=null;foreach(AVAIL_REMIND_HOURS as $h)if($hour>=$h&&$hour<$h+3)$slot=$h;if($slot===null)return;
+ $next=date('Y-m-d',strtotime(avail_this_week($now).'T00:00:00Z')+7*86400);$days=avail_days($next);$label=avail_week_label($next);$pending=[];
+ foreach($a->all("SELECT u.id,u.name,l.chat_id FROM {{users}} u LEFT JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role!='admin' AND u.archived=0 AND u.status!='inactive' ORDER BY u.name") as $p){
+  if(avail_committed($a,(int)$p['id'],$next,$now)['committed'])continue;
+  $p['count']=(int)$a->scalar('SELECT COUNT(*) FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$p['id'],$days[0],$days[6]]);$pending[]=$p;
+ }
+ $sent=0;
+ foreach($pending as $p){if(!$p['chat_id'])continue;if($sent>=25)return;
+  $text="📅 Anh Gấu Studio · Đăng ký ca\nBạn chưa chốt ca làm tuần tới ($label). Đã chọn {$p['count']}/".AVAIL_MIN_SHIFTS." ca.\nVào tick những ca chắc chắn đi làm, tối thiểu ".AVAIL_MIN_SHIFTS." ca, rồi bấm Chốt.";
+  if(avail_telegram_send($a,$tg,(int)$p['id'],(string)$p['chat_id'],$day,'avail_'.$slot,$text,$now))$sent++;}
+ if($dow!==7||$slot!==20||!$pending)return;
+ $text="📋 Anh Gấu Studio · Chưa chốt ca tuần $label (".count($pending)." người)\n".implode("\n",array_map(fn($p)=>'• '.$p['name'].': '.$p['count'].'/'.AVAIL_MIN_SHIFTS.' ca'.($p['chat_id']?'':' · chưa nối Telegram'),$pending));
+ foreach($a->all("SELECT u.id,l.chat_id FROM {{users}} u JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' ORDER BY u.id") as $m){if($sent>=25)return;if(avail_telegram_send($a,$tg,(int)$m['id'],(string)$m['chat_id'],$day,'avail_list',$text,$now))$sent++;}
 }
 function availability_routes(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/availability'&&!str_starts_with($path,'/availability/'))return null;
@@ -94,7 +129,9 @@ function availability_routes(App $a,string $path,array $b,string $method): ?arra
   $count=(int)$a->scalar('SELECT COUNT(*) FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$me,$days[0],$days[6]]);
   if($count<AVAIL_MIN_SHIFTS)fail('Cần chọn tối thiểu '.AVAIL_MIN_SHIFTS.' ca trước khi chốt (đang có '.$count.' ca).');
   $a->run('INSERT INTO {{availability_weeks}}(user_id,week_start,committed_at) VALUES(?,?,?)',[$me,$week,$now]);
-  avail_audit($a,$me,$week,'week','committed',$count.' ca');return [200,['ok'=>true]];
+  avail_audit($a,$me,$week,'week','committed',$count.' ca');
+  avail_notify_managers($a,"✅ Anh Gấu Studio · Chốt đăng ký ca\n".$a->user['name'].' đã chốt '.$count.' ca tuần '.avail_week_label($week)."\n".avail_shift_lines($a,$me,$week));
+  return [200,['ok'=>true]];
  }
  if($path==='/availability/cancel-log'&&$method==='POST'){
   $a->requireManager();if(!log_permissions($a)['can_manage'])fail('Bạn chưa được Admin cấp quyền chỉnh sửa Event log.',403);

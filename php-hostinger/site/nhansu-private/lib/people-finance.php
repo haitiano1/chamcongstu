@@ -60,26 +60,69 @@ function booking_rate_save(App $a,int $user,int $rate): void {
 function booking_rates(App $a): array {
  booking_rates_seed($a);$out=[];foreach($a->all('SELECT user_id,rate FROM {{booking_rates}} WHERE rate>0') as $r)$out[(int)$r['user_id']]=(int)$r['rate'];return $out;
 }
+// Khoảng thời gian có mặt theo chấm công của từng người: [giờ chấm vào, giờ chấm ra] thật, không cắt theo khung ca.
+// Ca quên chấm ra coi như có mặt tới hạn checkout (14:30 / 19:30); OT đang mở tính tới hiện tại.
+function attendance_presence(App $a,array $users,string $from,string $to,int $now): array {
+ if(!$users)return [];$by=[];$out=[];
+ foreach($a->all('SELECT id,user_id,type,time,shift,work_date FROM {{events}} WHERE user_id IN ('.implode(',',array_fill(0,count($users),'?')).') AND time>=? AND time<?',[...$users,day_time($from)-86400000,day_time($to)+2*86400000]) as $e)$by[(int)$e['user_id']][]=['id'=>(int)$e['id'],'time'=>(int)$e['time']]+$e;
+ foreach($by as $id=>$events){$p=pairs($events);
+  foreach($p['pairs'] as $s)$out[$id][]=[(int)$s['entry']['time'],(int)$s['exit']['time']];
+  foreach($p['pending'] as $e){$w=$e['shift']==='ot'?null:bounds($e['work_date']??local_day($e['time']),$e['shift']??null);$out[$id][]=[$e['time'],$w?max($e['time'],$w['end']+1800000):($e['shift']==='ot'?$now:$e['time'])];}
+ }
+ return $out;
+}
 // Khách đã chụp trong tháng (lịch đang hoạt động, đã qua giờ chụp) của người có mức hoa hồng.
+// Chỉ tính khi thợ có mặt trong giờ chụp: chấm vào trước khi khách chụp xong và chưa chấm ra trước giờ khách tới. Đã chấm ra
+// (VD làm cả ngày, về 17h thì khách 18h, 19h) hoặc không chấm công hôm đó thì khách không tính, đếm vào 'absent' (chủ dự án chốt 31/10/2026).
 function booking_month_commissions(App $a,string $month,int $now): array {
  $rates=booking_rates($a);if(!$rates)return [];
- $start=valid_month($month).'-01';$end=date('Y-m-t',strtotime($start));$today=local_day($now);$minute=intdiv($now-day_time($today),60000);$out=[];
- foreach($a->all("SELECT DISTINCT s.user_id,b.id,b.shoot_day,b.minutes,b.package_label FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?",[$start,$end]) as $r){
-  $id=(int)$r['user_id'];if(!isset($rates[$id])||$r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute))continue;
+ $start=valid_month($month).'-01';$end=date('Y-m-t',strtotime($start));$today=local_day($now);$minute=intdiv($now-day_time($today),60000);$out=[];$rows=[];
+ foreach($a->all("SELECT DISTINCT s.user_id,b.id,b.shoot_day,b.minutes,b.package_label,b.note FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?",[$start,$end]) as $r)
+  if(isset($rates[(int)$r['user_id']])&&!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute)))$rows[]=$r;
+ $present=attendance_presence($a,array_values(array_unique(array_map(fn($r)=>(int)$r['user_id'],$rows))),$start,$end,$now);
+ foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'units'=>0,'unpriced'=>0,'absent'=>0,'rate'=>$rate];
+ foreach($rows as $r){$id=(int)$r['user_id'];
+  $from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;
+  $here=false;foreach($present[$id]??[] as [$in,$exit])if($in<$to&&$exit>$from){$here=true;break;}
+  if(!$here){$out[$id]['absent']++;continue;}
   $units=BOOKING_PACKAGE_UNITS[booking_package_price($r['package_label'])??0]??0;
-  $out[$id]??=['customers'=>0,'units'=>0,'unpriced'=>0,'rate'=>$rates[$id]];$out[$id]['customers']++;$out[$id]['units']+=$units;if(!$units)$out[$id]['unpriced']++;
+  $out[$id]['customers']++;$out[$id]['units']+=$units;if(!$units)$out[$id]['unpriced']++;
  }
- foreach($rates as $id=>$rate)$out[$id]??=['customers'=>0,'units'=>0,'unpriced'=>0,'rate'=>$rate];
  return $out;
+}
+// Các khoản thưởng tháng Admin/Quản lý nhập trong phiếu lương (chủ dự án yêu cầu 31/10/2026; sau này nối thêm từ Google Sheet, cột source).
+// ot_rate là đơn giá mỗi lượt OT: thưởng OT = số lượt OT hoàn tất × đơn giá. Các khoản còn lại là số tiền.
+const PAYROLL_BONUS_KINDS=['ot_rate'=>'Đơn giá OT','tips'=>'Tiền khách Tips','praise'=>'Nóng / Khen','referral'=>'Giới thiệu khách','outdoor'=>'Ngoại cảnh','full_day'=>'Full khách ngày','retouch'=>'Chỉnh ảnh','no_customer'=>'Ca làm không có khách','meal'=>'Ăn uống'];
+function payroll_bonuses(App $a,string $month): array {
+ $out=[];foreach($a->all('SELECT b.user_id,b.kind,b.amount,b.updated_at,u.name FROM {{payroll_bonuses}} b LEFT JOIN {{users}} u ON u.id=b.updated_by WHERE b.month=?',[$month]) as $r){
+  $id=(int)$r['user_id'];if(!isset(PAYROLL_BONUS_KINDS[$r['kind']]))continue;$out[$id]['items'][$r['kind']]=(int)$r['amount'];
+  if((int)$r['updated_at']>($out[$id]['at']??0))$out[$id]=['at'=>(int)$r['updated_at'],'by'=>(string)$r['name']]+$out[$id];}
+ return $out;
+}
+function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?array {
+ if($path!=='/payroll/bonuses'||$method!=='POST')return null;
+ $a->requireManager();$month=valid_month($b['month']??'');
+ if($a->closure($month))fail('Tháng này đã chốt lương. Admin cần mở lại trước khi sửa thưởng.',409);
+ if(!is_int($b['user_id']??null)||!$a->one("SELECT id FROM {{users}} WHERE id=? AND role='employee' AND archived=0 AND status!='inactive'",[$b['user_id']]))fail('Nhân viên không tồn tại hoặc đã nghỉ.');
+ if(!is_array($b['items']??null)||!$b['items'])fail('Chưa có khoản thưởng nào.');
+ foreach($b['items'] as $kind=>$amount)if(!isset(PAYROLL_BONUS_KINDS[$kind])||!is_int($amount)||$amount<0||$amount>100000000)fail((PAYROLL_BONUS_KINDS[$kind]??'Khoản thưởng').' cần là số tiền từ 0 đến 100.000.000đ.');
+ $a->tx(function()use($a,$b,$month){
+  foreach($b['items'] as $kind=>$amount){$old=(int)($a->scalar('SELECT amount FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$b['user_id'],$kind])?:0);if($old===$amount)continue;
+   if($amount)$a->run("INSERT INTO {{payroll_bonuses}} VALUES(?,?,?,?,'web',?,?) ON DUPLICATE KEY UPDATE amount=VALUES(amount),source='web',updated_by=VALUES(updated_by),updated_at=VALUES(updated_at)",[$month,$b['user_id'],$kind,$amount,$a->user['id'],now_ms()]);
+   else $a->run('DELETE FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$b['user_id'],$kind]);
+   $a->audit($b['user_id'],'bonus:'.$month.':'.$kind.':'.$old.'>'.$amount);}
+ });
+ return [200,['ok'=>true]];
 }
 // Gắn KPI vào từng dòng bảng lương. $money=false: tháng đã chốt từ trước khi có KPI, chỉ thêm điểm, giữ nguyên tiền đã chốt.
 function payroll_apply(App $a,string $month,array $rows,bool $money=true): array {
  $kpi=kpi_month_deductions($a,$month);
- $progress=$month>=PROGRESS_BONUS_FROM;$bookings=$progress?booking_month_commissions($a,$month,now_ms()):[];
+ $progress=$month>=PROGRESS_BONUS_FROM;$bookings=$progress?booking_month_commissions($a,$month,now_ms()):[];$bonuses=$money?payroll_bonuses($a,$month):[];
  foreach($rows as &$p){$used=$kpi[$p['id']]??0;$p['kpi_quota']=KPI_MONTHLY_POINTS;$p['kpi_deducted']=$used;$p['kpi_left']=KPI_MONTHLY_POINTS-$used;
   if($progress&&$p['role']==='employee'){$p['attendance_target']=attendance_target($month);$p['attendance_bonus_vnd']=ATTENDANCE_BONUS_VND;$p['attendance_bonus']=$p['days']>=$p['attendance_target']?ATTENDANCE_BONUS_VND:0;}
-  if($b=$bookings[$p['id']]??null){$p['booking_customers']=$b['customers'];$p['booking_unpriced']=$b['unpriced'];$p['booking_commission']=$b['rate']*$b['units'];}
-  if(!$money)continue;$p['bonus_total']=(int)$p['commission']+($p['booking_commission']??0)+($p['attendance_bonus']??0);$p['kpi_money']=$used*KPI_POINT_VND;$p['kpi_applied']=max(0,min($p['kpi_money'],$p['bonus_total']));
+  if($b=$bookings[$p['id']]??null){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_absent']=$b['absent'];$p['booking_commission']=$b['rate']*$b['units'];}
+  if(!$money)continue;$extra=$bonuses[$p['id']]??[];$items=$extra['items']??[];$p['ot_rate']=$items['ot_rate']??0;$p['ot_bonus']=$p['otSessions']*$p['ot_rate'];unset($items['ot_rate']);$p['bonus_items']=$items;$p['bonus_updated_at']=$extra['at']??null;$p['bonus_updated_by']=$extra['by']??null;
+  $p['bonus_total']=(int)$p['commission']+($p['booking_commission']??0)+($p['attendance_bonus']??0)+$p['ot_bonus']+array_sum($items);$p['kpi_money']=$used*KPI_POINT_VND;$p['kpi_applied']=max(0,min($p['kpi_money'],$p['bonus_total']));
   $p['gross_salary']=(int)$p['base_salary']+$p['bonus_total'];$p['salary']=$p['gross_salary']-$p['kpi_applied'];}
  unset($p);return $rows;
 }
@@ -292,7 +335,7 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
  fail('Không tìm thấy chức năng Event log.',404);
 }
 function people_finance_routes(App $a,string $path,array $b,string $method): ?array {
- return advance_routes($a,$path,$b,$method)??log_routes($a,$path,$b,$method);
+ return advance_routes($a,$path,$b,$method)??payroll_bonus_routes($a,$path,$b,$method)??log_routes($a,$path,$b,$method);
 }
 
 function load_legacy_event_log(App $a): void {
