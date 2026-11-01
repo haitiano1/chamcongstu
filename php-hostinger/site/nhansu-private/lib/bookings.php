@@ -353,6 +353,43 @@ function late_telegram_tick(App $a,?int $clock=null,?Telegram $tg=null): void {
   }
  }
 }
+// Về khi còn khách / Làm tiếp (chủ dự án yêu cầu 01/11/2026). Chấm ra mà sau giờ đó còn khách được giao thì web cảnh báo (khách đó
+// không tính hoa hồng nếu không quay lại); đổi ý thì bấm "Tôi đổi ý, làm tiếp" để chấm vào lại cùng ca (vẫn tính 1 ca, không cộng thêm công). Cron báo Admin/Quản lý cả hai việc.
+function day_bookings(App $a,int $user,string $day): array {
+ return $a->all("SELECT DISTINCT b.id,b.minutes,b.customer_name,b.package_label FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE s.user_id=? AND b.shoot_day=? AND b.status='active' ORDER BY b.minutes,b.id",[$user,$day]);
+}
+// Khách còn lại sau $after: ra Ca 1 (không làm cả ngày) chỉ xét khách trước 14:00; ra Ca 2 hoặc đang làm cả ngày thì xét tới hết ngày.
+function remaining_bookings(App $a,int $user,string $day,string $shift,int $after,?array $rows=null): array {
+ $rows??=day_bookings($a,$user,$day);$limit=$shift==='day_first'&&!$a->one('SELECT 1 FROM {{full_days}} WHERE user_id=? AND work_date=?',[$user,$day])?840:1440;
+ return array_values(array_filter($rows,fn($r)=>day_time($day)+$r['minutes']*60000>$after&&$r['minutes']<$limit));
+}
+function booking_line(array $r): string {return sprintf('%02d:%02d',intdiv((int)$r['minutes'],60),(int)$r['minutes']%60).(trim($r['customer_name'])!==''?' · '.trim($r['customer_name']):'').(trim($r['package_label'])!==''?' · Gói '.trim($r['package_label']):'');}
+// Cron: báo Admin/Quản lý (trừ chính người đó) khi nhân viên tự chấm ra mà còn khách sau giờ đó, và khi chấm vào lại làm tiếp.
+// Chỉ xét lượt tự chấm trong 3 tiếng gần nhất; mỗi lượt báo một lần (telegram_deliveries kind 'early' / 'resume').
+function attendance_alert_tick(App $a,?int $clock=null,?Telegram $tg=null): void {
+ if(!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;
+ $now=$clock??now_ms();$day=local_day($now);
+ $managers=$a->all("SELECT u.id,l.chat_id FROM {{users}} u JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' ORDER BY u.id");if(!$managers)return;
+ $by=[];foreach($a->all("SELECT e.id,e.user_id,e.type,e.time,e.shift,e.source,u.name FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.shift IN ('day_first','day_second') AND u.archived=0 ORDER BY e.user_id,e.time,e.id",[$day]) as $e)$by[(int)$e['user_id']][$e['shift']][]=$e;
+ $sent=0;$label=late_day_label($day);
+ foreach($by as $uid=>$shifts){$rows=null;
+  foreach($shifts as $shift=>$list){$name=$list[0]['name'];$sname=$shift==='day_first'?'Ca 1':'Ca 2';
+   foreach($list as $i=>$e){if($e['source']!=='self'||(int)$e['time']<$now-3*3600000)continue;
+    $before=array_slice($list,0,$i);$after=array_slice($list,$i+1);$kind=null;$text='';$prev=$before?$before[count($before)-1]:null;
+    if($e['type']==='in'&&$prev&&$prev['type']==='out'){$kind='resume';$text="🔁 Anh Gấu Studio · Quay lại làm tiếp\n".$name.' đã chấm ra '.$sname.' lúc '.late_hm((int)$prev['time']).', nay chấm vào lại lúc '.late_hm((int)$e['time']).' · '.$label."\n".$sname.' vẫn tính 1 ca, không cộng thêm công; khách chụp trong lúc '.$name.' có mặt được tính hoa hồng.';}
+    elseif($e['type']==='out'&&!array_filter($after,fn($x)=>$x['type']==='in')){$rows??=day_bookings($a,$uid,$day);$left=remaining_bookings($a,$uid,$day,$shift,(int)$e['time'],$rows);
+     if($left){$kind='early';$text="🏃 Anh Gấu Studio · Về khi còn khách\n".$name.' chấm ra '.$sname.' lúc '.late_hm((int)$e['time']).' · '.$label."\nCòn ".count($left)." khách được giao sau giờ này:\n".implode("\n",array_map(fn($r)=>'• '.booking_line($r),$left))."\nCác khách này không tính hoa hồng cho ".$name.' nếu không quay lại làm tiếp. Kiểm tra người thay.';}}
+    if(!$kind)continue;
+    foreach($managers as $m){if((int)$m['id']===$uid)continue;if($sent>=25)return;$slot=$kind.'_'.$e['id'];
+     if(!$a->run("INSERT IGNORE INTO {{telegram_deliveries}}(user_id,day,shift,kind,state,attempted_at) VALUES(?,?,?,?,'pending',?)",[$m['id'],$day,$slot,$kind,$now])->rowCount())continue;$sent++;
+     try{$tg->call('sendMessage',['chat_id'=>$m['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở Lịch chụp',$a->config['app_url'].'/#bookings'));
+      $a->run("UPDATE {{telegram_deliveries}} SET state='sent',sent_at=?,error=NULL WHERE user_id=? AND day=? AND shift=? AND kind=?",[$now,$m['id'],$day,$slot,$kind]);}
+     catch(Throwable $x){$a->run("UPDATE {{telegram_deliveries}} SET state='failed',error=? WHERE user_id=? AND day=? AND shift=? AND kind=?",[mb_substr($x->getMessage(),0,500),$m['id'],$day,$slot,$kind]);$a->meta('telegram_error',$x->getMessage());}
+    }
+   }
+  }
+ }
+}
 // Calendar visibility is separate from attendance assignment and edit permissions.
 function booking_view_person(App $a): ?int {
  $scope=$_GET['scope']??'all';if(!in_array($scope,['all','mine'],true))fail('Phạm vi lịch không hợp lệ.');

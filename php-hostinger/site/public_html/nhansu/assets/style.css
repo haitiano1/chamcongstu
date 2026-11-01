@@ -84,3 +84,5 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 .tg-invite-later{border:0;background:none;color:#5a7c95;font-size:12px;padding:6px;cursor:pointer;text-decoration:underline}
 .telegram-personal summary .tg-icon{width:18px;height:18px;vertical-align:-4px}
 @media(max-width:640px){.tg-invite{flex-wrap:wrap;padding:14px}.tg-invite-text{flex-basis:calc(100% - 56px)}.tg-invite-actions{flex-direction:row;align-items:center;width:100%;gap:8px}.tg-invite-go{flex:1}}
+.resume-button{width:100%;min-height:48px;margin-top:10px;border-color:#9fc3a8;background:#f2fbf4;color:#1f6b3a;font-weight:700}.resume-hint{font-size:12px;color:#5b6b7f;margin:6px 0 0;line-height:1.5}
+.early-out-list{text-align:left;margin:10px 0;padding-left:20px;line-height:1.7}

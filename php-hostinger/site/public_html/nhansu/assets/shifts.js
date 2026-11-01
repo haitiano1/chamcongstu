@@ -6,7 +6,8 @@ const LEGACY=[{id:'morning',start:9,end:12},{id:'midday',start:12,end:15},{id:'a
 export const localDay=t=>new Date(t+7*3600000).toISOString().slice(0,10);
 export function bounds(day,id){const s=[...SHIFTS,...LEGACY].find(s=>s.id===id);if(!s)return null;const midnight=Date.parse(day+'T00:00:00+07:00');return {start:midnight+s.start*3600000,end:midnight+s.end*3600000};}
 export function completedPairs(events){const pending=new Map(),pairs=[];for(const e of [...events].sort((a,b)=>a.time-b.time||(a.id||0)-(b.id||0))){const key=e.shift?`${e.work_date}:${e.shift}`:'legacy';if(e.type==='in')pending.set(key,e);else if(pending.has(key)){const entry=pending.get(key);pending.delete(key);const window=entry.shift?bounds(entry.work_date,entry.shift):null;const start=Math.max(entry.time,window?.start??entry.time),end=Math.min(e.time,window?.end??e.time);pairs.push({entry,exit:e,start,end});}}return {pairs,pending:[...pending.values()]};}
-export function attendanceDecision(events,id,now=Date.now(),{allowLateCheckout=false}={}){
+// allowResume: đã chấm ra ca này mà quay lại làm tiếp (chủ dự án yêu cầu 01/11/2026), chấm vào lại trong giờ ca; công vẫn tính 1 lần.
+export function attendanceDecision(events,id,now=Date.now(),{allowLateCheckout=false,allowResume=false}={}){
  const day=localDay(now),{pending}=completedPairs(events),openOT=pending.find(e=>e.shift==='ot');
  if(id==='ot'){
   if(openOT)return {type:'out',workDate:openOT.work_date};
@@ -16,13 +17,15 @@ export function attendanceDecision(events,id,now=Date.now(),{allowLateCheckout=f
  }
  if(openOT)throw new Error('Hãy kết thúc lượt OT đang mở trước khi chấm ca chính.');
  const window=bounds(day,id);if(!SHIFTS.some(s=>s.id===id)||!window)throw new Error('Ca làm không hợp lệ.');
- const own=events.filter(e=>e.shift===id&&e.work_date===day).sort((a,b)=>a.time-b.time);
- if(own.some(e=>e.type==='out'))throw new Error('Bạn đã hoàn tất ca này hôm nay.');
- if(own.some(e=>e.type==='in')){if(!allowLateCheckout&&now>window.end+CHECKOUT_GRACE_MINUTES*60000)throw new Error(`Đã quá hạn checkout ${id==='day_first'?'14:30':'19:30'}. Hãy gửi yêu cầu bổ sung công để quản lý xác nhận.`);return {type:'out',workDate:day};}
+ const own=events.filter(e=>e.shift===id&&e.work_date===day).sort((a,b)=>a.time-b.time||(a.id||0)-(b.id||0)),last=own.at(-1);
+ if(last&&last.type==='out'){if(!allowResume)throw new Error('Bạn đã hoàn tất ca này hôm nay.');if(now<window.start||now>=window.end)throw new Error(id==='day_first'?'Đã hết giờ Ca 1 (14:00), không làm tiếp Ca 1 được. Hãy chấm vào Ca 2.':'Đã hết giờ Ca 2 (19:00), không làm tiếp Ca 2 được. Sau 19:00 hãy chấm OT.');return {type:'in',workDate:day};}
+ if(last){if(!allowLateCheckout&&now>window.end+CHECKOUT_GRACE_MINUTES*60000)throw new Error(`Đã quá hạn checkout ${id==='day_first'?'14:30':'19:30'}. Hãy gửi yêu cầu bổ sung công để quản lý xác nhận.`);return {type:'out',workDate:day};}
  if(now<window.start||now>=window.end)throw new Error('Chỉ được chấm vào trong khung giờ của ca đã chọn.');
  return {type:'in',workDate:day};
 }
 export function shiftAction(events,id,now=Date.now()){return attendanceDecision(events,id,now).type;}
+// Đã chấm ra ca này hôm nay và vẫn còn trong giờ ca: hiện nút "Tôi đổi ý, làm tiếp".
+export function canResume(events,id,now=Date.now()){if(!SHIFTS.some(s=>s.id===id))return false;const own=events.filter(e=>e.shift===id&&e.work_date===localDay(now)).sort((a,b)=>a.time-b.time||(a.id||0)-(b.id||0));if(own.at(-1)?.type!=='out')return false;try{return attendanceDecision(events,id,now,{allowResume:true}).type==='in';}catch{return false;}}
 export function suggestedShift(events,now=Date.now()){
  const {pending}=completedPairs(events);if(pending.some(e=>e.shift==='ot'))return 'ot';
  const regular=pending.filter(e=>e.work_date===localDay(now)&&SHIFTS.some(s=>s.id===e.shift)&&now<=bounds(e.work_date,e.shift).end+CHECKOUT_GRACE_MINUTES*60000).sort((a,b)=>bounds(a.work_date,a.shift).end-bounds(b.work_date,b.shift).end)[0];if(regular)return regular.shift;
