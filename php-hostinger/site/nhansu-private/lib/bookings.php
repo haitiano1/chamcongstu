@@ -242,21 +242,116 @@ function sheet_receiver(App $a,string $path,array $b,string $method): ?array {
 function attendance_issues(App $a,string $month,?int $person=null): array {
  valid_month($month);$first=$month.'-01';$last=date('Y-m-t',strtotime($first));$end=min($last,local_day(now_ms()));$now=now_ms();$issues=[];
  $people=$a->all("SELECT id,name,role FROM {{users}} WHERE archived=0".($person!==null?' AND id=?':''),$person!==null?[$person]:[]);
- foreach($people as $p){$events=$a->events($p['id']);$lateCount=0;
+ foreach($people as $p){$events=$a->events($p['id']);$lates=late_checkins($a,(int)$p['id'],$month,$events);
   for($t=day_time($first);$t<=day_time($end);$t+=86400000){$day=local_day($t);
    foreach(['day_first','day_second'] as $shift){$e=expected_shift($a,$p['id'],$day,$shift);if(!$e||$e['source']==='default')continue;$expected=$e['expected_at'];$w=bounds($day,$shift);
     $own=array_values(array_filter($events,fn($x)=>$x['work_date']===$day&&$x['shift']===$shift));$ins=array_values(array_filter($own,fn($x)=>$x['type']==='in'));$outs=array_values(array_filter($own,fn($x)=>$x['type']==='out'));
-    $types=[];if($ins&&$ins[0]['time']>$expected+1800000){$late=$ins[0]['time']-$expected;$types[]=['kind'=>'late','late_minutes'=>(int)floor($late/60000),'over_30'=>$late>1800000];}
+    $types=[];$late=$lates[$day.'_'.$shift]??null;if($late)$types[]=['kind'=>'late','late_minutes'=>$late['late_minutes'],'over_30'=>true];
     if($now>$w['end']+1800000&&(!$ins||!$outs))$types[]=['kind'=>!$ins&&!$outs?'missing_both':'missing_punch','late_minutes'=>0,'over_30'=>false];
     foreach($types as $type){$key=$p['id'].'_'.$day.'_'.$shift.'_'.$type['kind'];$existing=$a->one('SELECT r.id,r.status FROM {{attendance_issue_links}} l JOIN {{event_log}} r ON r.id=l.event_log_id WHERE l.source_key=?',[$key]);$ordinal=null;
-     if($type['kind']==='late'&&($existing['status']??'')!=='void')$ordinal=++$lateCount;
-     $deduction=$type['kind']==='late'?($ordinal===null||$ordinal===1?0:($ordinal===2?20:($ordinal===3?100:300))):20;
+     if($type['kind']==='late')$ordinal=$late['ordinal'];
+     $deduction=$type['kind']==='late'?($ordinal===null?0:late_points($ordinal)):20;
      $issues[]=$p+['source_key'=>$key,'day'=>$day,'shift'=>$shift,'expected_at'=>$expected,'late_after'=>$expected+1800000,'expected_source'=>$e['source'],'frozen'=>$e['frozen'],'actual_in'=>$ins[0]['time']??null,'actual_out'=>$outs[0]['time']??null,'late_ordinal'=>$ordinal,'suggested_deduction'=>$deduction,'event_log_id'=>$existing['id']??null,'event_log_status'=>$existing['status']??null]+$type;
     }
    }
   }
  }
  usort($issues,fn($x,$y)=>[$y['day'],$y['expected_at'],$x['id']]<=>[$x['day'],$x['expected_at'],$y['id']]);return $issues;
+}
+// Đi muộn (chủ dự án chốt 01/11/2026). Mốc đến = khách đầu tiên được giao trong ca (giữ lúc checkin); checkin quá 30 phút sau mốc là
+// đi muộn. Đếm theo tháng: lần 1 miễn, lần 2 trừ 20, lần 3 trừ 100, từ lần 4 trừ 300 điểm KPI. Lần có Event log bị hủy/xóa không đếm.
+// Cron xử lý mỗi lượt một lần (bảng late_checkins): từ lần 2 tự ghi Event log trừ điểm; mọi lần đều báo Telegram cho người đi muộn và Admin/Quản lý.
+const LATE_GRACE_MS=1800000;
+const LATE_RULE_CODE='DM-01';
+const LATE_AUTO_LABEL='Tự động ghi khi checkin muộn';
+function late_points(int $ordinal): int {return $ordinal<=1?0:($ordinal===2?20:($ordinal===3?100:300));}
+function late_level(int $ordinal): string {return $ordinal<=1?'nhắc nhở, miễn trừ điểm':($ordinal===2?'Lỗi, trừ 20 điểm KPI':($ordinal===3?'Cảnh cáo, trừ 100 điểm KPI':'Kỷ luật, trừ 300 điểm KPI'));}
+function late_rule_lines(): array {return ['Lần 1: nhắc nhở, miễn trừ điểm','Lần 2: Lỗi, trừ 20 điểm KPI','Lần 3: Cảnh cáo, trừ 100 điểm KPI','Từ lần 4 trở đi: Kỷ luật, trừ 300 điểm KPI mỗi lần'];}
+function late_rule_text(): string {
+ return "Mốc đến của mỗi ca là giờ khách đầu tiên được giao cho bạn trong ca đó, không phải 9:00 / 14:00. Checkin quá 30 phút sau mốc là đi muộn. VD khách đầu tiên 9:00: checkin đến 9:30 vẫn đúng giờ, sau 9:30 là muộn. Ca không có khách được giao thì không tính muộn.\n\n"
+  ."Số lần đi muộn đếm theo từng tháng, sang tháng mới đếm lại từ đầu:\n- ".implode("\n- ",late_rule_lines())."\n\n"
+  ."Từ lần 2, hệ thống tự ghi Event log và trừ điểm. Mỗi lần đi muộn, Telegram báo cho người đi muộn, Quản lý và Admin. Có lý do chính đáng (VD khách báo dời giờ) thì Quản lý/Admin hủy hoặc xóa Event log của lần đó; lần đó không tính vào số lần.";
+}
+function late_hm(int $ms): string {return date('H:i',intdiv($ms,1000));}
+function late_day_label(string $day): string {$n=(int)date('N',strtotime($day.'T00:00:00Z'));return ($n===7?'Chủ nhật':'Thứ '.($n+1)).' '.date('d/m/Y',strtotime($day.'T00:00:00Z'));}
+// Các lượt đi muộn của một người trong tháng (YYYY-MM), khóa 'YYYY-MM-DD_shift', theo thứ tự ngày/ca, kèm lần thứ mấy trong tháng.
+function late_checkins(App $a,int $user,string $month,?array $events=null): array {
+ $events??=$a->events($user);$first=[];
+ foreach($events as $e)if((int)$e['user_id']===$user&&$e['type']==='in'&&in_array($e['shift'],['day_first','day_second'],true)&&str_starts_with((string)$e['work_date'],$month.'-')){$k=$e['work_date'].'_'.$e['shift'];if(!isset($first[$k])||$e['time']<$first[$k]['time'])$first[$k]=$e;}
+ if(!$first)return [];ksort($first);$range=[$user,$month.'-01',$month.'-31'];
+ $snap=[];foreach($a->all('SELECT day,shift,expected_at,source FROM {{booking_shift_snapshots}} WHERE user_id=? AND day>=? AND day<=?',$range) as $r)$snap[$r['day'].'_'.$r['shift']]=$r['source']==='booking'?(int)$r['expected_at']:null;
+ $done=[];foreach($a->all('SELECT day,shift,event_log_id FROM {{late_checkins}} WHERE user_id=? AND day>=? AND day<=?',$range) as $r)$done[$r['day'].'_'.$r['shift']]=$r;
+ $out=[];$count=0;
+ foreach($first as $k=>$in){
+  $expected=array_key_exists($k,$snap)?$snap[$k]:(expected_shift($a,$user,$in['work_date'],$in['shift'],false)['expected_at']??null);
+  if($expected===null||(int)$in['time']<=$expected+LATE_GRACE_MS)continue;
+  $key=$user.'_'.$k.'_late';$log=$a->one('SELECT r.id,r.status FROM {{attendance_issue_links}} l JOIN {{event_log}} r ON r.id=l.event_log_id WHERE l.source_key=?',[$key]);
+  if(!$log&&!empty($done[$k]['event_log_id']))$log=$a->one('SELECT id,status FROM {{event_log}} WHERE id=?',[$done[$k]['event_log_id']]);
+  $excused=$log!==null&&in_array($log['status'],['void','deleted'],true);$ordinal=$excused?null:++$count;
+  $out[$k]=['user_id'=>$user,'day'=>$in['work_date'],'shift'=>$in['shift'],'event_id'=>(int)$in['id'],'expected_at'=>$expected,'checkin_at'=>(int)$in['time'],'late_minutes'=>intdiv((int)$in['time']-$expected,60000),'ordinal'=>$ordinal,'points'=>$ordinal?late_points($ordinal):0,'excused'=>$excused,'source_key'=>$key,'event_log_id'=>$log['id']??null,'event_log_status'=>$log['status']??null,'processed'=>isset($done[$k])];
+ }
+ return $out;
+}
+// Gắn thông tin đi muộn vào lượt checkin (nhãn đỏ trên danh sách chấm công). $month: chỉ xét tháng đó.
+function with_late_marks(App $a,array $events,?string $month=null): array {
+ $groups=[];foreach($events as $e)if($e['type']==='in'&&in_array($e['shift'],['day_first','day_second'],true)&&$e['work_date']&&($month===null||str_starts_with($e['work_date'],$month.'-')))$groups[(int)$e['user_id']][substr($e['work_date'],0,7)]=true;
+ $marks=[];foreach($groups as $user=>$months){$own=array_values(array_filter($events,fn($e)=>(int)$e['user_id']===$user));foreach(array_keys($months) as $m)foreach(late_checkins($a,$user,$m,$own) as $l)$marks[$l['event_id']]=$l;}
+ foreach($events as &$e)if(isset($marks[$e['id']])){$l=$marks[$e['id']];$e['late']=['minutes'=>$l['late_minutes'],'expected_at'=>$l['expected_at'],'deadline'=>$l['expected_at']+LATE_GRACE_MS,'ordinal'=>$l['ordinal'],'points'=>$l['points'],'level'=>$l['ordinal']?late_level($l['ordinal']):'','excused'=>$l['excused'],'logged'=>$l['event_log_id']!==null&&!$l['excused']];}unset($e);
+ return $events;
+}
+// Luật Studio DM-01 cài sẵn một lần; Admin sửa/xóa sau đó thì không tạo lại.
+function late_rule_seed(App $a): void {
+ if($a->meta('late_rule_seeded')==='1')return;
+ $a->tx(function()use($a){if($a->meta('late_rule_seeded')==='1')return;$admin=$a->scalar("SELECT id FROM {{users}} WHERE role='admin' AND archived=0 ORDER BY id LIMIT 1");if(!$admin)return;
+  if(!$a->one('SELECT id FROM {{studio_rules}} WHERE code=?',[LATE_RULE_CODE])){$id=uuid_v4();$now=now_ms();$rule=['code'=>LATE_RULE_CODE,'name'=>'Đi muộn quá 30 phút','category'=>'Chuyên cần','content'=>late_rule_text(),'points'=>20];
+   $a->run("INSERT INTO {{studio_rules}}(id,code,name,category,content,points,status,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,'active',?,?,?,?)",[$id,$rule['code'],$rule['name'],$rule['category'],$rule['content'],$rule['points'],$admin,$now,$admin,$now]);
+   $a->run('INSERT INTO {{studio_rule_audit}}(rule_id,actor_id,action,before_json,after_json,note,time) VALUES(?,?,?,NULL,?,?,?)',[$id,$admin,'created',json_encode($rule,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),'Cài sẵn khi cập nhật: nội quy đi muộn',$now]);}
+  $a->meta('late_rule_seeded','1');});
+}
+function late_summary(array $l): string {return 'Đi muộn '.$l['late_minutes'].' phút · '.($l['shift']==='day_first'?'Ca 1':'Ca 2').' · '.late_day_label($l['day']).' · Khách đầu tiên '.late_hm((int)$l['expected_at']).', checkin '.late_hm((int)$l['checkin_at']);}
+function late_auto_log(App $a,array $l): ?string {
+ $admin=$a->scalar("SELECT id FROM {{users}} WHERE role='admin' AND archived=0 ORDER BY id LIMIT 1");if(!$admin)return null;
+ $rule=$a->one("SELECT id,code,name FROM {{studio_rules}} WHERE code=? AND status='active'",[LATE_RULE_CODE]);$id=uuid_v4();$now=now_ms();
+ $a->run("INSERT INTO {{event_log}}(id,user_id,event_date,category,description,source_label,rule_id,rule_code,rule_name,points,status,created_by,created_at,updated_by,updated_at,resolution) VALUES(?,?,?,'late',?,?,?,?,?,?,'confirmed',?,?,?,?,'')",[$id,$l['user_id'],$l['day'],late_summary($l).' · Lần '.$l['ordinal'].' trong tháng: '.late_level($l['ordinal']).'.',LATE_AUTO_LABEL,$rule['id']??null,$rule['code']??'',$rule['name']??'',-$l['points'],$admin,$now,$admin,$now]);
+ $a->run('INSERT IGNORE INTO {{attendance_issue_links}} VALUES(?,?)',[$l['source_key'],$id]);
+ $a->run('INSERT INTO {{event_log_audit}}(event_log_id,actor_id,action,note,time) VALUES(?,?,?,?,?)',[$id,$admin,'created','Hệ thống tự ghi: đi muộn lần '.$l['ordinal'].' trong tháng, trừ '.$l['points'].' điểm KPI theo nội quy '.LATE_RULE_CODE.'.',$now]);
+ return $id;
+}
+// Ghi nhận các lượt đi muộn hôm nay, mỗi lượt một lần; từ lần 2 trong tháng tự ghi Event log (trạng thái Đã xác nhận nên trừ KPI ngay).
+function late_checkins_record(App $a,int $now): void {
+ $day=local_day($now);$month=substr($day,0,7);
+ foreach($a->all("SELECT DISTINCT e.user_id FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.type='in' AND e.shift IN ('day_first','day_second') AND u.archived=0",[$day]) as $u)
+  foreach(late_checkins($a,(int)$u['user_id'],$month) as $l){if($l['day']!==$day||$l['processed']||$l['excused'])continue;
+   $a->tx(function()use($a,$l){
+    if(!$a->run('INSERT IGNORE INTO {{late_checkins}}(user_id,day,shift,expected_at,checkin_at,late_minutes,ordinal,points,event_log_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',[$l['user_id'],$l['day'],$l['shift'],$l['expected_at'],$l['checkin_at'],$l['late_minutes'],$l['ordinal'],$l['points'],$l['event_log_id'],now_ms()])->rowCount())return;
+    if($l['points']>0&&$l['event_log_id']===null&&($log=late_auto_log($a,$l)))$a->run('UPDATE {{late_checkins}} SET event_log_id=? WHERE user_id=? AND day=? AND shift=?',[$log,$l['user_id'],$l['day'],$l['shift']]);
+   });}
+}
+function late_telegram_text(array $l,string $name,bool $self): string {
+ $shift=$l['shift']==='day_first'?SHIFTS[0]:SHIFTS[1];$who=$self?'Bạn':$name;$ordinal=(int)$l['ordinal'];$points=(int)$l['points'];
+ $lines=['⏰ Anh Gấu Studio · Đi muộn',$who.' checkin muộn '.$l['late_minutes'].' phút',$shift['name'].' ('.$shift['start'].':00–'.$shift['end'].':00) · '.late_day_label($l['day']),
+  'Khách đầu tiên '.late_hm((int)$l['expected_at']).' · checkin sau '.late_hm((int)$l['expected_at']+LATE_GRACE_MS).' là muộn · '.($self?'bạn':$name).' checkin lúc '.late_hm((int)$l['checkin_at']),'',
+  'Đây là lần đi muộn thứ '.$ordinal.' trong tháng '.substr($l['day'],5,2).'/'.substr($l['day'],0,4).': '.late_level($ordinal).'.'];
+ if($points>0)$lines[]=$l['event_log_id']?'Đã ghi vào Event log, trừ '.$points.' điểm KPI.':'Chưa ghi được Event log, Quản lý/Admin kiểm tra ở Đối soát chấm công.';
+ $lines[]='Lần tới (lần '.($ordinal+1).'): '.late_level($ordinal+1).'.';
+ $lines[]='';$lines[]='Nội quy đi muộn ('.LATE_RULE_CODE.'): checkin quá 30 phút sau khách đầu tiên của ca. Đếm theo tháng, sang tháng mới đếm lại:';foreach(late_rule_lines() as $x)$lines[]='• '.$x;
+ return implode("\n",$lines);
+}
+// Cron mỗi phút: ghi nhận đi muộn rồi báo Telegram cho người đi muộn và Admin/Quản lý (mỗi người nhận một lần, telegram_deliveries kind 'late').
+function late_telegram_tick(App $a,?int $clock=null,?Telegram $tg=null): void {
+ $now=$clock??now_ms();late_rule_seed($a);late_checkins_record($a,$now);
+ if(!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;
+ $day=local_day($now);$rows=$a->all('SELECT l.*,u.name FROM {{late_checkins}} l JOIN {{users}} u ON u.id=l.user_id WHERE l.day=? ORDER BY l.checkin_at',[$day]);if(!$rows)return;
+ $links=[];foreach($a->all("SELECT u.id,u.role,l.chat_id FROM {{users}} u JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.archived=0 AND u.status!='inactive' ORDER BY u.id") as $r)$links[(int)$r['id']]=$r;
+ $sent=0;
+ foreach($rows as $r){$person=(int)$r['user_id'];$to=[];if(isset($links[$person]))$to[$person]=true;foreach($links as $id=>$m)if($id!==$person&&in_array($m['role'],['admin','manager'],true))$to[$id]=false;
+  foreach($to as $id=>$self){if($sent>=25)return;$slot='late_'.$person.'_'.$r['shift'];
+   if(!$a->run("INSERT IGNORE INTO {{telegram_deliveries}}(user_id,day,shift,kind,state,attempted_at) VALUES(?,?,?,'late','pending',?)",[$id,$day,$slot,$now])->rowCount())continue;$sent++;
+   try{$tg->call('sendMessage',['chat_id'=>$links[$id]['chat_id'],'text'=>late_telegram_text($r,$r['name'],$self),'disable_web_page_preview'=>true]+$tg->button($self?'Mở chấm công':'Mở Event log',$a->config['app_url'].($self?'/#attendance':'/#eventlog')));
+    $a->run("UPDATE {{telegram_deliveries}} SET state='sent',sent_at=?,error=NULL WHERE user_id=? AND day=? AND shift=? AND kind='late'",[$now,$id,$day,$slot]);}
+   catch(Throwable $e){$a->run("UPDATE {{telegram_deliveries}} SET state='failed',error=? WHERE user_id=? AND day=? AND shift=? AND kind='late'",[mb_substr($e->getMessage(),0,500),$id,$day,$slot]);$a->meta('telegram_error',$e->getMessage());}
+  }
+ }
 }
 // Calendar visibility is separate from attendance assignment and edit permissions.
 function booking_view_person(App $a): ?int {
@@ -271,7 +366,7 @@ function booking_default_staff_once(App $a): void {
 }
 function booking_routes(App $a,string $path,array $b,string $method): ?array {
  if(str_starts_with($path,'/bookings'))booking_default_staff_once($a);
- if($path==='/attendance-issues'&&$method==='GET'){$a->requireManager();$month=valid_month($_GET['month']??substr(local_day(now_ms()),0,7));$person=empty($_GET['user_id'])?null:filter_var($_GET['user_id'],FILTER_VALIDATE_INT);if($person===false)fail('Nhân viên không hợp lệ.');$rows=attendance_issues($a,$month,$person);if(!empty($_GET['date'])){$day=valid_day($_GET['date']);$rows=array_values(array_filter($rows,fn($r)=>$r['day']===$day));}return [200,['rows'=>$rows,'month'=>$month,'can_record_log'=>log_permissions($a)['can_manage']]];}
+ if($path==='/attendance-issues'&&$method==='GET'){$a->requireManager();late_rule_seed($a);$month=valid_month($_GET['month']??substr(local_day(now_ms()),0,7));$person=empty($_GET['user_id'])?null:filter_var($_GET['user_id'],FILTER_VALIDATE_INT);if($person===false)fail('Nhân viên không hợp lệ.');$rows=attendance_issues($a,$month,$person);if(!empty($_GET['date'])){$day=valid_day($_GET['date']);$rows=array_values(array_filter($rows,fn($r)=>$r['day']===$day));}return [200,['rows'=>$rows,'month'=>$month,'can_record_log'=>log_permissions($a)['can_manage']]];}
  if($path==='/attendance-issues/log'&&$method==='POST'){
   if(!log_permissions($a)['can_manage'])fail('Bạn chưa được Admin cấp quyền chỉnh sửa Event log.',403);
   $a->requireManager();$key=input_text($b['source_key']??null,'Mã sự việc',5,150);$month=valid_month($b['month']??null);$issue=null;
