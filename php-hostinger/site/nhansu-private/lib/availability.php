@@ -62,7 +62,7 @@ function availability_telegram_tick(App $a,?int $clock=null,?Telegram $tg=null):
  $now=$clock??now_ms();$day=local_day($now);$dow=(int)date('N',strtotime($day.'T00:00:00Z'));if($dow<6)return;
  $hour=intdiv($now-day_time($day),3600000);$slot=null;foreach(AVAIL_REMIND_HOURS as $h)if($hour>=$h&&$hour<$h+3)$slot=$h;if($slot===null)return;
  $next=date('Y-m-d',strtotime(avail_this_week($now).'T00:00:00Z')+7*86400);$days=avail_days($next);$label=avail_week_label($next);$pending=[];
- foreach($a->all("SELECT u.id,u.name,l.chat_id FROM {{users}} u LEFT JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role!='admin' AND u.archived=0 AND u.status!='inactive' ORDER BY u.name") as $p){
+ foreach($a->all("SELECT u.id,u.name,l.chat_id FROM {{users}} u LEFT JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role IN ('employee','manager') AND u.archived=0 AND u.status!='inactive' ORDER BY u.name") as $p){
   if(avail_committed($a,(int)$p['id'],$next,$now)['committed'])continue;
   $p['count']=(int)$a->scalar('SELECT COUNT(*) FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$p['id'],$days[0],$days[6]]);$pending[]=$p;
  }
@@ -88,7 +88,7 @@ function availability_routes(App $a,string $path,array $b,string $method): ?arra
   $myCancels=$a->all('SELECT day,shift,cancelled_at,reason FROM {{shift_cancellations}} WHERE user_id=? AND day>=? AND day<=? ORDER BY cancelled_at',[$me,$days[0],$days[6]]);
   $out=['week_start'=>$week,'days'=>$days,'this_week'=>$thisWeek,'now'=>$now,'min'=>AVAIL_MIN_SHIFTS,'urgent_days'=>AVAIL_URGENT_DAYS,'mine'=>['shifts'=>$mine,'cancels'=>$myCancels]+avail_committed($a,$me,$week,$now),'can_manage'=>$manager];
   if($manager){
-   $people=$a->all("SELECT id,name,employee_code,role FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='admin' ORDER BY name");
+   $people=$a->all("SELECT id,name,employee_code,role FROM {{users}} WHERE archived=0 AND status!='inactive' AND role IN ('employee','manager') ORDER BY name");
    $all=$a->all('SELECT user_id,day,shift FROM {{shift_availability}} WHERE day>=? AND day<=?',[$days[0],$days[6]]);$cancels=avail_cancel_rows($a,$days[0],$days[6]);
    foreach($people as &$p){$p['shifts']=array_values(array_filter($all,fn($s)=>$s['user_id']===$p['id']));$p['active']=count($p['shifts']);$p['cancels']=array_values(array_filter($cancels,fn($c)=>$c['user_id']===$p['id']));$p+=avail_committed($a,$p['id'],$week,$now);}unset($p);
    $out['people']=$people;$out['cancels']=$cancels;$out['can_record_log']=log_permissions($a)['can_manage'];

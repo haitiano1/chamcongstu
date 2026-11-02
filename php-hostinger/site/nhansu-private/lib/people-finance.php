@@ -134,7 +134,7 @@ function finance_audit(App $a,string $kind,string $id,string $action,string $not
  $a->run('INSERT INTO {{'.$table.'}}('.$column.',actor_id,action,note,time) VALUES(?,?,?,?,?)',[$id,$a->user['id'],$action,$note,now_ms()]);
 }
 function finance_people(App $a,bool $all=false): array {
- return $a->all("SELECT id,name,employee_code,role,archived,status FROM {{users}}".($all?'':" WHERE archived=0 AND status!='inactive'").' ORDER BY name');
+ return $a->all("SELECT id,name,employee_code,role,archived,status FROM {{users}}".($all?'':" WHERE archived=0 AND status!='inactive' AND role!='makeup'").' ORDER BY name');
 }
 function finance_page(): int {
  $p=filter_var($_GET['page']??1,FILTER_VALIDATE_INT);if(!$p||$p<1||$p>100000)fail('Trang không hợp lệ.');return $p;
@@ -197,18 +197,20 @@ function advance_routes(App $a,string $path,array $b,string $method): ?array {
 // Admin và Quản lý luôn được ghi, sửa, xử lý Event log; Nhân viên cần Admin tick "Viết Event Log" trong hồ sơ (chủ dự án chốt 30/10/2026).
 // Xóa log chỉ Admin và Quản lý (chủ dự án yêu cầu 30/10/2026).
 function log_permissions(App $a): array {
- $full=in_array($a->user['role'],['admin','manager'],true);$delegated=(bool)$a->one('SELECT user_id FROM {{event_log_recorders}} WHERE user_id=?',[$a->user['id']]);
+ $full=in_array($a->user['role'],['admin','manager'],true);$delegated=$a->user['role']==='employee'&&(bool)$a->one('SELECT user_id FROM {{event_log_recorders}} WHERE user_id=?',[$a->user['id']]);
  return ['can_record'=>$full||$delegated,'can_manage'=>$full||$delegated,'can_delete'=>$full,'can_grant'=>$a->user['role']==='admin','delegated'=>$delegated];
 }
-// Cấp quyền trong hồ sơ nhân viên (chủ dự án yêu cầu 30/10/2026): Viết Event Log, Lên lịch chụp. Chỉ Admin tick;
-// Admin và Quản lý luôn có đủ 2 quyền nên không giữ dòng cấp quyền cho họ.
-const USER_GRANTS=['event_log'=>['event_log_recorders','grant_event_log','revoke_event_log'],'bookings'=>['booking_creators','grant_booking_create','revoke_booking_create']];
+// Cấp quyền trong hồ sơ nhân viên (chủ dự án yêu cầu 30/10/2026): Viết Event Log, Lên lịch chụp; thêm Sửa Biên bản họp (02/11/2026). Chỉ Admin tick;
+// Admin và Quản lý luôn có đủ các quyền nên không giữ dòng cấp quyền cho họ; Makeup không được cấp quyền nào.
+const USER_GRANTS=['event_log'=>['event_log_recorders','grant_event_log','revoke_event_log'],'bookings'=>['booking_creators','grant_booking_create','revoke_booking_create'],'meetings'=>['meeting_editors','grant_meeting_edit','revoke_meeting_edit']];
 function user_grants(App $a): array {$out=[];foreach(USER_GRANTS as $k=>[$table])$out[$k]=array_fill_keys(array_map('intval',array_column($a->all('SELECT user_id FROM {{'.$table.'}}'),'user_id')),true);return $out;}
 function save_user_grants(App $a,int $id,string $role,mixed $grants): void {
  if(!is_array($grants))fail('Cấp quyền không hợp lệ.');
  foreach(USER_GRANTS as $k=>[$table,$grant,$revoke]){
-  if(!is_bool($grants[$k]??null))fail('Cấp quyền không hợp lệ.');
-  $had=(bool)$a->one('SELECT user_id FROM {{'.$table.'}} WHERE user_id=?',[$id]);$want=$role==='employee'&&$grants[$k];if($want===$had)continue;
+  // Giao diện cũ (chưa có ô mới) không gửi khóa này: giữ nguyên quyền đang có, trừ khi không còn là Nhân viên.
+  if(!array_key_exists($k,$grants)&&$role==='employee')continue;
+  if(array_key_exists($k,$grants)&&!is_bool($grants[$k]))fail('Cấp quyền không hợp lệ.');
+  $had=(bool)$a->one('SELECT user_id FROM {{'.$table.'}} WHERE user_id=?',[$id]);$want=$role==='employee'&&($grants[$k]??false);if($want===$had)continue;
   if($want)$a->run('INSERT INTO {{'.$table.'}} VALUES(?,?,?)',[$id,$a->user['id'],now_ms()]);else $a->run('DELETE FROM {{'.$table.'}} WHERE user_id=?',[$id]);
   if($role==='employee')$a->audit($id,$want?$grant:$revoke);
  }

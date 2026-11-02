@@ -47,7 +47,7 @@ function task_audit(App $a,string $id,string $action,?array $before,?array $afte
 // Người nhận: @all = mọi người đang làm trừ người giao; hoặc danh sách người cụ thể đang làm. Dùng chung khi giao và khi sửa việc.
 function task_recipient_ids(App $a,int $creator,mixed $audience,mixed $ids): array {
  if(!in_array($audience,['all','people'],true))fail('Chọn người nhận.');
- $active=array_column($a->all("SELECT id FROM {{users}} WHERE archived=0 AND status!='inactive'"),'id');
+ $active=array_column($a->all("SELECT id FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='makeup'"),'id');
  if($audience==='all')$ids=array_values(array_filter($active,fn($id)=>$id!==$creator));
  else{if(!is_array($ids)||!$ids||count($ids)>200)fail('Chọn ít nhất một người nhận.');foreach($ids as $id)if(!is_int($id)||!in_array($id,$active,true))fail('Người nhận không tồn tại hoặc đã nghỉ.');$ids=array_values(array_unique($ids));}
  if(!$ids)fail('Chưa có nhân viên nào để giao việc.');
@@ -343,7 +343,7 @@ function log_telegram_command(App $a,Telegram $tg,array $m,string $args): bool {
   $parts=array_map('trim',explode('|',$args));
   if(count($parts)<2||$parts[0]===''||$parts[1]==='')fail("Thiếu nội dung hoặc người liên quan.\n\n".LOG_TG_HELP);
   if(count($parts)>3)fail('Dùng tối đa 3 phần: nội dung | người liên quan | luật hoặc điểm.');
-  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive'");
+  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='makeup'");
   $resolve=function(string $text)use($a,$people): array {
    $targets=array_values(array_filter(array_map('trim',preg_split('/\s*(?:,|;|\s+và\s+)\s*/u',$text))));
    $all=count($targets)===1&&in_array(task_fold(ltrim($targets[0],'@')),['all','tat ca','ca studio','moi nguoi','studio','chung'],true);
@@ -416,7 +416,7 @@ function task_telegram_command(App $a,Telegram $tg,array $m): bool {
   $content=trim(preg_replace('/(^|\s)#anh\d{0,2}\b/iu','',$parts[1]));$dueText=trim(preg_replace('/(^|\s)#anh\d{0,2}\b/iu','',$parts[2]??''));
   if($content==='')fail('Thiếu nội dung.');
   $kind=$cmd[1]==='task'?'task':'notice';
-  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive'");
+  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='makeup'");
   $targets=array_values(array_filter(array_map('trim',preg_split('/\s*(?:,|;|\s+và\s+)\s*/u',$parts[0]))));
   $all=count($targets)===1&&in_array(task_fold(ltrim($targets[0],'@')),['all','tat ca','ca studio','moi nguoi'],true);
   $ids=[];if(!$all)foreach($targets as $tk)$ids[]=task_find_person($a,$people,$tk)['id'];

@@ -142,7 +142,7 @@ function booking_hm(int $minutes): string {return sprintf('%02d:%02d',intdiv($mi
 function booking_sheet_tab(string $day): string {return 'Tháng '.(int)substr($day,5,2);}
 // Admin và Quản lý luôn được lên lịch chụp (thêm, sửa, hủy, chọn gói); Nhân viên cần Admin tick "Lên lịch chụp" trong hồ sơ (chủ dự án chốt 30/10/2026).
 function booking_permissions(App $a): array {
- $full=in_array($a->user['role'],['admin','manager'],true);$granted=(bool)$a->one('SELECT user_id FROM {{booking_creators}} WHERE user_id=?',[$a->user['id']]);
+ $full=in_array($a->user['role'],['admin','manager'],true);$granted=$a->user['role']==='employee'&&(bool)$a->one('SELECT user_id FROM {{booking_creators}} WHERE user_id=?',[$a->user['id']]);
  return ['can_create'=>$full||$granted,'can_grant'=>$a->user['role']==='admin'];
 }
 // Từ đầu tháng trước đến 6 tháng tới: Apps Script đọc đúng các tab trong khoảng này nên tên "Tháng N" không bị nhầm năm.
@@ -254,7 +254,7 @@ function sheet_receiver(App $a,string $path,array $b,string $method): ?array {
 }
 function attendance_issues(App $a,string $month,?int $person=null): array {
  valid_month($month);$first=$month.'-01';$last=date('Y-m-t',strtotime($first));$end=min($last,local_day(now_ms()));$now=now_ms();$issues=[];
- $people=$a->all("SELECT id,name,role FROM {{users}} WHERE archived=0".($person!==null?' AND id=?':''),$person!==null?[$person]:[]);
+ $people=$a->all("SELECT id,name,role FROM {{users}} WHERE archived=0 AND role!='makeup'".($person!==null?' AND id=?':''),$person!==null?[$person]:[]);
  foreach($people as $p){$events=$a->events($p['id']);$lates=late_checkins($a,(int)$p['id'],$month,$events);
   for($t=day_time($first);$t<=day_time($end);$t+=86400000){$day=local_day($t);
    foreach(['day_first','day_second'] as $shift){$e=expected_shift($a,$p['id'],$day,$shift);if(!$e||$e['source']==='default')continue;$expected=$e['expected_at'];$w=bounds($day,$shift);
