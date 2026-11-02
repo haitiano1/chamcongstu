@@ -1,4 +1,4 @@
-# Cập nhật 02/11/2026 (lần 3) — Ứng lương báo Telegram, Phiếu thưởng cho nhân viên, quyền Nhập thưởng, sửa lỗi phiếu lương bị tràn
+# Cập nhật 02/11/2026 (lần 3) — Ứng lương báo Telegram, Phiếu thưởng cho nhân viên, quyền Nhập thưởng, sửa lỗi phiếu lương bị tràn, Xóa nhắc nhở ở khung Theo dõi hạn
 
 Gói này **cộng dồn** mọi gói trước trong ngày 02/11 (Biên bản họp, role Makeup, KPI theo số lần, chọn ca bằng 3 nút…). Chưa upload các gói đó thì upload gói này là đủ.
 
@@ -53,6 +53,12 @@ Người có quyền thấy khung **✍ Nhập thưởng nhân viên** ở trang
 
 Mở phiếu lương (VD của Huy), cột **Lương** bị kéo rộng tràn sang trái, đè dưới cột **Thưởng**, che số lương cơ bản; thanh chuyên cần ở dòng tên cũng chạy ra ngoài. Nguyên nhân: chữ trong phiếu bị cấm xuống dòng, dòng ghi chú dài (VD "2 khách lúc đã chấm ra / không chấm công, không tính") đẩy cột rộng ra. Đã cho chữ xuống dòng và giữ 2 cột Lương / Thưởng luôn bằng nhau.
 
+### 5. Xóa nhắc nhở / việc ngay trong khung Theo dõi hạn
+
+Khung **Theo dõi hạn sau yêu cầu từ chối** (mục Việc) trước chỉ có Lưu hạn / Bỏ hạn, không có chỗ xóa. Nay mỗi mục có nút đỏ **🗑 Xóa nhắc nhở** (hoặc **🗑 Xóa việc**) → hộp xác nhận, lý do không bắt buộc → **🗑 Xóa nhắc nhở**. Nhắc nhở biến mất khỏi danh sách của mọi người, không còn nhắc, không tính việc chờ, không khóa chấm ra; lịch sử vẫn lưu.
+
+Mỗi thẻ việc trong danh sách bên dưới cũng có nút **🗑 Xóa** (đã có từ bản v1.3.44, cùng gói này). Chỉ Admin và Quản lý thấy nút Xóa.
+
 Database tự tạo 2 bảng mới `payroll_bonus_editors`, `payroll_bonus_entries` khi mở app lần đầu, không đổi dữ liệu cũ.
 
 ## Cập nhật
@@ -74,11 +80,13 @@ Giải nén từng ZIP trên máy, upload **các file bên trong** vào đúng t
    - Mở hồ sơ Tín → Cấp quyền thấy ô **Nhập thưởng** → tick → Lưu.
    - Bảng lương → mở phiếu lương Huy: 2 cột Lương / Thưởng không còn đè nhau. Bên dưới bảng có khung **Nhập thưởng nhân viên**.
    - Đăng nhập tài khoản nhân viên → Bảng công thấy **Phiếu thưởng của tôi**.
+   - Việc → khung Theo dõi hạn có nút **🗑 Xóa nhắc nhở**; bấm xóa nhắc nhở "họp 12h tại stu".
    - Ứng lương thấy khung cam Quy định ứng lương; gửi thử 1 yêu cầu thì Admin/Quản lý nhận tin Telegram, rồi Từ chối hoặc nhân viên Hủy yêu cầu thử đó.
 5. **Chỉ khi chưa dán Apps Script bản 02/11:** mở Google Sheet lịch chụp → **Tiện ích mở rộng → Apps Script** → bấm vào khung code, **Ctrl + A** rồi **Delete** → mở `AnhGauSync.txt` bằng Notepad, **Ctrl + A**, **Ctrl + C** → dán vào Apps Script (**Ctrl + V**) → **Ctrl + S**. Quay lại Sheet → menu **Anh Gấu Studio → Đồng bộ ngay**.
 
 ## Đã thử trên bản dev
 
 - Kiểm thử máy chủ mới đạt 28 mục: cấp / giữ quyền Nhập thưởng (Makeup không được cấp, giao diện cũ không làm mất quyền), cộng dồn, gửi lại không cộng 2 lần, trừ bớt không quá tổng, trừ về 0 thì xóa, không tự nhập cho mình, không nhập đơn giá OT / số 0 / ngày tương lai / cho Quản lý, nhân viên không sửa phiếu lương, Quản lý sửa tổng thì ghi chênh lệch vào lịch sử, Tín thấy nhân viên khác còn Huy chỉ thấy phần mình, nhân viên thấy phiếu thưởng nhưng không thấy lương; Ứng lương tạo được ngày hôm nay, Telegram báo đúng Admin + Quản lý (không báo nhân viên, Quản lý tự gửi thì chỉ báo Admin), tin có số tiền / lý do / hạn 24 giờ / nút Mở Ứng lương.
+- Xóa ở khung Theo dõi hạn: tạo nhắc nhở thử giống ảnh (1 người xin từ chối đã duyệt, 1 người còn chờ xem), bấm 🗑 Xóa nhắc nhở → hộp "Xóa nhắc nhở" → khung Theo dõi hạn biến mất, nhắc nhở chuyển trạng thái đã xóa. Test việc chạy lại đạt: theo dõi hạn 43, xin từ chối 33, KPI + xóa việc 48.
 - Kiểm thử cũ chạy lại đạt: quy tắc 32, Biên bản họp 47, KPI + hạn việc + chỉ Nhân viên 48, xin từ chối việc 33, theo dõi hạn 43, đi muộn 35, về sớm / làm tiếp 32, công theo khách 5, đăng ký ca 23, `/log` 16, tiền lịch 17, lịch mất dòng 9, make up 10, có mặt tính hoa hồng 7 (đã sửa mục cũ "nhân viên không thấy mức hoa hồng" vì nay nhân viên được xem phiếu thưởng).
 - Giao diện máy tính 1440px: mở phiếu lương Huy và Cường, 2 cột rộng bằng nhau, bảng không tràn. Điện thoại 390px: Phiếu thưởng của tôi, khung Nhập thưởng, trang Ứng lương + hộp Yêu cầu ứng lương; ô Nhập thưởng hiện trong hồ sơ nhân viên. Trên bản dev, gửi phiếu ứng thì bot Telegram thử nhắn được cho Quản lý. Dữ liệu thử đã xóa.
