@@ -92,3 +92,5 @@
 .task-followup-empty{background:#fff6e5;color:#92400e;border-radius:9px;padding:8px 10px;font-weight:600}
 .task-due-form select{min-height:42px;width:100%;box-sizing:border-box}
 .text-button.danger{color:#b42318}
+/* Xóa việc đã giao (02/11/2026) */
+.task-delete-button{color:#b42318!important;font-size:13px}

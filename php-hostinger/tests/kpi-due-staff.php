@@ -69,6 +69,16 @@ try{$a->tx(function()use($a){
  $tOld=$task('task',$at('2026-10-30',10),'Việc cũ trước khi áp dụng');verify(!in_array('Việc cũ trước khi áp dụng',$titles(),true),'Việc hạn trước ngày áp dụng không khóa');
  $a->user=$e;$me=main_routes($a,'/me',[],'GET')[1];verify(array_key_exists('dueTasks',$me)&&$me['dueTasks']===[],'/me trả dueTasks');
 
+ // Xóa việc đã giao (02/11/2026): Admin / Quản lý xóa mềm; ẩn khỏi danh sách, không tính việc chờ, không khóa chấm ra; nhân viên không xóa được.
+ $tDel=$task('task',$at($today,18),'Việc sẽ xóa');verify(str_contains($block(),'Việc sẽ xóa'),'Trước khi xóa: việc hạn hôm nay khóa chấm ra');
+ $a->user=$e;$pendingBefore=task_pending($a);denied(fn()=>task_routes($a,"/tasks/$tDel/delete",['version'=>1],'POST'),403,'Nhân viên không xóa được việc');
+ $a->user=$m;$v=(int)$a->scalar('SELECT version FROM {{tasks}} WHERE id=?',[$tDel]);task_routes($a,"/tasks/$tDel/delete",['version'=>$v,'reason'=>'Giao nhầm'],'POST');
+ verify($a->scalar('SELECT status FROM {{tasks}} WHERE id=?',[$tDel])==='deleted'&&(bool)$a->one("SELECT 1 FROM {{task_audit}} WHERE task_id=? AND action='deleted' AND note='Giao nhầm'",[$tDel]),'Quản lý xóa việc, lưu lịch sử kèm lý do');
+ verify(!in_array($tDel,array_column(task_routes($a,'/tasks',[],'GET')[1]['rows'],'id'),true),'Việc đã xóa không còn trong danh sách');
+ $a->user=$e;verify(task_pending($a)===$pendingBefore-1&&!str_contains($block(),'Việc sẽ xóa'),'Không tính việc chờ, không khóa chấm ra');
+ $a->user=$m;$v=(int)$a->scalar('SELECT version FROM {{tasks}} WHERE id=?',[$tDel]);denied(fn()=>task_routes($a,"/tasks/$tDel/delete",['version'=>$v],'POST'),409,'Xóa lại báo đã xóa');
+ $tCancel=$task('notice',$at($plus(1),9),'Việc đã hủy cần dọn');$v=(int)$a->scalar('SELECT version FROM {{tasks}} WHERE id=?',[$tCancel]);task_routes($a,"/tasks/$tCancel/cancel",['version'=>$v,'reason'=>'Không cần nữa'],'POST');
+ $v=(int)$a->scalar('SELECT version FROM {{tasks}} WHERE id=?',[$tCancel]);task_routes($a,"/tasks/$tCancel/delete",['version'=>$v],'POST');verify($a->scalar('SELECT status FROM {{tasks}} WHERE id=?',[$tCancel])==='deleted','Xóa được cả việc đã hủy để dọn danh sách');
  // 3) Chỉ tài khoản Nhân viên.
  $as($admin);$all=task_create($a,(int)$admin['id'],['kind'=>'notice','title'=>'Thông báo cả studio','audience'=>'all','user_ids'=>[]])['id'];
  $roles=array_unique(array_column($a->all('SELECT u.role FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=?',[$all]),'role'));verify($roles===['employee'],'Giao @all chỉ tới Nhân viên: '.json_encode($roles));
@@ -80,4 +90,4 @@ try{$a->tx(function()use($a){
  denied(fn()=>daily_template_routes($a,'/tasks/templates',['user_id'=>(int)$m['id'],'title'=>'Việc hằng ngày cho QL','require_photo'=>0],'POST'),400,'Không cài việc hằng ngày cho Quản lý');
  throw new RuntimeException('ROLLBACK');
 });}catch(RuntimeException $e){if($e->getMessage()!=='ROLLBACK')throw $e;}
-echo "PASS $n checks: offense tiers + heavy rules, due-day checkout lock, employees-only lists\n";
+echo "PASS $n checks: offense tiers + heavy rules, due-day checkout lock, task delete, employees-only lists\n";

@@ -90,3 +90,16 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 .time24{display:flex;align-items:center;gap:8px;width:100%;margin-top:4px}
 .time24 select{flex:1 1 0;min-width:0;width:auto;min-height:44px;padding:6px 8px;font-size:17px;font-variant-numeric:tabular-nums;text-align:center;text-align-last:center}
 .time24 b{flex:none;font-size:20px;font-weight:700;color:#33445c}
+/* Chọn ca bằng 3 nút rõ ràng (chủ dự án yêu cầu 02/11/2026: bỏ ô thả xuống, mặc định không chọn gì) */
+.shift-pick-title{margin:4px 0 8px!important;text-align:left;font-size:14px;font-weight:700;color:#33445c}
+.shift-pick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.shift-option{display:grid;gap:3px;align-content:center;justify-items:center;min-height:78px;padding:10px 6px;border:2px solid #d5dfec;border-radius:14px;background:#fff;color:#14233a;font:inherit;cursor:pointer;text-align:center;line-height:1.25;box-shadow:none}
+.shift-option:hover{border-color:#9db7dc;background:#f7faff}
+.shift-option b{font-size:17px;font-weight:800}
+.shift-option small{font-size:12px;color:#6d7b91;font-variant-numeric:tabular-nums}
+.shift-option em{font-style:normal;font-size:11px;font-weight:700;color:#17663a;background:#e8f6ee;border-radius:10px;padding:1px 8px;margin-top:2px}
+.shift-option.selected{border-color:#1d64d8;background:#eaf2ff;box-shadow:0 0 0 3px rgba(29,100,216,.18)}
+.shift-option.selected b{color:#1d4f9c}.shift-option.selected small{color:#3b5b8f}
+.shift-option.full.selected{border-color:#c2410c;background:#fff4ec;box-shadow:0 0 0 3px rgba(194,65,12,.16)}.shift-option.full.selected b{color:#9a3412}
+.selected-shift-label.none{color:#b42318}
+@media(max-width:360px){.shift-option b{font-size:15px}.shift-option small{font-size:11px}}

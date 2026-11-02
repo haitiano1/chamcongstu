@@ -82,7 +82,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
  $r=daily_template_routes($a,$path,$b,$method);if($r!==null)return $r;
  if($path==='/tasks/summary'&&$method==='GET')return [200,['pending'=>task_pending($a)]];
  if($path==='/tasks'&&$method==='GET'){
-  $rows=$manager?$a->all(task_list_sql().'LEFT JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? ORDER BY t.created_at DESC LIMIT 300',[$me]):$a->all(task_list_sql().'JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? ORDER BY t.created_at DESC LIMIT 300',[$me]);
+  $rows=$manager?$a->all(task_list_sql()."LEFT JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? WHERE t.status<>'deleted' ORDER BY t.created_at DESC LIMIT 300",[$me]):$a->all(task_list_sql()."JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? WHERE t.status<>'deleted' ORDER BY t.created_at DESC LIMIT 300",[$me]);
   foreach($rows as &$r){$r['mine']=(bool)$r['mine'];$r['my_has_proof']=(bool)$r['my_has_proof'];if(!$manager)unset($r['seen'],$r['done']);}unset($r);
   return [200,['rows'=>$rows,'pending'=>task_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
  }
@@ -105,7 +105,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   header('Content-Type: image/jpeg');header('Content-Disposition: inline');echo $photo;exit;
  }
  if(preg_match('~^/tasks/declines/([a-f0-9-]{36})/(approve|reject|withdraw)$~D',$path,$m)&&$method==='POST')return task_decline_review($a,$m[1],$m[2],$b);
- if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel|decline|due|assign)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
+ if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel|decline|due|assign|delete)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
  $t=task_row($a,$m[1]);$action=$m[2];
  if($action==='seen'){$r=task_mine($a,$t);if($r['seen_at']===null)$a->run('UPDATE {{task_recipients}} SET seen_at=? WHERE task_id=? AND user_id=?',[now_ms(),$t['id'],$me]);return [200,['ok'=>true,'pending'=>task_pending($a)]];}
  if($action==='done'){
@@ -128,6 +128,18 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   return [200,['ok'=>true,'pending'=>task_pending($a)]];
  }
  if($action==='decline')return task_decline_request($a,$t,$b);
+ // Xóa việc đã giao (chủ dự án yêu cầu 02/11/2026: danh sách việc lộn xộn). Admin / Quản lý xóa được việc đang mở hoặc đã hủy.
+ // Xóa mềm: status='deleted', ẩn khỏi mọi danh sách, không còn tính việc chờ, không khóa chấm ra, không nhắn Telegram; giữ dòng + lịch sử.
+ // Việc hằng ngày chỉ xóa việc của ngày đó (không tự tạo lại trong ngày); muốn ngừng hẳn thì xóa mẫu ở Việc hằng ngày.
+ if($action==='delete'){
+  $a->requireManager();entry_version($b,$t);if($t['status']==='deleted')fail('Việc đã bị xóa.',409);
+  $note=task_text($b['reason']??'','Lý do xóa',0,500);
+  $a->run("UPDATE {{tasks}} SET status='deleted',updated_by=?,updated_at=?,version=version+1 WHERE id=?",[$me,now_ms(),$t['id']]);
+  $a->run("UPDATE {{task_recipients}} SET notify_state='skipped' WHERE task_id=? AND notify_state='pending'",[$t['id']]);
+  $a->run("UPDATE {{task_declines}} SET status='withdrawn',reviewed_at=? WHERE task_id=? AND status='pending'",[now_ms(),$t['id']]);
+  task_audit($a,$t['id'],'deleted',['status'=>$t['status']],['status'=>'deleted'],$note);
+  return [200,['ok'=>true,'pending'=>task_pending($a)]];
+ }
  $a->requireManager();entry_version($b,$t);if($t['status']!=='open')fail('Việc đã bị hủy.',409);
  // Chỉnh hạn ở khung Theo dõi hạn (chủ dự án yêu cầu 01/11/2026): chỉ đổi hạn, để trống là bỏ hạn.
  if($action==='due'){
@@ -181,7 +193,7 @@ const TASK_DECLINE_STATUS=['pending'=>'Chờ duyệt','approved'=>'Đã duyệt'
 function task_decline_list(App $a,?int $user): array {
  $sql="SELECT d.id,d.task_id,d.user_id,d.reason,d.status,d.requested_at,d.reviewed_at,d.review_note,u.name,t.title,t.kind,t.task_day,(SELECT name FROM {{users}} WHERE id=d.reviewed_by) reviewer_name FROM {{task_declines}} d JOIN {{users}} u ON u.id=d.user_id JOIN {{tasks}} t ON t.id=d.task_id WHERE ";
  if($user===null)return $a->all($sql."d.status='pending' AND t.status='open' AND EXISTS(SELECT 1 FROM {{task_recipients}} r WHERE r.task_id=d.task_id AND r.user_id=d.user_id) ORDER BY d.requested_at",[]);
- return $a->all($sql."d.user_id=? AND d.status!='withdrawn' AND (d.status='pending' OR d.reviewed_at>=?) ORDER BY d.requested_at DESC LIMIT 30",[$user,now_ms()-14*86400000]);
+ return $a->all($sql."d.user_id=? AND d.status!='withdrawn' AND t.status<>'deleted' AND (d.status='pending' OR d.reviewed_at>=?) ORDER BY d.requested_at DESC LIMIT 30",[$user,now_ms()-14*86400000]);
 }
 // Theo dõi hạn (chủ dự án yêu cầu 01/11/2026): Task / Nhắc nhở đã có yêu cầu từ chối được Duyệt hoặc Không duyệt vẫn hiện cho
 // Admin/Quản lý kèm hạn để tự chỉnh, tới khi mọi người nhận còn lại báo xong (Nhắc nhở: đã xem), việc bị hủy hoặc việc hằng ngày đã qua ngày.
