@@ -5,7 +5,7 @@ const num=v=>new Intl.NumberFormat('vi-VN').format(v);
 export const money=v=>new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND'}).format(v);
 // Khoản nhập tay trên web, đúng thứ tự bảng thưởng của studio (đơn giá OT nằm ở dòng OT). Khóa phải khớp PAYROLL_BONUS_KINDS.
 const MANUAL=[['tips','Tiền khách Tips'],['praise','Nóng / Khen'],['referral','Giới thiệu khách'],['outdoor','Ngoại cảnh'],['full_day','Full khách ngày'],['retouch','Chỉnh ảnh'],['no_customer','Ca làm không có khách'],['meal','Ăn uống'],['fanpage','Trực Fanpage']];
-// Nhóm thưởng (chủ dự án chốt 02/11/2026): Thợ chụp (Huy, Cường) có mọi khoản; Trực Fanpage (Tín) chỉ Chuyên cần, Ca làm không có khách, Trực Fanpage 2tr.
+// Nhóm thưởng (chủ dự án chốt 02/11/2026): Thợ chụp (Huy, Cường) có mọi khoản; Trực Fanpage (Tín) chỉ Chuyên cần, Ca làm không có khách, Tips, Trực Fanpage 2tr.
 const manualKinds=p=>p.bonus_kinds?MANUAL.filter(([k])=>p.bonus_kinds.includes(k)):MANUAL.filter(([k])=>k!=='fanpage'||p.bonus_items?.fanpage);
 const fanpage=p=>p.bonus_profile==='fanpage';
 const openSlips=new Set();

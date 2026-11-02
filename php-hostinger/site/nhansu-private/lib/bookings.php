@@ -43,7 +43,7 @@ function studio_empty_shifts(App $a,string $month,?int $now=null): ?array {
  return $out;
 }
 // Tiền Tip (chủ dự án yêu cầu 02/11/2026): chụp xong ghi Tip ở Sửa lịch (hoặc cột Tip trên Sheet); tổng Tip của tháng chia đều cho
-// các Nhân viên nhóm Thợ chụp đang làm (Huy, Cường → /2; Tín nhóm Trực Fanpage không nhận), tự điền vào khoản "Tiền khách Tips" trên phiếu lương / phiếu thưởng.
+// mọi Nhân viên đang làm (Huy, Cường, Tín → /3, chủ dự án chốt 02/11/2026, kể cả nhóm Trực Fanpage), tự điền vào khoản "Tiền khách Tips" trên phiếu lương / phiếu thưởng.
 // Mỗi lần số Tip của một lịch đổi thì ghi booking_tip_log (ai nhập, lúc nào, web hay Sheet) để xem nhật ký khi bấm vào khoản Tips.
 // Số tiền: 100000, 100.000, 100k; số dưới 1.000 coi là nghìn đồng như cách ghi trên Sheet (VD 50 = 50.000đ).
 function booking_tip_vnd(?string $label): int {
@@ -55,11 +55,10 @@ function booking_tip_log(App $a,array $row,string $oldLabel,string $label,string
  $old=booking_tip_vnd($oldLabel);$new=booking_tip_vnd($label);if($old===$new)return;
  $a->run('INSERT INTO {{booking_tip_log}}(booking_id,shoot_day,minutes,customer_name,old_amount,amount,label,source,actor_id,time) VALUES(?,?,?,?,?,?,?,?,?,?)',[$row['id'],$row['shoot_day'],(int)$row['minutes'],$row['customer_name'],$old,$new,mb_substr($label,0,50),$source,$actor,now_ms()]);
 }
-// Tip của tháng: các lịch đang hoạt động có Tip; chia đều cho Nhân viên nhóm Thợ chụp đang làm, làm tròn tới đồng.
+// Tip của tháng: các lịch đang hoạt động có Tip; chia đều cho mọi Nhân viên đang làm, làm tròn tới đồng.
 function tip_month(App $a,string $month): array {
  $items=[];$total=0;foreach($a->all("SELECT id,shoot_day,minutes,customer_name,package_label,tip_label FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? AND tip_label<>'' ORDER BY shoot_day,minutes,id",[$month.'-01',$month.'-31']) as $r){$v=booking_tip_vnd($r['tip_label']);if($v<=0)continue;$total+=$v;$items[]=$r+['amount'=>$v];}
- // Chỉ nhóm Thợ chụp (Huy, Cường) nhận Tips; Trực Fanpage (Tín) không có khoản này (chủ dự án chốt 02/11/2026).
- $profiles=payroll_profiles($a);$people=array_values(array_filter(finance_people($a),fn($p)=>($profiles[(int)$p['id']]??'photo')==='photo'));$split=count($people);
+ $people=finance_people($a);$split=count($people);
  return ['total'=>$total,'split'=>$split,'share'=>$split?(int)round($total/$split):0,'people'=>array_map(fn($p)=>['id'=>(int)$p['id'],'name'=>$p['name']],$people),'items'=>$items];
 }
 // Phần Tip tự chia của một nhân viên trong tháng; null = tháng trước khi áp dụng hoặc người không thuộc danh sách chia.

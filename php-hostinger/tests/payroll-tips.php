@@ -33,7 +33,7 @@ try{$a->tx(function()use($a){
  $a->run("INSERT INTO {{users}}(name,email,password,role,employee_code,notes) VALUES('ZZ Tip Fanpage','zz.tip.f@local.test','x','employee','ZZTIPF','')");$uf=(int)$a->scalar('SELECT LAST_INSERT_ID()');
  payroll_profile_save($a,$uf,'fanpage');verify(payroll_profile($a,$uf)==='fanpage'&&payroll_profile($a,$ua)==='photo','Lưu nhóm thưởng, mặc định Thợ chụp');
  $a->run("INSERT INTO {{events}}(user_id,type,time,shift,work_date,source,reason) VALUES(?,'in',?,'day_first','2026-11-01','self',''),(?,'out',?,'day_first','2026-11-01','self','')",[$uf,day_time('2026-11-01',9),$uf,day_time('2026-11-01',14)]);
- $split=count(array_filter(finance_people($a),fn($p)=>payroll_profile($a,(int)$p['id'])==='photo'));verify($split>=1&&$split<count(finance_people($a)),'Tips chỉ chia cho nhóm Thợ chụp: '.$split);
+ $split=count(finance_people($a));verify($split>=2,'Tips chia cho mọi Nhân viên, kể cả Trực Fanpage: '.$split);
  $b1=$book('2026-11-01',720,'','Chị Lan');$b2=$book('2026-11-01',900,'','Anh Minh');
  $form=fn(string $id)=>booking_form($a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]));
  $save=function(string $id,string $tip)use($a,$form){$e=$form($id);return booking_routes($a,'/bookings/update',['id'=>$id,'day'=>$e['day'],'time'=>$e['time'],'package'=>$e['package'],'customer_name'=>$e['customer_name'],'customer_phone'=>$e['customer_phone'],'makeup'=>'','special'=>'','note'=>$e['note'],'tip'=>$tip],'POST')[1];};
@@ -96,15 +96,16 @@ try{$a->tx(function()use($a){
  payroll_bonus_routes($a,'/payroll/bonuses',['month'=>'2026-11','user_id'=>$ua,'items'=>['meal'=>250000]],'POST');verify($count()===$before,'Lưu lại không đổi thì không ghi thêm');
  $res=payroll_bonus_routes($a,'/payroll/bonus-entries',[],'GET')[1];$mine=array_values(array_filter($res['people'],fn($p)=>$p['id']===$ua))[0];
  verify($mine['items']['meal']===250000&&!isset($mine['items']['retouch_count'])&&!isset($res['kinds']['retouch'])&&isset($res['kinds']['meal'])&&in_array('meal',$mine['kinds'],true)&&!in_array('retouch',$mine['kinds'],true),'Khung Nhập thưởng hiện đúng Ăn uống, không nhập tiền Chỉnh ảnh');
- // Trực Fanpage: chỉ Chuyên cần + Ca không khách + 2.000.000đ; không nhận Tips, Ngoại cảnh, Ăn uống, OT; Nhập thưởng không có khoản nào.
+ // Trực Fanpage: Chuyên cần + Ca không khách + Tips (chia 3) + 2.000.000đ; không nhận Ngoại cảnh, Chỉnh ảnh, Ăn uống, OT; Nhập thưởng không có khoản nào.
  $f=array_values(array_filter($a->monthly('2026-11')['rows'],fn($x)=>(int)$x['id']===$uf))[0];
- verify($f['bonus_profile']==='fanpage'&&$f['bonus_items']===['no_customer'=>0,'fanpage'=>2000000]&&!isset($f['tip_share'])&&!isset($f['outdoor_count'])&&!isset($f['booking_commission'])&&$f['ot_bonus']===0,'Trực Fanpage: '.json_encode($f['bonus_items']));
- verify($f['bonus_total']===2000000+($f['attendance_bonus']??0),'Tổng thưởng Trực Fanpage = 2tr + chuyên cần');
+ $fs=$f['tip_share'];verify($f['bonus_profile']==='fanpage'&&$f['bonus_items']===['tips'=>$fs,'no_customer'=>0,'fanpage'=>2000000]&&$fs===tip_month($a,'2026-11')['share']&&!isset($f['outdoor_count'])&&!isset($f['booking_commission'])&&$f['ot_bonus']===0,'Trực Fanpage: '.json_encode($f['bonus_items']));
+ verify($f['bonus_total']===2000000+$fs+($f['attendance_bonus']??0),'Tổng thưởng Trực Fanpage = 2tr + Tips + chuyên cần');
  try{payroll_bonus_routes($a,'/payroll/bonuses/add',['id'=>uuid_v4(),'day'=>'2026-11-01','user_id'=>$uf,'kind'=>'meal','amount'=>-1000,'note'=>''],'POST');verify(false,'Ăn uống cho Trực Fanpage phải bị chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'Trực Fanpage'),'Không nhập Ăn uống cho Trực Fanpage');}
  payroll_bonus_routes($a,'/payroll/bonuses',['month'=>'2026-11','user_id'=>$uf,'items'=>['praise'=>50000,'ot_rate'=>30000]],'POST');$f=array_values(array_filter($a->monthly('2026-11')['rows'],fn($x)=>(int)$x['id']===$uf))[0];
- verify($f['bonus_items']===['no_customer'=>0,'fanpage'=>2000000]&&$f['ot_rate']===0,'Phiếu lương không lưu khoản khác cho Trực Fanpage');
+ verify($f['bonus_items']===['tips'=>$fs,'no_customer'=>0,'fanpage'=>2000000]&&$f['ot_rate']===0,'Phiếu lương không lưu khoản khác cho Trực Fanpage');
  $res=payroll_bonus_routes($a,'/payroll/bonus-entries',[],'GET')[1];$fp=array_values(array_filter($res['people'],fn($p)=>$p['id']===$uf))[0];verify($fp['kinds']===[]&&$fp['items']===[],'Nhập thưởng: Trực Fanpage không có khoản nhập tay');
- verify(!in_array('ZZ Tip Fanpage',payroll_bonus_routes($a,'/payroll/tips',[],'GET')[1]['people'],true),'Nhật ký Tip không chia cho Trực Fanpage');
+ verify(in_array('ZZ Tip Fanpage',payroll_bonus_routes($a,'/payroll/tips',[],'GET')[1]['people'],true),'Nhật ký Tip chia cả cho Trực Fanpage');
+ verify(!isset($f['outdoor_count']),'Ngoại cảnh chỉ tính cho nhóm Thợ chụp');
  throw new RuntimeException('ROLLBACK');
 });}catch(RuntimeException $e){if($e->getMessage()!=='ROLLBACK')throw $e;}
 echo "PASS $n payroll tips + outdoor + retouch + meal + empty shift checks\n";

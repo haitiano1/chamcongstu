@@ -10,7 +10,7 @@ Các khoản dưới đây áp dụng từ **tháng 11/2026**. Tháng đã chố
 
 - Hồ sơ nhân viên (Quản lý → Nhân viên → mở hồ sơ) có ô mới **Nhóm thưởng**:
   - **Thợ chụp** (Huy, Cường): nhận đủ các khoản thưởng.
-  - **Trực Fanpage** (Tín): chỉ có **Chuyên cần** (đi làm đủ 28 ngày), **Ca làm không có khách** và **Trực Fanpage 2.000.000đ/tháng**. Không có Tips, Ngoại cảnh, Chỉnh ảnh, Ăn uống, OT, hoa hồng khách chụp.
+  - **Trực Fanpage** (Tín): chỉ có **Chuyên cần** (đi làm đủ 28 ngày), **Ca làm không có khách**, **Tiền khách Tips** (Tip chia 3) và **Trực Fanpage 2.000.000đ/tháng**. Không có Ngoại cảnh, Chỉnh ảnh, Ăn uống, OT, hoa hồng khách chụp.
 - Lần đầu mở, hệ thống tự đặt **Tín** vào nhóm Trực Fanpage, những người còn lại là Thợ chụp. Muốn đổi thì sửa ô này trong hồ sơ.
 
 ### 2. Ca làm không có khách = số ca × lương 1/2 ngày (tự tính)
@@ -22,7 +22,7 @@ Các khoản dưới đây áp dụng từ **tháng 11/2026**. Tháng đã chố
 ### 3. Tiền khách Tips: tự chia đều, có nhật ký Tip
 
 - Chụp xong, ghi Tip ở **Lịch chụp → Sửa lịch → Sau khi chụp** (hoặc cột Tip trên Sheet).
-- Tổng Tip của tháng **chia đều cho nhóm Thợ chụp** (Huy, Cường → chia 2). Phiếu lương ghi **Tiền khách Tips (tổng/2)**, ô tiền tự điền và **khóa, không sửa tay**.
+- Tổng Tip của tháng **chia đều cho 3 nhân viên Huy, Cường, Tín** (chia 3). Phiếu lương và Phiếu thưởng ghi **Tiền khách Tips (tổng/3)**, ô tiền tự điền và **khóa, không sửa tay**.
 - **Bấm vào chữ "Tiền khách Tips"** (trên phiếu lương của Admin/Quản lý, hoặc Phiếu thưởng của nhân viên) để mở **nhật ký Tip**:
   - Tổng Tip của tháng, số khách có Tip, mỗi người được bao nhiêu, chia cho những ai.
   - Tip từng khách: ngày, thứ, ca, giờ chụp, tên khách, số tiền, **ai nhập** (tên người sửa trên web, hoặc "Google Sheet") và lúc nhập.
@@ -32,7 +32,7 @@ Các khoản dưới đây áp dụng từ **tháng 11/2026**. Tháng đã chố
 
 ### 4. Ngoại cảnh: +150.000đ mỗi lịch (tự tính)
 
-- Lịch có chữ **"ngoại cảnh"** (ô Đặc Biệt, Ghi chú, tên khách…) mà nhân viên nhóm Thợ chụp **có chấm công trong giờ chụp** thì +150.000đ mỗi lịch cho người đó.
+- Lịch có chữ **"ngoại cảnh"** (ô Đặc Biệt, Ghi chú, tên khách…) mà **Huy hoặc Cường** (nhóm Thợ chụp) **có chấm công trong giờ chụp** thì +150.000đ mỗi lịch cho người đó.
 - Phiếu ghi **Ngoại cảnh (n lịch)**, ngày giờ từng lịch được tính và những lịch không tính vì lúc đó không chấm công. Khoản này khóa, không sửa tay.
 
 ### 5. Chỉnh ảnh: nhập số ảnh, tự nhân 2.000đ
@@ -47,8 +47,8 @@ Các khoản dưới đây áp dụng từ **tháng 11/2026**. Tháng đã chố
 
 ### Lưu ý
 
-- Tháng 11: các số đã nhập tay trước đây cho Tips, Ngoại cảnh, Chỉnh ảnh (tiền) và Ca làm không có khách sẽ được thay bằng số tự tính.
-- Tips chia theo số tài khoản **Nhân viên, nhóm Thợ chụp, đang làm**. Nếu còn tài khoản khác (VD Tuấn) vẫn để Vai trò = Nhân viên thì Tips bị chia cho cả người đó. Hãy đổi Vai trò người đó sang Quản lý, hoặc cho nghỉ. Danh sách người được chia có ghi trong nhật ký Tip.
+- Trước bản này, các ô Tips, Ngoại cảnh, Chỉnh ảnh, Ca làm không có khách trên phiếu lương là ô nhập tay. Nếu ai đó đã gõ số vào các ô này cho tháng 11 thì số đó không còn được dùng; phiếu hiện số tự tính. Chưa ai gõ thì không ảnh hưởng gì.
+- Tips chia theo số tài khoản có Vai trò **Nhân viên** đang làm (Huy, Cường, Tín). Các tài khoản khác để Vai trò Quản lý / Admin. Danh sách người được chia có trong nhật ký Tip.
 - Khung **Nhập thưởng nhân viên** chỉ còn Nóng / Khen, Giới thiệu khách, Full khách ngày, Ăn uống (cho Thợ chụp). Trực Fanpage không có khoản nhập tay.
 
 ## File cần upload
