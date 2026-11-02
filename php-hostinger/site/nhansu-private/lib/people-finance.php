@@ -2,6 +2,11 @@
 declare(strict_types=1);
 
 const LOG_CATEGORIES=['missing_punch','late','early_out','absence','customer','task','other'];
+// Điểm KPI theo số lần mắc cùng một lỗi trong tháng (chủ dự án chốt 02/11/2026): lần 1 Nhắc nhở 20, lần 2 Cảnh cáo 100, lần 3 trở đi Kỷ luật 300.
+// Luật nặng có điểm riêng từ LOG_FIXED_POINTS trở lên luôn trừ đúng điểm đó. Đi muộn DM-01 do hệ thống tự tính (late_points).
+const LOG_TIER_POINTS=[1=>20,2=>100,3=>300];
+const LOG_TIER_NAMES=[1=>'Nhắc nhở',2=>'Cảnh cáo',3=>'Kỷ luật'];
+const LOG_FIXED_POINTS=100;
 function input_text(mixed $value,string $label,int $min=0,int $max=1000): string {
  if(!is_string($value)||!preg_match('//u',$value))fail($label.' không hợp lệ.');
  $value=trim($value);$length=text_length($value);
@@ -133,8 +138,9 @@ function finance_audit(App $a,string $kind,string $id,string $action,string $not
  $table=$kind==='advance'?'advance_audit':'event_log_audit';$column=$kind==='advance'?'advance_id':'event_log_id';
  $a->run('INSERT INTO {{'.$table.'}}('.$column.',actor_id,action,note,time) VALUES(?,?,?,?,?)',[$id,$a->user['id'],$action,$note,now_ms()]);
 }
+// Danh sách người để chọn / lọc (chủ dự án yêu cầu 02/11/2026): chỉ tài khoản Nhân viên; Admin, Quản lý, Makeup không ghi tên vào.
 function finance_people(App $a,bool $all=false): array {
- return $a->all("SELECT id,name,employee_code,role,archived,status FROM {{users}}".($all?'':" WHERE archived=0 AND status!='inactive' AND role!='makeup'").' ORDER BY name');
+ return $a->all("SELECT id,name,employee_code,role,archived,status FROM {{users}} WHERE role='employee'".($all?'':" AND archived=0 AND status!='inactive'").' ORDER BY name');
 }
 function finance_page(): int {
  $p=filter_var($_GET['page']??1,FILTER_VALIDATE_INT);if(!$p||$p<1||$p>100000)fail('Trang không hợp lệ.');return $p;
@@ -200,6 +206,27 @@ function log_permissions(App $a): array {
  $full=in_array($a->user['role'],['admin','manager'],true);$delegated=$a->user['role']==='employee'&&(bool)$a->one('SELECT user_id FROM {{event_log_recorders}} WHERE user_id=?',[$a->user['id']]);
  return ['can_record'=>$full||$delegated,'can_manage'=>$full||$delegated,'can_delete'=>$full,'can_grant'=>$a->user['role']==='admin','delegated'=>$delegated];
 }
+// Điểm KPI khi ghi Event log: [điểm trừ, lần mắc lỗi trong tháng hoặc null]. Luật nặng: điểm cố định của luật.
+// offense 1/2/3 → 20/100/300, 0 = chỉ ghi nhận. Không gửi offense mà chọn luật thường (Telegram /log, giao diện cũ) thì tự đếm số lần trong tháng;
+// hộp ghi nhanh (nghỉ gấp, đối soát chấm công) gửi offense=null kèm deduction để giữ đúng điểm đã chọn.
+function log_points(App $a,?array $rule,array $b,?int $subject,string $day,?string $except=null): array {
+ if($rule&&(int)$rule['points']>=LOG_FIXED_POINTS)return [(int)$rule['points'],null];
+ $n=$b['offense']??null;
+ if($n!==null){if(!is_int($n)||$n<0||$n>3)fail('Chọn lần mắc lỗi trong tháng: Lần 1, Lần 2 hoặc Lần 3.');return [$n?LOG_TIER_POINTS[$n]:0,$n?:null];}
+ $d=$b['deduction']??0;
+ if($rule&&!array_key_exists('offense',$b)&&$d===0){if($subject===null)return [0,null];$n=min(3,log_offense_count($a,$subject,$rule['id'],$day,$except)+1);return [LOG_TIER_POINTS[$n],$n];}
+ if(!is_int($d)||!in_array($d,[0,20,100,300],true))fail('Điểm KPI cần là 0, 20, 100 hoặc 300.');
+ return [$d,null];
+}
+// Số lần người này đã bị ghi cùng luật trong tháng của $day (log chờ xác nhận, đã xác nhận, đã xử lý; không tính log đã hủy / đã xóa).
+function log_offense_count(App $a,int $user,string $rule,string $day,?string $except=null): int {
+ $m=substr($day,0,7);
+ return (int)$a->scalar("SELECT COUNT(*) FROM {{event_log}} WHERE user_id=? AND rule_id=? AND event_date>=? AND event_date<=? AND status IN ('pending','confirmed','resolved')".($except?' AND id<>?':''),[$user,$rule,$m.'-01',$m.'-31',...($except?[$except]:[])]);
+}
+function log_points_note(int $deduction,?int $offense,?array $rule): string {
+ if($rule&&(int)$rule['points']>=LOG_FIXED_POINTS)return ' Luật nặng '.$rule['code'].': trừ cố định '.$deduction.' điểm KPI.';
+ return $offense?' Lần '.$offense.' trong tháng ('.LOG_TIER_NAMES[$offense].'), trừ '.$deduction.' điểm KPI.':'';
+}
 // Cấp quyền trong hồ sơ nhân viên (chủ dự án yêu cầu 30/10/2026): Viết Event Log, Lên lịch chụp; thêm Sửa Biên bản họp (02/11/2026). Chỉ Admin tick;
 // Admin và Quản lý luôn có đủ các quyền nên không giữ dòng cấp quyền cho họ; Makeup không được cấp quyền nào.
 const USER_GRANTS=['event_log'=>['event_log_recorders','grant_event_log','revoke_event_log'],'bookings'=>['booking_creators','grant_booking_create','revoke_booking_create'],'meetings'=>['meeting_editors','grant_meeting_edit','revoke_meeting_edit']];
@@ -261,7 +288,7 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
  if($path==='/event-log/source'&&$method==='GET'){$file=__DIR__.'/legacy-event-log.pdf';if(!is_file($file))fail('Chưa có PDF gốc.',404);header('Content-Type: application/pdf');header('Content-Disposition: inline; filename="EVENT-LOG-STUDIO.pdf"');readfile($file);exit;}
  if(preg_match('~^/event-log/([a-f0-9-]{36})/classify$~D',$path,$m)&&$method==='POST'){
   if(!$manage)fail('Chỉ Admin, Quản lý hoặc nhân viên được Admin cấp quyền mới được chỉnh sửa Event log.',403);$row=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$m[1]]);if(!$row||$row['status']==='deleted')fail('Không tìm thấy log.',404);entry_version($b,$row);if(!in_array($row['status'],['pending','historical'],true))fail('Chỉ bổ sung thông tin cho log chưa xác nhận hoặc log lưu trữ.',409);
-  $subject=$b['user_id']??null;if($subject!==null){if(!is_int($subject))fail('Nhân viên không hợp lệ.');if(!$a->one('SELECT id FROM {{users}} WHERE id=?',[$subject]))fail('Nhân viên không tồn tại.');}
+  $subject=$b['user_id']??null;if($subject!==null){if(!is_int($subject))fail('Nhân viên không hợp lệ.');if(!$a->one("SELECT id FROM {{users}} WHERE id=? AND role='employee'",[$subject]))fail('Chỉ gắn log cho tài khoản Nhân viên.');}
   $precision=$b['date_precision']??'';if(!in_array($precision,['day','month','unknown'],true))fail('Độ chính xác ngày không hợp lệ.');
   $day=$precision==='day'?valid_day($b['event_date']??null):($precision==='month'?valid_month($b['event_date']??null):'');if($day&&$day>local_day(now_ms()))fail('Ngày không được ở tương lai.');
   $note=input_text($b['note']??null,'Lý do bổ sung',5,1000);
@@ -278,14 +305,22 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
  if($path==='/event-log'&&$method==='POST'){
   if(!$perms['can_record'])fail('Bạn chưa được cấp quyền ghi Event log.',403);
   $id=entry_uuid($b['id']??null);$day=valid_day($b['event_date']??null);if($day<'2020-01-01'||$day>local_day(now_ms()))fail('Ngày sự việc không được ở tương lai.');
-  $subject=$b['user_id']??null;if($subject!==null){if(!is_int($subject))fail('Nhân viên không hợp lệ.');$target=$a->one("SELECT id,role FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive'",[$subject]);if(!$target)fail('Nhân viên không tồn tại hoặc đã nghỉ.');}
+  $subject=$b['user_id']??null;if($subject!==null){if(!is_int($subject))fail('Nhân viên không hợp lệ.');$target=$a->one("SELECT id,role FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive' AND role='employee'",[$subject]);if(!$target)fail('Chỉ ghi Event log cho tài khoản Nhân viên đang làm.');}
   $rule=function_exists('studio_rule_pick')?studio_rule_pick($a,$b):null;
-  $deduction=$rule?$rule['points']:($b['deduction']??0);if($rule?($subject===null&&$deduction!==0):(!is_int($deduction)||!in_array($deduction,[0,20,100,300],true)||($subject===null&&$deduction!==0)))fail($rule?'Nhật ký chung studio không trừ điểm. Chọn nhân viên liên quan để áp luật '.$rule['code'].'.':'Điểm KPI cần là 0, 20, 100 hoặc 300; nhật ký chung không trừ điểm.');
+  [$deduction,$offense]=log_points($a,$rule,$b,$subject,$day);if($subject===null&&$deduction!==0)fail($rule?'Nhật ký chung studio không trừ điểm. Chọn nhân viên liên quan để áp luật '.$rule['code'].'.':'Nhật ký chung studio chỉ ghi nhận, không trừ điểm.');
   $category=$b['category']??'';if(!in_array($category,LOG_CATEGORIES,true))fail('Loại sự việc không hợp lệ.');
   $description=input_text($b['description']??null,'Nội dung sự việc',5,2000);$existing=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$id]);
   if($existing){if($existing['created_by']===$a->user['id']&&$existing['user_id']===$subject&&$existing['event_date']===$day&&$existing['category']===$category&&$existing['points']===-$deduction&&$existing['description']===$description)return [200,['id'=>$id,'already_saved'=>true]];fail('Mã sự việc đã được sử dụng.',409);}
-  $status=$manage?'confirmed':'pending';$a->run("INSERT INTO {{event_log}}(id,user_id,event_date,category,description,rule_id,rule_code,rule_name,points,status,created_by,created_at,updated_by,updated_at,resolution) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'')",[$id,$subject,$day,$category,$description,$rule['id']??null,$rule['code']??'',$rule['name']??'',-$deduction,$status,$a->user['id'],now_ms(),$a->user['id'],now_ms()]);
-  finance_audit($a,'log',$id,'created','Ghi nhận bởi người được cấp quyền chỉnh sửa Event log.');return [201,['id'=>$id,'status'=>$status]];
+  $status=$manage?'confirmed':'pending';$a->run("INSERT INTO {{event_log}}(id,user_id,event_date,category,description,rule_id,rule_code,rule_name,points,offense,status,created_by,created_at,updated_by,updated_at,resolution) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'')",[$id,$subject,$day,$category,$description,$rule['id']??null,$rule['code']??'',$rule['name']??'',-$deduction,$offense,$status,$a->user['id'],now_ms(),$a->user['id'],now_ms()]);
+  finance_audit($a,'log',$id,'created','Ghi nhận bởi người được cấp quyền chỉnh sửa Event log.'.log_points_note($deduction,$offense,$rule));return [201,['id'=>$id,'status'=>$status]];
+ }
+ // Gợi ý ô Lần mắc lỗi khi chọn nhân viên + luật trên form ghi Event log: đã bị ghi luật này bao nhiêu lần trong tháng.
+ if($path==='/event-log/offenses'&&$method==='GET'){
+  if(!$perms['can_record'])fail('Bạn chưa được cấp quyền ghi Event log.',403);
+  if(!ctype_digit((string)($_GET['user_id']??'')))fail('Nhân viên không hợp lệ.');
+  $rule=studio_rule_pick($a,['rule_id'=>(string)($_GET['rule_id']??'')]);if(!$rule)fail('Chọn luật.');
+  $day=valid_day(($_GET['day']??'')?:local_day(now_ms()));
+  return [200,['count'=>log_offense_count($a,(int)$_GET['user_id'],$rule['id'],$day),'month'=>substr($day,0,7),'fixed'=>(int)$rule['points']>=LOG_FIXED_POINTS]];
  }
  if($path==='/event-log'&&$method==='GET'){
   [$start,$end]=finance_range();$period=$_GET['period']??'month';if(!in_array($period,['all','month','unknown'],true))fail('Khoảng lịch sử không hợp lệ.');$params=[];$where="r.status!='deleted'";if($period==='unknown')$where.=" AND r.date_precision='unknown'";elseif($period==='month'){if(!empty($_GET['date'])){$where.=" AND ((r.date_precision='day' AND r.event_date=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?))";$params=[$start,$start,$start];}else{$month=substr($start,0,7);$where.=" AND ((r.date_precision='day' AND r.event_date>=? AND r.event_date<=?) OR (r.date_precision='day_range' AND r.event_date<=? AND r.end_date>=?) OR (r.date_precision IN ('month','range') AND r.event_date<=? AND (CASE WHEN r.end_month='' THEN r.event_date ELSE r.end_month END)>=?))";$params=[$start,$end,$end,$start,$month,$month];}}
@@ -316,11 +351,10 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
    if(!in_array($status,$allowed,true))fail('Trạng thái sự việc đã thay đổi hoặc thao tác không hợp lệ.',409);
    if($row['created_by']===$a->user['id']&&$row['status']==='pending')fail('Không được tự xác nhận nhật ký đã gửi của mình.',403);
    $note=input_text($b['note']??null,'Ghi chú xử lý',5,2000);
-   $points=$row['points'];$rule=null;if($status==='confirmed'&&function_exists('studio_rule_pick'))$rule=studio_rule_pick($a,$b);
-   if($rule){if($row['user_id']===null&&$rule['points']!==0)fail('Nhật ký chung studio không trừ điểm.');$points=-$rule['points'];}
-   elseif($status==='confirmed'&&array_key_exists('deduction',$b)){if(!is_int($b['deduction'])||!in_array($b['deduction'],[0,20,100,300],true)||($row['user_id']===null&&$b['deduction']!==0))fail('Điểm xác nhận không hợp lệ.');$points=-$b['deduction'];}
+   $points=$row['points'];$offense=isset($row['offense'])?(int)$row['offense']:null;$rule=null;if($status==='confirmed'&&function_exists('studio_rule_pick'))$rule=studio_rule_pick($a,$b);
+   if($status==='confirmed'&&($rule||array_key_exists('offense',$b)||array_key_exists('deduction',$b))){[$d,$offense]=log_points($a,$rule,$b,$row['user_id'],strlen((string)$row['event_date'])===10?$row['event_date']:local_day(now_ms()),$row['id']);if($row['user_id']===null&&$d!==0)fail('Nhật ký chung studio không trừ điểm.');$points=-$d;}
    if(!$approved&&log_needs_approval($a,$row))return log_request_change($a,$row,'resolve',$b,['Trạng thái'=>LOG_STATUS_LABELS[$row['status']]??$row['status'],'Điểm KPI'=>abs($row['points']),'Luật'=>$row['rule_code']?:'—'],['Trạng thái'=>LOG_STATUS_LABELS[$status],'Điểm KPI'=>abs($points),'Luật'=>$rule['code']??($row['rule_code']?:'—'),'Giải trình'=>$note]);
-   $a->run('UPDATE {{event_log}} SET status=?,points=?,resolution=?,rule_id=COALESCE(?,rule_id),rule_code=COALESCE(?,rule_code),rule_name=COALESCE(?,rule_name),updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$status,$points,$note,$rule['id']??null,$rule['code']??null,$rule['name']??null,$a->user['id'],now_ms(),$id]);finance_audit($a,'log',$id,$status,$note.($rule?' | Luật: '.$rule['code'].' · '.$rule['name']:'').($points!==$row['points']?' | Điểm: '.$row['points'].' → '.$points:''));return [200,['ok'=>true]];
+   $a->run('UPDATE {{event_log}} SET status=?,points=?,offense=?,resolution=?,rule_id=COALESCE(?,rule_id),rule_code=COALESCE(?,rule_code),rule_name=COALESCE(?,rule_name),updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$status,$points,$offense,$note,$rule['id']??null,$rule['code']??null,$rule['name']??null,$a->user['id'],now_ms(),$id]);finance_audit($a,'log',$id,$status,$note.($rule?' | Luật: '.$rule['code'].' · '.$rule['name']:'').($points!==$row['points']?' | Điểm: '.$row['points'].' → '.$points:'').($offense&&$offense!==(isset($row['offense'])?(int)$row['offense']:null)?' | Lần '.$offense.' trong tháng ('.LOG_TIER_NAMES[$offense].')':''));return [200,['ok'=>true]];
   }
  }
  // Xóa log: ẩn khỏi danh sách và không tính KPI, vẫn giữ dòng và lịch sử. Gỡ liên kết đối soát chấm công / nghỉ gấp để ghi lại được.

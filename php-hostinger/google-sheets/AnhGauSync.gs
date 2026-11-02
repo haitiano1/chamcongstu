@@ -2,6 +2,8 @@
  * Paste in Extensions > Apps Script of the booking sheet. Configure via menu; do not hardcode secrets.
  * Hai chiều (29/10/2026): gửi các tab "Tháng N" lên web; lấy lịch thêm/hủy trên web về ghi vào đúng tab, đúng ngày, đúng thứ tự giờ; lịch xóa trên web thì xóa dòng,
  * lịch sửa trên web thì ghi các ô được sửa, đổi ngày/giờ thì chuyển dòng sang đúng chỗ, kể cả lịch đã qua ở tab tháng cũ (30/10/2026).
+ * Không hiện lịch trùng trên web (02/11/2026): mỗi lần gửi tab lên web thì gửi kèm mã mọi dòng còn trên tab đó; lịch trên web không còn dòng
+ * trên Sheet (dòng đã xóa, cắt dán mất ô mã _AG_BOOKING_ID) thì web tự ẩn. Muốn hủy lịch vẫn nên ghi "Hủy" ở cột Trạng thái.
  */
 const AG_BACK=1,AG_AHEAD=6;// Đồng bộ tab tháng trước đến 6 tháng tới: tên "Tháng 1" không bị nhầm năm.
 const AG_FORCE_MS=600000;// Tab không đổi vẫn gửi lại mỗi 10 phút.
@@ -261,16 +263,18 @@ function dongBoAnhGau(e){
  const forced=!(e&&e.triggerUid),lock=LockService.getScriptLock();if(!lock.tryLock(1000))return;
  try{
   const p=PropertiesService.getScriptProperties(),cfg=p.getProperties();if(!cfg.AG_ENDPOINT||!cfg.AG_SYNC_KEY)throw new Error('Chưa cài kết nối. Mở menu Anh Gấu Studio → Cài kết nối web.');
-  const book=SpreadsheetApp.openById(cfg.AG_SHEET_ID),tabs=agTabs_(book,cfg),ids={},errors=[],hashes=JSON.parse(cfg.AG_HASHES||'{}'),now=Date.now();let sent=0,clashes=0,wrote=0;
+  const book=SpreadsheetApp.openById(cfg.AG_SHEET_ID),tabs=agTabs_(book,cfg),ids={},errors=[],hashes=JSON.parse(cfg.AG_HASHES||'{}'),now=Date.now(),live={tabs:[],ids:[]};let sent=0,clashes=0,wrote=0;
   tabs.forEach(function(t){
    try{
     agLoad_(t,ids,true);agFillWeekdays_(t);clashes+=agMarkConflicts_(t);
     const rows=t.parsed.rows,hash=agHash_(JSON.stringify(rows)),old=hashes[t.name];if(!forced&&old&&old.h===hash&&now-old.t<AG_FORCE_MS)return;
     for(let i=0;i<Math.max(1,rows.length);i+=100)sent+=agPost_(cfg,{sheet_id:cfg.AG_SHEET_ID,tab:t.name,rows:rows.slice(i,i+100)}).received;hashes[t.name]={h:hash,t:now};
+    live.tabs.push(t.name);rows.forEach(r=>live.ids.push(r.id));// Tab đã gửi đủ: báo web mã mọi dòng còn trên tab.
    }catch(err){t.error=String(err.message);errors.push(t.name+': '+t.error);}
   });
   p.setProperty('AG_HASHES',JSON.stringify(hashes));
-  const queue=agPost_(cfg,{sheet_id:cfg.AG_SHEET_ID,poll:true}).queue||[];
+  // Kèm danh sách mã của các tab vừa gửi đủ: lịch web không còn dòng trên Sheet thì web ẩn, không hiện 2 thẻ trùng.
+  const queue=agPost_(cfg,Object.assign({sheet_id:cfg.AG_SHEET_ID,poll:true},live.tabs.length?{live:live}:{})).queue||[];
   if(queue.length){
    const acks=queue.map(function(q){try{return q.action==='create'?agInsert_(book,tabs,q):q.action==='update'?agUpdate_(book,tabs,q):q.action==='cancel'?agCancel_(book,tabs,q):q.action==='delete'?agDelete_(book,tabs,q):{id:q.id,ok:false,error:'Không hỗ trợ việc '+q.action};}catch(err){return {id:q.id,ok:false,error:String(err.message).slice(0,280)};}});
    agPost_(cfg,{sheet_id:cfg.AG_SHEET_ID,ack:acks});wrote=acks.filter(a=>a.ok).length;acks.filter(a=>!a.ok).forEach(a=>errors.push('Ghi lịch từ web: '+a.error));

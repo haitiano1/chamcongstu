@@ -44,12 +44,13 @@ function task_mine(App $a,array $t): array {
 function task_audit(App $a,string $id,string $action,?array $before,?array $after,string $note='',?int $actor=null): void {
  $a->run('INSERT INTO {{task_audit}}(task_id,actor_id,action,before_json,after_json,note,time) VALUES(?,?,?,?,?,?,?)',[$id,$actor??$a->user['id'],$action,$before===null?null:json_encode($before,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$after===null?null:json_encode($after,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$note,now_ms()]);
 }
-// Người nhận: @all = mọi người đang làm trừ người giao; hoặc danh sách người cụ thể đang làm. Dùng chung khi giao và khi sửa việc.
-function task_recipient_ids(App $a,int $creator,mixed $audience,mixed $ids): array {
+// Người nhận: chỉ tài khoản Nhân viên đang làm (chủ dự án yêu cầu 02/11/2026; Admin, Quản lý không nhận việc). @all = mọi nhân viên trừ người giao;
+// hoặc danh sách người cụ thể. Dùng chung khi giao và khi sửa việc; $keep: người nhận cũ của việc đang sửa vẫn giữ được.
+function task_recipient_ids(App $a,int $creator,mixed $audience,mixed $ids,array $keep=[]): array {
  if(!in_array($audience,['all','people'],true))fail('Chọn người nhận.');
- $active=array_column($a->all("SELECT id FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='makeup'"),'id');
+ $active=array_column($a->all("SELECT id FROM {{users}} WHERE archived=0 AND status!='inactive' AND role='employee'"),'id');
  if($audience==='all')$ids=array_values(array_filter($active,fn($id)=>$id!==$creator));
- else{if(!is_array($ids)||!$ids||count($ids)>200)fail('Chọn ít nhất một người nhận.');foreach($ids as $id)if(!is_int($id)||!in_array($id,$active,true))fail('Người nhận không tồn tại hoặc đã nghỉ.');$ids=array_values(array_unique($ids));}
+ else{if(!is_array($ids)||!$ids||count($ids)>200)fail('Chọn ít nhất một người nhận.');foreach($ids as $id)if(!is_int($id)||!in_array($id,$active,true)&&!in_array($id,$keep,true))fail('Người nhận không tồn tại, đã nghỉ hoặc không phải Nhân viên.');$ids=array_values(array_unique($ids));}
  if(!$ids)fail('Chưa có nhân viên nào để giao việc.');
  return $ids;
 }
@@ -153,7 +154,8 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   $before=['title'=>$t['title'],'body'=>$t['body'],'due_at'=>$t['due_at']];$after=['title'=>$title,'body'=>$body,'due_at'=>$due];
   // Đổi người nhận (chủ dự án yêu cầu 30/10/2026): giao cho người khác. Người đã báo xong giữ lại; người mới nhận tin Telegram như việc mới.
   $old=array_map('intval',array_column($a->all('SELECT user_id FROM {{task_recipients}} WHERE task_id=?',[$t['id']]),'user_id'));sort($old);$new=$old;$audience=$t['audience'];
-  if(array_key_exists('audience',$b)){$audience=$b['audience'];$new=task_recipient_ids($a,(int)$t['created_by'],$audience,$b['user_ids']??null);sort($new);
+  if(array_key_exists('audience',$b)){$audience=$b['audience'];$new=task_recipient_ids($a,(int)$t['created_by'],$audience,$b['user_ids']??null,$old);
+   if($audience==='all')foreach($a->all('SELECT user_id FROM {{task_recipients}} WHERE task_id=? AND done_at IS NOT NULL',[$t['id']]) as $x)if(!in_array((int)$x['user_id'],$new,true))$new[]=(int)$x['user_id'];sort($new);
    foreach($a->all('SELECT r.user_id,u.name FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=? AND r.done_at IS NOT NULL',[$t['id']]) as $x)if(!in_array((int)$x['user_id'],$new,true))fail($x['name'].' đã báo xong việc này nên không bỏ khỏi người nhận được.',409);}
   if($before===$after&&$new===$old&&$audience===$t['audience'])fail('Chưa có thay đổi nào.');
   $a->run('UPDATE {{tasks}} SET title=?,body=?,due_at=?,audience=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$title,$body,$due,$audience,$me,now_ms(),$t['id']]);
@@ -264,17 +266,26 @@ function daily_tasks_today(App $a,int $user): array {
  $day=local_day(now_ms());daily_tasks_ensure($a,$day,$user);
  return $a->all("SELECT t.id,t.title,t.require_photo,r.done_at FROM {{tasks}} t JOIN {{task_recipients}} r ON r.task_id=t.id AND r.user_id=? WHERE t.task_day=? AND t.status='open' ORDER BY t.created_at,t.title",[$user,$day]);
 }
+// Task / Nhắc nhở có hạn (chủ dự án yêu cầu 02/11/2026): hạn rơi vào hôm nay mà chưa xong (Nhắc nhở: chưa bấm Đã xem) thì không chấm ra ca 2 được,
+// giống việc hằng ngày. Hạn ở ngày khác (VD giao 48h) thì hôm nay, ngày mai vẫn chấm ra bình thường; đúng ngày đến hạn mới khóa.
+// Quá hạn mà vẫn chưa xong thì các ngày sau vẫn khóa (chỉ tính việc có hạn từ TASK_DUE_LOCK_FROM). Đang xin từ chối chờ duyệt thì không khóa.
+const TASK_DUE_LOCK_FROM='2026-11-02';
+function task_due_today(App $a,int $user,?int $now=null): array {
+ $day=local_day($now??now_ms());$tomorrow=day_time(gmdate('Y-m-d',strtotime($day.'T00:00:00Z')+86400));
+ return $a->all("SELECT t.id,t.kind,t.title,t.due_at,t.require_photo FROM {{tasks}} t JOIN {{task_recipients}} r ON r.task_id=t.id AND r.user_id=? WHERE t.status='open' AND t.template_id IS NULL AND t.due_at IS NOT NULL AND t.due_at>=? AND t.due_at<? AND ((t.kind='task' AND r.done_at IS NULL) OR (t.kind<>'task' AND r.seen_at IS NULL)) AND NOT EXISTS(SELECT 1 FROM {{task_declines}} d WHERE d.task_id=t.id AND d.user_id=r.user_id AND d.status='pending') ORDER BY t.due_at,t.title",[$user,day_time(TASK_DUE_LOCK_FROM),$tomorrow]);
+}
 function daily_tasks_block_checkout(App $a,array $b): void {
  if(($b['type']??'')!=='out'||($b['shift']??'')!=='day_second')return;
- $left=array_filter(daily_tasks_today($a,$a->user['id']),fn($t)=>$t['done_at']===null);
- if($left)fail('Cần hoàn thành việc hằng ngày trước khi chấm ra ca 2: '.implode('; ',array_column($left,'title')).'. Vào mục Việc để báo xong.',409);
+ $left=array_column(array_filter(daily_tasks_today($a,$a->user['id']),fn($t)=>$t['done_at']===null),'title');
+ foreach(task_due_today($a,$a->user['id']) as $t)$left[]=($t['kind']==='task'?'':'Nhắc nhở: ').$t['title'].' (hạn '.date('H:i d/m',intdiv((int)$t['due_at'],1000)).')';
+ if($left)fail('Cần hoàn thành trước khi chấm ra ca 2: '.implode('; ',$left).'. Vào mục Việc để báo xong (Nhắc nhở: bấm Đã xem).',409);
 }
 function daily_template_routes(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/tasks/templates'&&!str_starts_with($path,'/tasks/templates/'))return null;
  $a->requireManager();if($method!=='POST')fail('Chỉ nhận POST.',405);$me=$a->user['id'];$today=local_day(now_ms());
  $fields=function()use($b){$title=task_text($b['title']??null,'Tên việc',3,150);if(!is_bool($b['require_photo']??null)&&!is_int($b['require_photo']??null))fail('Chọn số ảnh bắt buộc.');return ['title'=>$title,'require_photo'=>task_photo_count($b['require_photo'])];};
  if($path==='/tasks/templates'){
-  $f=$fields();$uid=$b['user_id']??null;if(!is_int($uid)||!$a->one("SELECT id FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive'",[$uid]))fail('Chọn nhân viên đang làm.');
+  $f=$fields();$uid=$b['user_id']??null;if(!is_int($uid)||!$a->one("SELECT id FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive' AND role='employee'",[$uid]))fail('Chọn nhân viên đang làm.');
   $id=task_uuid();$now=now_ms();$a->run('INSERT INTO {{task_templates}}(id,user_id,title,require_photo,active,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,1,?,?,?,?)',[$id,$uid,$f['title'],$f['require_photo'],$me,$now,$me,$now]);
   task_audit($a,$id,'template_created',null,['user_id'=>$uid]+$f);daily_tasks_ensure($a,$today,$uid);return [201,['id'=>$id]];
  }
@@ -285,7 +296,7 @@ function daily_template_routes(App $a,string $path,array $b,string $method): ?ar
  $todayTask=$a->one('SELECT t.id FROM {{tasks}} t JOIN {{task_recipients}} r ON r.task_id=t.id WHERE t.template_id=? AND t.task_day=? AND t.status=\'open\' AND r.done_at IS NULL',[$d['id'],$today]);
  if($m[2]==='edit'){$f=$fields();
   // Đổi người làm (chủ dự án yêu cầu 30/10/2026): việc hôm nay chưa xong chuyển sang người mới; việc đã xong và các ngày trước giữ nguyên.
-  $was=(int)$d['user_id'];$uid=$b['user_id']??$was;if(!is_int($uid)||$uid!==$was&&!$a->one("SELECT id FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive'",[$uid]))fail('Chọn nhân viên đang làm.');
+  $was=(int)$d['user_id'];$uid=$b['user_id']??$was;if(!is_int($uid)||$uid!==$was&&!$a->one("SELECT id FROM {{users}} WHERE id=? AND archived=0 AND status!='inactive' AND role='employee'",[$uid]))fail('Chọn nhân viên đang làm.');
   if($f===['title'=>$d['title'],'require_photo'=>(int)$d['require_photo']]&&$uid===$was)fail('Chưa có thay đổi nào.');
   $a->run('UPDATE {{task_templates}} SET user_id=?,title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$uid,$f['title'],$f['require_photo'],$me,now_ms(),$d['id']]);
   if($todayTask){$a->run('UPDATE {{tasks}} SET title=?,require_photo=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$f['title'],$f['require_photo'],$me,now_ms(),$todayTask['id']]);
@@ -324,12 +335,13 @@ function task_telegram_tick(App $a,?int $clock=null): void {
 //   /task Huy, Cường | Dọn phòng chụp 2 | 18:00 28/10 #anh
 //   /nhacnho all | Mai họp 8h30
 // Chỉ Telegram đã liên kết với tài khoản Admin/Quản lý mới được giao.
-const TASK_TG_HELP="Cách giao việc:\n/task Huy, Cường | Dọn phòng chụp 2 | 18:00\n/nhacnho all | Mai họp 8h30\n\n• Người nhận: tên gọi, tên đầy đủ, mã NV hoặc all\n• Phần hạn (không bắt buộc): 18:00 hoặc 18h30 28/10\n• Thêm #anh nếu bắt buộc chụp ảnh khi báo xong (#anh5 = 5 ảnh)\n\nGhi Event log: /log Nội dung | Huy (gõ /log để xem hướng dẫn)";
-// Ghi Event log hôm nay; chỉ Admin, Quản lý và nhân viên được Admin cấp quyền ghi Event log:
-//   /log Quên checkout ca 2 | Huy
-//   /log Họp rút kinh nghiệm cả studio | all        (nhật ký chung, không trừ điểm)
-//   /log Đi trễ 40 phút | Huy, Cường | NG-01        (phần 3: mã luật hoặc điểm 20/100/300)
-const LOG_TG_HELP="Cách ghi Event log:\n/log Quên checkout ca 2 | Huy\n/log Họp rút kinh nghiệm | all\n/log Đi trễ 40 phút | Huy, Cường | NG-01\n\n• Phần 1: nội dung sự việc (từ 5 ký tự)\n• Phần 2: người liên quan — tên gọi, tên đầy đủ, mã NV, nhiều người cách nhau dấu phẩy; all = nhật ký chung studio\n• Phần 3 (không bắt buộc): mã luật hoặc điểm KPI 20/100/300; nhật ký chung không trừ điểm\n• Ngày ghi nhận: hôm nay. Sửa hoặc xử lý tiếp trên web.";
+const TASK_TG_HELP="Cách giao việc:\n/task Huy, Cường | Dọn phòng chụp 2 | 18:00\n/nhacnho all | Mai họp 8h30\n\n• Người nhận: tên gọi, tên đầy đủ, mã NV hoặc all\n• Phần hạn (không bắt buộc): 18:00 hoặc 18h30 28/10\n• Thêm #anh nếu bắt buộc chụp ảnh khi báo xong (#anh5 = 5 ảnh)\n\nGhi Event log: /log Huy | Nội dung (gõ /log để xem hướng dẫn)";
+// Ghi Event log hôm nay; chỉ Admin, Quản lý và nhân viên được Admin cấp quyền ghi Event log. Tên trước, giống /task và /nhacnho
+// (chủ dự án yêu cầu 02/11/2026); gõ kiểu cũ nội dung | tên thì bot tự đổi lại:
+//   /log Huy | Quên checkout ca 2
+//   /log all | Họp rút kinh nghiệm cả studio        (nhật ký chung, không trừ điểm)
+//   /log Huy, Cường | Quên chấm ra ca 2 | CC-01     (phần 3: mã luật hoặc điểm 20/100/300)
+const LOG_TG_HELP="Cách ghi Event log (tên trước, giống /task):\n/log Huy | Quên checkout ca 2\n/log all | Họp rút kinh nghiệm\n/log Huy, Cường | Quên chấm ra ca 2 | CC-01\n\n• Phần 1: người liên quan — tên gọi, tên đầy đủ, mã NV, nhiều người cách nhau dấu phẩy; all = nhật ký chung studio\n• Phần 2: nội dung sự việc (từ 5 ký tự)\n• Phần 3 (không bắt buộc): mã luật hoặc điểm KPI 20/100/300. Luật thường tự tính theo số lần mắc lỗi đó trong tháng: lần 1 −20, lần 2 −100, lần 3 trở đi −300; luật nặng (từ 100 điểm) trừ đúng điểm của luật. Nhật ký chung không trừ điểm.\n• Ngày ghi nhận: hôm nay. Sửa hoặc xử lý tiếp trên web.";
 function log_telegram_command(App $a,Telegram $tg,array $m,string $args): bool {
  $chat=(string)$m['chat']['id'];$reply=fn(string $msg)=>$tg->call('sendMessage',['chat_id'=>$chat,'text'=>$msg,'reply_to_message_id'=>$m['message_id'],'disable_web_page_preview'=>true]);
  $previous=$a->user;
@@ -341,31 +353,35 @@ function log_telegram_command(App $a,Telegram $tg,array $m,string $args): bool {
   $a->user=$sender;
   if(!log_permissions($a)['can_record'])fail('Chỉ Admin, Quản lý và nhân viên được Admin cấp quyền mới được ghi Event log.');
   $parts=array_map('trim',explode('|',$args));
-  if(count($parts)<2||$parts[0]===''||$parts[1]==='')fail("Thiếu nội dung hoặc người liên quan.\n\n".LOG_TG_HELP);
-  if(count($parts)>3)fail('Dùng tối đa 3 phần: nội dung | người liên quan | luật hoặc điểm.');
-  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='makeup'");
+  if(count($parts)<2||$parts[0]===''||$parts[1]==='')fail("Thiếu người liên quan hoặc nội dung.\n\n".LOG_TG_HELP);
+  if(count($parts)>3)fail('Dùng tối đa 3 phần: người liên quan | nội dung | luật hoặc điểm.');
+  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive' AND role='employee'");
   $resolve=function(string $text)use($a,$people): array {
    $targets=array_values(array_filter(array_map('trim',preg_split('/\s*(?:,|;|\s+và\s+)\s*/u',$text))));
    $all=count($targets)===1&&in_array(task_fold(ltrim($targets[0],'@')),['all','tat ca','ca studio','moi nguoi','studio','chung'],true);
    $subjects=[];if(!$all)foreach($targets as $tk){$p=task_find_person($a,$people,$tk);$subjects[$p['id']]=$p;}
    return [$all,$subjects];
   };
-  // Gõ ngược thứ tự (tên | nội dung, giống /task) thì tự đổi lại (chủ dự án gặp 01/11/2026).
-  try{[$all,$subjects]=$resolve($parts[1]);}
-  catch(HttpError $e){try{[$all,$subjects]=$resolve($parts[0]);}catch(HttpError){throw $e;}[$parts[0],$parts[1]]=[$parts[1],$parts[0]];}
+  // Tên trước (giống /task). Gõ kiểu cũ nội dung | tên thì tự đổi lại.
+  try{[$all,$subjects]=$resolve($parts[0]);}
+  catch(HttpError $e){try{[$all,$subjects]=$resolve($parts[1]);}catch(HttpError){throw $e;}[$parts[0],$parts[1]]=[$parts[1],$parts[0]];}
+  $text=$parts[1];
   $extra=['deduction'=>0];$rule=null;$kpi=$parts[2]??'';
   if($kpi!==''){
    if(preg_match('/^\d+$/D',$kpi)){if(!in_array((int)$kpi,[0,20,100,300],true))fail('Điểm KPI cần là 20, 100 hoặc 300.');$extra=['deduction'=>(int)$kpi];}
    else{$rule=$a->one("SELECT id,code,name,points FROM {{studio_rules}} WHERE code=? AND status='active'",[strtoupper($kpi)]);if(!$rule)fail('Không tìm thấy luật "'.$kpi.'" đang áp dụng. Xem mã trong Luật Studio trên web.');$extra=['rule_id'=>$rule['id']];}
   }
-  $points=$rule?$rule['points']:$extra['deduction'];
-  if($all&&$points!==0)fail('Nhật ký chung studio (all) không trừ điểm. Ghi tên người liên quan để áp '.($rule?'luật '.$rule['code']:'điểm KPI').'.');
-  $day=local_day(now_ms());
+  // Luật thường: log_routes tự đếm số lần trong tháng cho từng người; luật nặng trừ đúng điểm của luật.
+  $fixed=$rule&&(int)$rule['points']>=LOG_FIXED_POINTS;
+  if($all&&($rule?$fixed:$extra['deduction']!==0))fail('Nhật ký chung studio (all) không trừ điểm. Ghi tên người liên quan để áp '.($rule?'luật '.$rule['code']:'điểm KPI').'.');
+  $day=local_day(now_ms());$lines=[];
   foreach($all?[null]:array_keys($subjects) as $uid){
-   $id=uuid_v4();log_routes($a,'/event-log',['id'=>$id,'user_id'=>$uid,'event_date'=>$day,'category'=>'other','description'=>$parts[0]]+$extra,'POST');
-   $a->run("UPDATE {{event_log_audit}} SET note=? WHERE event_log_id=? AND action='created'",['Ghi qua Telegram bởi người được cấp quyền chỉnh sửa Event log.',$id]);
+   $id=uuid_v4();log_routes($a,'/event-log',['id'=>$id,'user_id'=>$uid,'event_date'=>$day,'category'=>'other','description'=>$text]+$extra,'POST');
+   $row=$a->one('SELECT points,offense FROM {{event_log}} WHERE id=?',[$id]);$pts=-(int)$row['points'];$n=$row['offense']===null?null:(int)$row['offense'];
+   $a->run("UPDATE {{event_log_audit}} SET note=? WHERE event_log_id=? AND action='created'",['Ghi qua Telegram bởi người được cấp quyền chỉnh sửa Event log.'.log_points_note($pts,$n,$rule),$id]);
+   if($pts)$lines[]=($uid!==null&&count($subjects)>1?$subjects[$uid]['name'].': ':'').($n?'Lần '.$n.' trong tháng ('.LOG_TIER_NAMES[$n].') · ':'').'Trừ '.$pts.' điểm KPI';
   }
-  $reply('✅ Đã ghi Event log · '.implode('/',array_reverse(explode('-',$day)))."\n".($all?'Nhật ký chung studio':'Người liên quan: '.implode(', ',array_column($subjects,'name')))."\n«".(mb_strlen($parts[0])>300?mb_substr($parts[0],0,300).'…':$parts[0]).'»'.($rule?"\nLuật ".$rule['code'].' · '.$rule['name']:'').($points?"\nTrừ ".$points.' điểm KPI'.(count($subjects)>1?' mỗi người':''):'')."\nXem trên web: ".$a->config['app_url'].'/#eventlog');
+  $reply('✅ Đã ghi Event log · '.implode('/',array_reverse(explode('-',$day)))."\n".($all?'Nhật ký chung studio':'Người liên quan: '.implode(', ',array_column($subjects,'name')))."\n«".(mb_strlen($text)>300?mb_substr($text,0,300).'…':$text).'»'.($rule?"\nLuật ".$rule['code'].' · '.$rule['name'].($fixed?' (lỗi nặng, điểm cố định)':''):'').($lines?"\n".implode("\n",$lines):'')."\nXem trên web: ".$a->config['app_url'].'/#eventlog');
  }catch(HttpError $e){$reply('⚠️ '.$e->getMessage());}
  finally{$a->user=$previous;}
  return true;
@@ -416,7 +432,7 @@ function task_telegram_command(App $a,Telegram $tg,array $m): bool {
   $content=trim(preg_replace('/(^|\s)#anh\d{0,2}\b/iu','',$parts[1]));$dueText=trim(preg_replace('/(^|\s)#anh\d{0,2}\b/iu','',$parts[2]??''));
   if($content==='')fail('Thiếu nội dung.');
   $kind=$cmd[1]==='task'?'task':'notice';
-  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='makeup'");
+  $people=$a->all("SELECT id,name,employee_code FROM {{users}} WHERE archived=0 AND status!='inactive' AND role='employee'");
   $targets=array_values(array_filter(array_map('trim',preg_split('/\s*(?:,|;|\s+và\s+)\s*/u',$parts[0]))));
   $all=count($targets)===1&&in_array(task_fold(ltrim($targets[0],'@')),['all','tat ca','ca studio','moi nguoi'],true);
   $ids=[];if(!$all)foreach($targets as $tk)$ids[]=task_find_person($a,$people,$tk)['id'];

@@ -1,3 +1,4 @@
+import {time24,bindTime24} from './time24.js?v=20261102-24h1';
 // Biên bản họp (chủ dự án yêu cầu 02/11/2026), tab Studio → Biên bản họp.
 // Admin, Quản lý và nhân viên được Admin tick "Sửa Biên bản họp" lập biên bản. Bấm Xác nhận: Telegram báo người có mặt;
 // mỗi người có mặt bấm "Đã đọc và xác nhận hiểu rõ nội dung" (lưu giờ bấm). Mọi người xác nhận xong thì tự khóa; đã khóa chỉ Admin sửa.
@@ -62,7 +63,7 @@ ${confirmBox}<p class="rule-meta">Lập bởi ${esc(r.creator_name||'—')} · $
   const draft=!r||r.status==='draft',list=people.map(p=>({user_id:p.id,name:p.name,present:r?!!r.attendees.find(x=>x.user_id===p.id&&x.present):false}));
   if(r)for(const x of r.attendees)if(!list.some(p=>p.user_id===x.user_id))list.push({user_id:x.user_id,name:x.name,present:x.present});
   const d=dialog(r?(draft?'Sửa nháp biên bản':'Sửa biên bản'):'Lập biên bản họp',`<form class="meeting-form" novalidate>
-<fieldset><legend><b>1</b>Thông tin chung</legend><label>Tên / Chủ đề cuộc họp<input name="title" maxlength="200" required value="${esc(r?.title)}" placeholder="VD: Họp rút kinh nghiệm tháng 11"></label><div class="meeting-time-row"><label>Ngày họp<input type="date" name="meeting_day" required value="${r?.meeting_day||today()}"></label><label>Bắt đầu<input type="time" name="start" required value="${r?.start||nowHm()}"></label><label>Kết thúc<input type="time" name="end" required value="${r?.end||''}"></label></div></fieldset>
+<fieldset><legend><b>1</b>Thông tin chung</legend><label>Tên / Chủ đề cuộc họp<input name="title" maxlength="200" required value="${esc(r?.title)}" placeholder="VD: Họp rút kinh nghiệm tháng 11"></label><div class="meeting-time-row"><label>Ngày họp<input type="date" name="meeting_day" required value="${r?.meeting_day||today()}"></label><label>Bắt đầu${time24('start',r?.start||nowHm(),{from:6,to:23,label:'Bắt đầu'})}</label><label>Kết thúc${time24('end',r?.end||'',{from:6,to:23,label:'Kết thúc'})}</label></div></fieldset>
 <fieldset><legend><b>2</b>Thành phần tham gia</legend><p class="hint">Tick người <strong>có mặt</strong>; không tick là vắng mặt. Người có mặt sẽ nhận Telegram và phải bấm xác nhận.</p><div class="meeting-pick-tools"><span id="meeting-pick-count"></span><button type="button" class="text-button" data-pick="all">Chọn tất cả</button><button type="button" class="text-button" data-pick="none">Bỏ chọn</button></div><div class="meeting-pick">${list.map(p=>`<label class="meeting-pick-item"><input type="checkbox" name="present" value="${p.user_id}" ${p.present?'checked':''}><span>${esc(p.name)}</span><small></small></label>`).join('')}</div></fieldset>
 <fieldset><legend><b>3</b>Nội dung biên bản</legend><label>Mục đích / Vấn đề đưa ra<textarea name="purpose" rows="3" maxlength="5000" placeholder="Nêu rõ lý do họp">${esc(r?.purpose)}</textarea></label><label>Ý kiến & Góp ý của nhân viên<textarea name="opinions" rows="4" maxlength="10000" placeholder="Ghi lại ý kiến từng người để không ai nói là chưa được nêu ý kiến. VD: Huy: …">${esc(r?.opinions)}</textarea></label><div class="meeting-actions-edit"><span class="meeting-label">Phương án xử lý & Phân công</span><p class="hint">Chốt rõ giải pháp, người phụ trách và deadline.</p><div id="meeting-action-rows">${(r?.actions.length?r.actions:[{}]).map(actionRow).join('')}</div><button type="button" class="secondary" data-add-action>＋ Thêm phương án</button></div><label>Kết luận & Quyết định cuối cùng<textarea name="conclusion" rows="3" maxlength="5000" placeholder="Chốt lại kết quả buổi họp">${esc(r?.conclusion)}</textarea></label></fieldset>
 ${!draft?`<p class="meeting-note">Sửa nội dung thì mọi người có mặt phải đọc lại và xác nhận bản mới (Telegram báo lại).${r.status==='locked'?' Biên bản đang khóa: chỉ Admin sửa được.':''}</p><label>Ghi chú thay đổi (không bắt buộc)<input name="note" maxlength="500"></label>`:''}
@@ -73,6 +74,7 @@ ${!draft?`<p class="meeting-note">Sửa nội dung thì mọi người có mặt
   for(const b of d.querySelectorAll('[data-pick]'))b.onclick=()=>{for(const x of f.querySelectorAll('[name=present]'))x.checked=b.dataset.pick==='all';count();};
   const bindRemove=()=>{for(const b of rowsBox.querySelectorAll('.meeting-action-remove'))b.onclick=()=>{b.closest('.meeting-action-row').remove();if(!rowsBox.children.length)rowsBox.insertAdjacentHTML('beforeend',actionRow());bindRemove();};};bindRemove();
   d.querySelector('[data-add-action]').onclick=()=>{rowsBox.insertAdjacentHTML('beforeend',actionRow());bindRemove();rowsBox.lastElementChild.querySelector('textarea').focus();};
+  bindTime24(f);
   f.onsubmit=async e=>{e.preventDefault();const kind=e.submitter?.value||'save',err=f.querySelector('.error'),buttons=[...f.querySelectorAll('[type=submit]')];err.textContent='';
    const v=n=>f.elements.namedItem(n)?.value??'';
    const body={title:v('title'),meeting_day:v('meeting_day'),start:v('start'),end:v('end'),purpose:v('purpose'),opinions:v('opinions'),conclusion:v('conclusion'),
@@ -80,7 +82,8 @@ ${!draft?`<p class="meeting-note">Sửa nội dung thì mọi người có mặt
     actions:[...rowsBox.querySelectorAll('.meeting-action-row')].map(x=>({text:x.querySelector('[name=a_text]').value,user_id:x.querySelector('[name=a_user]').value?Number(x.querySelector('[name=a_user]').value):null,due:x.querySelector('[name=a_due]').value})).filter(x=>x.text.trim()||x.user_id||x.due),
     publish:kind==='publish'};
    if(!body.title.trim())return err.textContent='Nhập tên / chủ đề cuộc họp.';
-   if(!body.end)return err.textContent='Nhập giờ kết thúc cuộc họp.';
+   if(!body.start)return err.textContent='Chọn giờ bắt đầu cuộc họp.';
+   if(!body.end)return err.textContent='Chọn giờ kết thúc cuộc họp.';
    if(kind!=='draft'){if(!body.attendees.some(x=>x.present))return err.textContent='Tick ít nhất 1 người có mặt.';if(!body.purpose.trim())return err.textContent='Nhập Mục đích / Vấn đề đưa ra.';if(!body.conclusion.trim())return err.textContent='Nhập Kết luận & Quyết định cuối cùng.';}
    if(r){body.version=r.version;if(!draft)body.note=v('note');}
    for(const b of buttons)b.disabled=true;

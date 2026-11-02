@@ -12,7 +12,8 @@ function meeting_permissions(App $a): array {
  $granted=$role==='employee'&&(bool)$a->one('SELECT user_id FROM {{meeting_editors}} WHERE user_id=?',[$a->user['id']]);
  return ['can_edit'=>$full||$granted,'is_admin'=>$role==='admin','can_grant'=>$role==='admin'];
 }
-function meeting_people(App $a): array {return $a->all("SELECT id,name,role FROM {{users}} WHERE archived=0 AND status!='inactive' AND role IN ('admin','manager','employee') ORDER BY name");}
+// Thành phần tham gia, người phụ trách: chỉ tài khoản Nhân viên (chủ dự án yêu cầu 02/11/2026, Admin/Quản lý không ghi tên vào).
+function meeting_people(App $a): array {return $a->all("SELECT id,name,role FROM {{users}} WHERE archived=0 AND status!='inactive' AND role='employee' ORDER BY name");}
 function meeting_minutes(mixed $v,string $label): int {if(!is_string($v)||!preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/D',$v,$m))fail($label.' không hợp lệ (giờ:phút).');return (int)$m[1]*60+(int)$m[2];}
 function meeting_hm(int $m): string {return sprintf('%02d:%02d',intdiv($m,60),$m%60);}
 function meeting_row(App $a,mixed $id): array {$row=$a->one("SELECT * FROM {{meetings}} WHERE id=? AND status!='deleted'",[entry_uuid($id)]);if(!$row)fail('Không tìm thấy biên bản hoặc biên bản đã bị xóa.',404);return $row;}

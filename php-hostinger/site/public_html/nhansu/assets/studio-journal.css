@@ -103,3 +103,16 @@
 /* Sửa lịch → Sau khi chụp: Phụ thu, Tip (chủ dự án yêu cầu 01/11/2026). */
 .booking-money{display:grid;grid-template-columns:1fr 1fr;gap:10px}.booking-money label{margin:0!important;font-size:11px}.booking-money input{width:100%;min-height:44px;font-size:16px}
 .booking-create-step .booking-money+.hint{margin:6px 0 0;font-size:12px}
+/* Giờ lẻ khác ở Thêm lịch: to, dễ bấm trên điện thoại (chủ dự án yêu cầu 02/11/2026) */
+.booking-slot-other summary{display:flex;align-items:center;gap:8px;min-height:50px;padding:10px 14px;border:1px dashed #8fb0d9;border-radius:12px;background:#f5f9ff;font-size:16px;font-weight:600;color:#1d4f9c;list-style:none}
+.booking-slot-other summary::-webkit-details-marker{display:none}
+.booking-slot-other summary::after{content:'▾';margin-left:auto;font-size:15px}
+.booking-slot-other[open]>summary{margin-bottom:10px;border-style:solid}
+.booking-slot-other[open]>summary::after{content:'▴'}
+.booking-slot-other label{font-size:15px;font-weight:600}
+.booking-slot-other .time24 select{min-height:58px;font-size:24px;font-weight:700;border-radius:12px}
+.booking-slot-other .time24 b{font-size:26px}
+/* Hai lịch cùng giờ trên Sheet: viền đỏ + nhãn Trùng giờ để sửa Sheet */
+.booking-card.dup{outline:2px solid #d92d20;outline-offset:-2px}
+.booking-card-dup{display:block;margin-top:3px;font-size:11px;font-weight:700;color:#b42318}
+.booking-slot-other label{color:#33445c}

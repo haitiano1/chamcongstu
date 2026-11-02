@@ -239,6 +239,24 @@ function import_bookings(App $a,array $b,string $sheet,?int $actor): array {
  $a->meta('sheet_sync_last',json_encode(['time'=>now_ms(),'sheet'=>$sheet,'tab'=>$tab,'received'=>count($rows),'created'=>$created,'updated'=>$changed],JSON_THROW_ON_ERROR));
  return ['received'=>count($rows),'created'=>$created,'updated'=>$changed];
 }
+// Không hiện lịch trùng (chủ dự án yêu cầu 02/11/2026): dòng bị xóa trên Sheet, hoặc cắt dán mất ô mã _AG_BOOKING_ID rồi được cấp mã mới,
+// trước đây vẫn để lại lịch cũ trên web nên hiện 2 thẻ. Script (bản 02/11/2026) gửi kèm mã mọi dòng của các tab vừa gửi đủ;
+// lịch của các tab đó không còn mã trên Sheet thì ẩn (status missing, không tính công / hoa hồng). Dòng có mã đó xuất hiện lại thì tự hiện lại.
+// Lịch đang chờ ghi xuống Sheet (thêm / sửa / hủy / xóa trên web chưa xong) không bị ẩn. Script cũ không gửi danh sách thì giữ như trước.
+function booking_hide_missing(App $a,string $sheet,mixed $live): int {
+ if(!is_array($live)||!is_array($live['tabs']??null)||!array_is_list($live['tabs'])||!is_array($live['ids']??null)||!array_is_list($live['ids'])||count($live['tabs'])>24||count($live['ids'])>40000)fail('Danh sách lịch trên Sheet không hợp lệ.');
+ $tabs=[];foreach($live['tabs'] as $t)$tabs[]=input_text($t,'Tên tab',1,150);if(!$tabs)return 0;
+ $ids=[];foreach($live['ids'] as $id){if(!is_string($id)||!preg_match('/^[a-f0-9-]{36}$/iD',$id))fail('Mã lịch trên Sheet không hợp lệ.');$ids[strtolower($id)]=true;}
+ $rows=$a->all("SELECT b.id,b.shoot_day,b.minutes,b.customer_name,b.status,b.source_tab FROM {{shoot_bookings}} b WHERE b.source_sheet=? AND b.source_tab IN (".implode(',',array_fill(0,count($tabs),'?')).") AND b.status IN ('active','cancelled') AND NOT EXISTS(SELECT 1 FROM {{booking_sheet_queue}} q WHERE q.booking_id=b.id AND q.status<>'done')",[$sheet,...$tabs]);
+ $hidden=0;
+ foreach($rows as $r){if(isset($ids[strtolower($r['id'])]))continue;
+  freeze_existing_booking_day($a,$r['shoot_day']);
+  if(!$a->run("UPDATE {{shoot_bookings}} SET status='missing',updated_at=? WHERE id=? AND status IN ('active','cancelled')",[now_ms(),$r['id']])->rowCount())continue;
+  $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$r['id'],null,'missing',json_encode(['status'=>$r['status']],JSON_THROW_ON_ERROR),json_encode(['status'=>'missing','tab'=>$r['source_tab'],'note'=>'Không còn dòng trên Sheet'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),now_ms()]);
+  $hidden++;}
+ if($hidden)$a->meta('sheet_sync_hidden',json_encode(['time'=>now_ms(),'count'=>$hidden],JSON_THROW_ON_ERROR));
+ return $hidden;
+}
 function sheet_receiver(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/sheet-sync/receive')return null;if($method!=='POST')fail('Chỉ nhận POST.',405);
  $file=$a->storage.'/sheet-sync-key';if(!is_file($file))fail('Kết nối Sheet chưa bật.',403);$key=trim(file_get_contents($file));
@@ -248,13 +266,13 @@ function sheet_receiver(App $a,string $path,array $b,string $method): ?array {
  $sheet=$a->meta('sheet_sync_id');if(!$sheet||($b['sheet_id']??null)!==$sheet)fail('Sheet không khớp kết nối đã cấu hình.',403);
  if($a->one('SELECT nonce FROM {{sheet_sync_nonces}} WHERE nonce=?',[$nonce]))fail('Yêu cầu đã được nhận, không xử lý trùng.',409);
  $a->run('DELETE FROM {{sheet_sync_nonces}} WHERE created_at<?',[now_ms()-600000]);$a->run('INSERT INTO {{sheet_sync_nonces}} VALUES(?,?)',[$nonce,now_ms()]);
- if(($b['poll']??null)===true)return [200,booking_queue_poll($a)];
+ if(($b['poll']??null)===true){$hidden=array_key_exists('live',$b)?booking_hide_missing($a,$sheet,$b['live']):0;return [200,booking_queue_poll($a)+['hidden'=>$hidden]];}
  if(array_key_exists('ack',$b))return [200,booking_queue_ack($a,is_array($b['ack'])?$b['ack']:[],$sheet)];
  return [200,import_bookings($a,$b,$sheet,null)];
 }
 function attendance_issues(App $a,string $month,?int $person=null): array {
  valid_month($month);$first=$month.'-01';$last=date('Y-m-t',strtotime($first));$end=min($last,local_day(now_ms()));$now=now_ms();$issues=[];
- $people=$a->all("SELECT id,name,role FROM {{users}} WHERE archived=0 AND role!='makeup'".($person!==null?' AND id=?':''),$person!==null?[$person]:[]);
+ $people=$a->all("SELECT id,name,role FROM {{users}} WHERE archived=0 AND role='employee'".($person!==null?' AND id=?':''),$person!==null?[$person]:[]);
  foreach($people as $p){$events=$a->events($p['id']);$lates=late_checkins($a,(int)$p['id'],$month,$events);
   for($t=day_time($first);$t<=day_time($end);$t+=86400000){$day=local_day($t);
    foreach(['day_first','day_second'] as $shift){$e=expected_shift($a,$p['id'],$day,$shift);if(!$e||$e['source']==='default')continue;$expected=$e['expected_at'];$w=bounds($day,$shift);
@@ -333,7 +351,7 @@ function late_auto_log(App $a,array $l): ?string {
 // Ghi nhận các lượt đi muộn hôm nay, mỗi lượt một lần; từ lần 2 trong tháng tự ghi Event log (trạng thái Đã xác nhận nên trừ KPI ngay).
 function late_checkins_record(App $a,int $now): void {
  $day=local_day($now);$month=substr($day,0,7);
- foreach($a->all("SELECT DISTINCT e.user_id FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.type='in' AND e.shift IN ('day_first','day_second') AND u.archived=0",[$day]) as $u)
+ foreach($a->all("SELECT DISTINCT e.user_id FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.type='in' AND e.shift IN ('day_first','day_second') AND u.archived=0 AND u.role='employee'",[$day]) as $u)
   foreach(late_checkins($a,(int)$u['user_id'],$month) as $l){if($l['day']!==$day||$l['processed']||$l['excused'])continue;
    $a->tx(function()use($a,$l){
     if(!$a->run('INSERT IGNORE INTO {{late_checkins}}(user_id,day,shift,expected_at,checkin_at,late_minutes,ordinal,points,event_log_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',[$l['user_id'],$l['day'],$l['shift'],$l['expected_at'],$l['checkin_at'],$l['late_minutes'],$l['ordinal'],$l['points'],$l['event_log_id'],now_ms()])->rowCount())return;
@@ -383,7 +401,7 @@ function attendance_alert_tick(App $a,?int $clock=null,?Telegram $tg=null): void
  if(!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;
  $now=$clock??now_ms();$day=local_day($now);
  $managers=$a->all("SELECT u.id,l.chat_id FROM {{users}} u JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' ORDER BY u.id");if(!$managers)return;
- $by=[];foreach($a->all("SELECT e.id,e.user_id,e.type,e.time,e.shift,e.source,u.name FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.shift IN ('day_first','day_second') AND u.archived=0 ORDER BY e.user_id,e.time,e.id",[$day]) as $e)$by[(int)$e['user_id']][$e['shift']][]=$e;
+ $by=[];foreach($a->all("SELECT e.id,e.user_id,e.type,e.time,e.shift,e.source,u.name FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.shift IN ('day_first','day_second') AND u.archived=0 AND u.role='employee' ORDER BY e.user_id,e.time,e.id",[$day]) as $e)$by[(int)$e['user_id']][$e['shift']][]=$e;
  $sent=0;$label=late_day_label($day);
  foreach($by as $uid=>$shifts){$rows=null;
   foreach($shifts as $shift=>$list){$name=$list[0]['name'];$sname=$shift==='day_first'?'Ca 1':'Ca 2';
@@ -422,7 +440,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $a->requireManager();$key=input_text($b['source_key']??null,'Mã sự việc',5,150);$month=valid_month($b['month']??null);$issue=null;
   foreach(attendance_issues($a,$month) as $r)if($r['source_key']===$key){$issue=$r;break;}if(!$issue)fail('Sự cố không còn trong dữ liệu đối soát. Tải lại.',409);
   if($issue['event_log_id'])return [200,['id'=>$issue['event_log_id'],'already_saved'=>true]];
-  $note=input_text($b['description']??null,'Nội dung xác nhận',5,2000);$id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$issue['id'],'event_date'=>$issue['day'],'category'=>$issue['kind']==='late'?'late':'missing_punch','description'=>$note,'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null],'POST');
+  $note=input_text($b['description']??null,'Nội dung xác nhận',5,2000);$id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$issue['id'],'event_date'=>$issue['day'],'category'=>$issue['kind']==='late'?'late':'missing_punch','description'=>$note,'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null,'offense'=>null],'POST');
   $a->run('INSERT INTO {{attendance_issue_links}} VALUES(?,?)',[$key,$id]);return $result;
  }
  if($path==='/sheet-sync/status'&&$method==='GET'){$a->requireManager();$last=json_decode($a->meta('sheet_sync_last')??'null',true);$aliases=$a->all('SELECT m.*,u.name FROM {{booking_aliases}} m JOIN {{users}} u ON u.id=m.user_id ORDER BY m.alias_label');return [200,['sheet_id'=>$a->meta('sheet_sync_id')??'1JCyjUuLzCJy05yRvjWMKEGmwbvCEAiSjnyi1cNcuZow','configured'=>is_file($a->storage.'/sheet-sync-key'),'last_sync'=>$last,'aliases'=>$aliases,'people'=>finance_people($a),'can_configure'=>$a->user['role']==='admin','creators'=>$a->user['role']==='admin'?array_map('intval',array_column($a->all('SELECT user_id FROM {{booking_creators}}'),'user_id')):[]]];}
@@ -431,7 +449,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $key=bin2hex(random_bytes(32));$file=$a->storage.'/sheet-sync-key';if(file_put_contents($file,$key,LOCK_EX)===false)fail('Không lưu được khóa kết nối.',500);chmod($file,0600);$a->meta('sheet_sync_id',$sheet);$a->audit($a->user['id'],'configure_sheet_sync');return [200,['key'=>$key,'sheet_id'=>$sheet,'endpoint'=>$a->config['app_url'].'/api.php?route=%2Fsheet-sync%2Freceive']];
  }
  if($path==='/booking-aliases'&&$method==='POST'){
-  $a->requireManager();$label=input_text($b['alias']??null,'Tên trên Sheet',1,150);$key=alias_key($label);if(!is_int($b['user_id']??null))fail('Chọn nhân viên.');$a->target($b['user_id']);
+  $a->requireManager();$label=input_text($b['alias']??null,'Tên trên Sheet',1,150);$key=alias_key($label);if(!is_int($b['user_id']??null))fail('Chọn nhân viên.');if($a->target($b['user_id'])['role']!=='employee')fail('Chỉ ghép tên thợ với tài khoản Nhân viên.');
   foreach($a->all("SELECT DISTINCT shoot_day FROM {{shoot_bookings}} WHERE status='active'") as $d)freeze_existing_booking_day($a,$d['shoot_day']);
   $a->run('INSERT INTO {{booking_aliases}} VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE alias_label=VALUES(alias_label),user_id=VALUES(user_id),updated_by=VALUES(updated_by),updated_at=VALUES(updated_at)',[$key,$label,$b['user_id'],$a->user['id'],now_ms()]);
   foreach($a->all('SELECT * FROM {{shoot_bookings}}') as $row)relink_booking($a,$row);
@@ -531,12 +549,12 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  }
  if($path==='/bookings/summary'&&$method==='GET'){
   $today=local_day(now_ms());$minute=(int)date('G')*60+(int)date('i');$person=booking_view_person($a);
-  $where=" WHERE b.status!='deleted'".($person!==null?' AND EXISTS(SELECT 1 FROM {{booking_staff}} own WHERE own.booking_id=b.id AND own.user_id=?)':'');
+  $where=" WHERE b.status IN ('active','cancelled')".($person!==null?' AND EXISTS(SELECT 1 FROM {{booking_staff}} own WHERE own.booking_id=b.id AND own.user_id=?)':'');
   $summary=$a->one("SELECT COALESCE(SUM(b.status='active'),0) active,COALESCE(SUM(b.status='active' AND b.shoot_day=?),0) today,COALESCE(SUM(b.status='active' AND (b.shoot_day>? OR (b.shoot_day=? AND b.minutes>=?))),0) upcoming,COALESCE(SUM(b.status='active' AND NOT EXISTS(SELECT 1 FROM {{booking_staff}} assigned WHERE assigned.booking_id=b.id)),0) unassigned,COALESCE(SUM(b.status='cancelled'),0) cancelled FROM {{shoot_bookings}} b".$where,[$today,$today,$today,$minute,...($person!==null?[$person]:[])]);
   foreach($summary as &$value)$value=(int)$value;unset($value);return [200,$summary+['day'=>$today,'scope'=>$person!==null?'my_bookings':'all_synced_bookings']];
  }
  if($path==='/bookings'&&$method==='GET'){
-  [$start,$end]=finance_range();$where="b.status!='deleted' AND b.shoot_day>=? AND b.shoot_day<=?";$params=[$start,$end];
+  [$start,$end]=finance_range();$where="b.status IN ('active','cancelled') AND b.shoot_day>=? AND b.shoot_day<=?";$params=[$start,$end];
   $person=booking_view_person($a);if($person!==null){$where.=' AND EXISTS(SELECT 1 FROM {{booking_staff}} s WHERE s.booking_id=b.id AND s.user_id=?)';$params[]=$person;}
   $page=finance_page();$total=(int)$a->scalar('SELECT COUNT(*) FROM {{shoot_bookings}} b WHERE '.$where,$params);
   // Mọi role xem đủ thông tin Sheet trong popup; chỉ Quản lý/Admin được xóa lịch.

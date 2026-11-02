@@ -86,3 +86,7 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 @media(max-width:640px){.tg-invite{flex-wrap:wrap;padding:14px}.tg-invite-text{flex-basis:calc(100% - 56px)}.tg-invite-actions{flex-direction:row;align-items:center;width:100%;gap:8px}.tg-invite-go{flex:1}}
 .resume-button{width:100%;min-height:48px;margin-top:10px;border-color:#9fc3a8;background:#f2fbf4;color:#1f6b3a;font-weight:700}.resume-hint{font-size:12px;color:#5b6b7f;margin:6px 0 0;line-height:1.5}
 .early-out-list{text-align:left;margin:10px 0;padding-left:20px;line-height:1.7}
+/* Ô giờ 24h (assets/time24.js, chủ dự án yêu cầu 02/11/2026): 2 ô chọn Giờ : Phút thay ô giờ của trình duyệt (máy để 12 giờ hiện SA/CH). */
+.time24{display:flex;align-items:center;gap:8px;width:100%;margin-top:4px}
+.time24 select{flex:1 1 0;min-width:0;width:auto;min-height:44px;padding:6px 8px;font-size:17px;font-variant-numeric:tabular-nums;text-align:center;text-align-last:center}
+.time24 b{flex:none;font-size:20px;font-weight:700;color:#33445c}
