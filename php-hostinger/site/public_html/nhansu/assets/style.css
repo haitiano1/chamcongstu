@@ -110,3 +110,24 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 .bonus-note{grid-column:3/5}.bonus-error{grid-column:1/-1;margin:0;font-size:13px}.bonus-error:empty{display:none}.bonus-entry-form>button{grid-column:1/-1;justify-self:start;width:auto;min-height:46px;padding:11px 28px;margin:0}
 .bonus-entry-card h3{font-size:14px;margin:18px 0 6px;color:#33435a}.bonus-people{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.bonus-person{border:1px solid #e3eaf4;border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}.bonus-person strong{font-size:14px;font-weight:600;color:#14233a}.bonus-person span{font-weight:700;color:#0f6b3d;white-space:nowrap}.bonus-person small{grid-column:1/-1;color:#7c8ca2;font-size:12px}.bonus-history{margin-top:14px}.bonus-history summary{font-weight:600;cursor:pointer}
 @media(max-width:800px){.bonus-entry-form{grid-template-columns:1fr 1fr}.bonus-sign,.bonus-note{grid-column:1/-1}.bonus-entry-form>button{justify-self:stretch;width:100%}.bonus-entry-form input:not([type=radio]),.bonus-entry-form select{font-size:16px;min-height:46px}.bonus-card .section-head h2,.bonus-entry-card .section-head h2{font-size:17px}}
+/* Ca làm không có khách + Tiền khách Tips trên phiếu lương / phiếu thưởng (02/11/2026) */
+.slip-note{grid-column:1/-1;display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.55;color:#5d6f88;padding:0 0 4px;min-width:0;overflow-wrap:anywhere}
+.slip-note details summary{cursor:pointer;color:#2459a8;min-height:24px}
+.slip-note details span{display:block;margin-top:4px;color:#7c8ca2}
+.slip-link{border:0;background:none;padding:0;margin:0;font:inherit;color:#1f5fbf;text-align:left;text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer;min-height:32px}
+.slip-link::after{content:' ›';text-decoration:none}
+.tip-dialog{width:min(640px,calc(100% - 28px))}
+.tip-dialog h3{font-size:15px;margin:18px 0 4px}
+.tip-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 6px}
+.tip-summary>div{border:1px solid #e3e9f2;border-radius:12px;padding:12px 14px;background:#fafbfd;min-width:0}
+.tip-summary span,.tip-summary small{display:block;font-size:12px;color:#64748b}
+.tip-summary strong{display:block;font-size:20px;color:#0f6b3d;margin:4px 0}
+.tip-list{list-style:none;margin:6px 0 0;padding:0}
+.tip-list li{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-bottom:1px dashed #e6ecf4}
+.tip-list li:last-child{border-bottom:0}
+.tip-when b,.tip-who strong{display:block;font-size:14px;font-weight:600;color:#14233a}
+.tip-when small,.tip-who small{display:block;font-size:12px;color:#7c8ca2;margin-top:2px;overflow-wrap:anywhere}
+.tip-amount{font-weight:700;color:#0f6b3d;white-space:nowrap}
+.tip-dialog .bonus-entries li{grid-template-columns:92px minmax(0,1fr) auto}
+.tip-dialog .dialog-actions .secondary{min-height:44px}
+@media(max-width:800px){.tip-summary strong{font-size:18px}.tip-list li{grid-template-columns:84px minmax(0,1fr) auto;gap:8px}.tip-dialog .bonus-entries li{grid-template-columns:minmax(0,1fr) auto}.tip-dialog .bonus-entries .bonus-entry-day{grid-column:1/-1}.tip-dialog .dialog-actions .secondary{width:100%}}

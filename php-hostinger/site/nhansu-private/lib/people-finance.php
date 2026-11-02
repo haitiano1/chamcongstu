@@ -97,10 +97,40 @@ function booking_month_commissions(App $a,string $month,int $now): array {
 }
 // Các khoản thưởng tháng Admin/Quản lý nhập trong phiếu lương (chủ dự án yêu cầu 31/10/2026; sau này nối thêm từ Google Sheet, cột source).
 // ot_rate là đơn giá mỗi lượt OT: thưởng OT = số lượt OT hoàn tất × đơn giá. Các khoản còn lại là số tiền.
-const PAYROLL_BONUS_KINDS=['ot_rate'=>'Đơn giá OT','tips'=>'Tiền khách Tips','praise'=>'Nóng / Khen','referral'=>'Giới thiệu khách','outdoor'=>'Ngoại cảnh','full_day'=>'Full khách ngày','retouch'=>'Chỉnh ảnh','no_customer'=>'Ca làm không có khách','meal'=>'Ăn uống'];
+// Khoản tự tính, khóa không sửa tay từ PROGRESS_BONUS_FROM (chủ dự án chốt 02/11/2026, "để nó set cứng"): Tiền khách Tips (Tip tháng chia đều),
+// Ngoại cảnh (150k/lịch có chấm công), Ca làm không có khách (số ca × lương 1/2 ngày), Trực Fanpage (2.000.000đ/tháng).
+const PAYROLL_AUTO_KINDS=['tips','outdoor','no_customer','fanpage'];
+const PAYROLL_AUTO_WHY=['tips'=>'tự chia từ Tip của lịch khách','outdoor'=>'tự tính từ lịch ngoại cảnh có chấm công','no_customer'=>'tự tính: số ca × lương 1/2 ngày','fanpage'=>'cố định 2.000.000đ/tháng'];
+// Nhóm thưởng (chủ dự án chốt 02/11/2026): Thợ chụp (Huy, Cường) có mọi khoản thưởng; Trực Fanpage (Tín) chỉ có Chuyên cần,
+// Ca làm không có khách và Thưởng trực Fanpage 2.000.000đ (không Tips, Ngoại cảnh, Chỉnh ảnh, Ăn uống, OT, hoa hồng khách…).
+// Chọn trong hồ sơ nhân viên (bảng payroll_profiles, mặc định Thợ chụp); lần đầu tự đặt Tín là Trực Fanpage.
+const PAYROLL_PROFILES=['photo'=>'Thợ chụp','fanpage'=>'Trực Fanpage'];
+const FANPAGE_BONUS_VND=2000000;
+function profile_kinds(string $profile): array {return $profile==='fanpage'?['no_customer','fanpage']:array_values(array_diff(array_keys(array_slice(PAYROLL_BONUS_KINDS,1,null,true)),['fanpage']));}
+function payroll_profiles_seed(App $a): void {
+ if(!function_exists('task_fold')||$a->meta('payroll_profiles_seeded'))return;$a->meta('payroll_profiles_seeded','1');
+ $admin=$a->scalar("SELECT id FROM {{users}} WHERE role='admin' AND archived=0 ORDER BY id LIMIT 1");if(!$admin)return;
+ $hits=array_values(array_filter(finance_people($a),fn($p)=>(explode(' ',task_fold($p['name']))[substr_count(task_fold($p['name']),' ')]??'')==='tin'));
+ if(count($hits)===1)$a->run("INSERT IGNORE INTO {{payroll_profiles}} VALUES(?,'fanpage',?,?)",[$hits[0]['id'],$admin,now_ms()]);
+}
+function payroll_profiles(App $a): array {payroll_profiles_seed($a);$out=[];foreach($a->all('SELECT user_id,profile FROM {{payroll_profiles}}') as $r)$out[(int)$r['user_id']]=$r['profile'];return $out;}
+function payroll_profile(App $a,int $user): string {return payroll_profiles($a)[$user]??'photo';}
+function payroll_profile_save(App $a,int $user,string $profile): void {
+ $old=(string)($a->scalar('SELECT profile FROM {{payroll_profiles}} WHERE user_id=?',[$user])?:'photo');if($old===$profile)return;
+ $a->run('INSERT INTO {{payroll_profiles}} VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE profile=VALUES(profile),updated_by=VALUES(updated_by),updated_at=VALUES(updated_at)',[$user,$profile,$a->user['id'],now_ms()]);$a->audit($user,'bonus_profile:'.$old.'>'.$profile);
+}
+// Chỉnh ảnh (chủ dự án yêu cầu 02/11/2026): cuối tháng nhập số ảnh đã chỉnh trên phiếu lương, tự nhân 2.000đ/ảnh thành khoản Chỉnh ảnh.
+// Số ảnh lưu ở payroll_bonuses kind retouch_count (là số ảnh, không phải tiền, như ot_rate là đơn giá).
+const RETOUCH_PHOTO_VND=2000;
+const PAYROLL_COUNT_KINDS=['retouch_count'=>'Số ảnh chỉnh'];
+// Ăn uống (chủ dự án yêu cầu 02/11/2026): mặc định 300.000đ/tháng cho mỗi Nhân viên, đi ăn thì Trừ bớt (Nhập thưởng hoặc sửa trên phiếu lương).
+// payroll_bonuses kind meal lưu phần cộng/trừ so với mức mặc định (có thể âm); tổng nhân viên thấy = mặc định + phần đó, không dưới 0.
+const MEAL_DEFAULT_VND=300000;
+function bonus_base(string $kind,string $month): int {return $kind==='meal'&&$month>=PROGRESS_BONUS_FROM?MEAL_DEFAULT_VND:0;}
+const PAYROLL_BONUS_KINDS=['ot_rate'=>'Đơn giá OT','tips'=>'Tiền khách Tips','praise'=>'Nóng / Khen','referral'=>'Giới thiệu khách','outdoor'=>'Ngoại cảnh','full_day'=>'Full khách ngày','retouch'=>'Chỉnh ảnh','no_customer'=>'Ca làm không có khách','meal'=>'Ăn uống','fanpage'=>'Trực Fanpage'];
 function payroll_bonuses(App $a,string $month): array {
  $out=[];foreach($a->all('SELECT b.user_id,b.kind,b.amount,b.updated_at,u.name FROM {{payroll_bonuses}} b LEFT JOIN {{users}} u ON u.id=b.updated_by WHERE b.month=?',[$month]) as $r){
-  $id=(int)$r['user_id'];if(!isset(PAYROLL_BONUS_KINDS[$r['kind']]))continue;$out[$id]['items'][$r['kind']]=(int)$r['amount'];
+  $id=(int)$r['user_id'];if(!isset(PAYROLL_BONUS_KINDS[$r['kind']])&&!isset(PAYROLL_COUNT_KINDS[$r['kind']]))continue;$out[$id]['items'][$r['kind']]=(int)$r['amount'];
   if((int)$r['updated_at']>($out[$id]['at']??0))$out[$id]=['at'=>(int)$r['updated_at'],'by'=>(string)$r['name']]+$out[$id];}
  return $out;
 }
@@ -131,8 +161,28 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
   $entries=$a->all('SELECT e.id,e.day,e.user_id,e.kind,e.amount,e.note,e.created_at,u.name,c.name created_by_name FROM {{payroll_bonus_entries}} e JOIN {{users}} u ON u.id=e.user_id LEFT JOIN {{users}} c ON c.id=e.created_by WHERE '.$where.' ORDER BY e.day DESC,e.created_at DESC LIMIT 500',$params);
   $people=[];
   if($can){$totals=payroll_bonuses($a,$month);
-   foreach(finance_people($a) as $u){if($staff&&(int)$u['id']===$me)continue;$items=$totals[(int)$u['id']]['items']??[];unset($items['ot_rate']);$people[]=['id'=>(int)$u['id'],'name'=>$u['name'],'items'=>$items,'total'=>array_sum($items)];}}
-  return [200,['month'=>$month,'can_enter'=>$can,'closed'=>(bool)$a->closure($month),'kinds'=>array_slice(PAYROLL_BONUS_KINDS,1,null,true),'people'=>$people,'entries'=>$entries,'me'=>$me]];
+   $tips=$month>=PROGRESS_BONUS_FROM?tip_month($a,$month):null;$outdoor=$tips?outdoor_month($a,$month,now_ms()):[];$profiles=$tips?payroll_profiles($a):[];$auto=[...PAYROLL_AUTO_KINDS,'retouch'];
+   foreach(finance_people($a) as $u){if($staff&&(int)$u['id']===$me)continue;$items=$totals[(int)$u['id']]['items']??[];unset($items['ot_rate']);
+    if($tips&&($share=tip_share($a,$month,(int)$u['id'],$tips))!==null)$items['tips']=$share;
+    if(isset($outdoor[(int)$u['id']]))$items['outdoor']=$outdoor[(int)$u['id']]['amount'];
+    $photos=$items['retouch_count']??0;unset($items['retouch_count']);$kinds=null;
+    if($tips){$items['retouch']=$photos*RETOUCH_PHOTO_VND;$items['meal']=max(0,MEAL_DEFAULT_VND+($items['meal']??0));$profile=$profiles[(int)$u['id']]??'photo';$kinds=array_values(array_diff(profile_kinds($profile),$auto));
+     // Khung Nhập thưởng chỉ hiện các khoản nhập tay được theo nhóm; khoản tự tính (Tips, Ngoại cảnh, Chỉnh ảnh, Ca không khách, Trực Fanpage) xem trên phiếu.
+     $items=array_intersect_key($items,array_flip($kinds));}
+    $people[]=['id'=>(int)$u['id'],'name'=>$u['name'],'items'=>$items,'total'=>array_sum($items),'kinds'=>$kinds];}}
+  return [200,['month'=>$month,'can_enter'=>$can,'closed'=>(bool)$a->closure($month),'kinds'=>array_diff_key(array_slice(PAYROLL_BONUS_KINDS,1,null,true),$month>=PROGRESS_BONUS_FROM?array_flip([...PAYROLL_AUTO_KINDS,'retouch']):[]),'people'=>$people,'entries'=>$entries,'me'=>$me]];
+ }
+ // Nhật ký Tip (chủ dự án yêu cầu 02/11/2026): bấm "Tiền khách Tips" trên phiếu lương / phiếu thưởng xem tổng Tip tháng,
+ // Tip từng khách (ngày, ca, giờ) và ai nhập, lúc nào. Mọi role xem lịch khách đầy đủ nên cùng xem được nhật ký này.
+ if($path==='/payroll/tips'&&$method==='GET'){
+  $month=valid_month($_GET['month']??'');$t=tip_month($a,$month);$ids=array_column($t['items'],'id');
+  $log=$a->all('SELECT l.id,l.booking_id,l.shoot_day,l.minutes,l.customer_name,l.old_amount,l.amount,l.label,l.source,l.time,u.name actor_name FROM {{booking_tip_log}} l LEFT JOIN {{users}} u ON u.id=l.actor_id WHERE l.shoot_day>=? AND l.shoot_day<=? ORDER BY l.time DESC,l.id DESC LIMIT 1000',[$month.'-01',$month.'-31']);
+  $last=[];$count=[];foreach($log as $l){$count[$l['booking_id']]=($count[$l['booking_id']]??0)+1;$last[$l['booking_id']]??=$l;}
+  $shift=fn(int $m)=>$m<840?($m<540?'Trước Ca 1':'Ca 1'):($m<1140?'Ca 2':'OT');
+  $items=array_map(fn($r)=>['id'=>$r['id'],'day'=>$r['shoot_day'],'time'=>booking_hm((int)$r['minutes']),'shift'=>$shift((int)$r['minutes']),'customer_name'=>$r['customer_name'],'package_label'=>$r['package_label'],'label'=>$r['tip_label'],'amount'=>$r['amount'],
+   'entered_by'=>isset($last[$r['id']])?($last[$r['id']]['source']==='sheet'&&!$last[$r['id']]['actor_name']?'Google Sheet':(string)$last[$r['id']]['actor_name']):null,'entered_at'=>isset($last[$r['id']])?(int)$last[$r['id']]['time']:null,'edits'=>$count[$r['id']]??0],$t['items']);
+  $log=array_map(fn($l)=>['day'=>$l['shoot_day'],'time'=>booking_hm((int)$l['minutes']),'shift'=>$shift((int)$l['minutes']),'customer_name'=>$l['customer_name'],'old_amount'=>(int)$l['old_amount'],'amount'=>(int)$l['amount'],'source'=>$l['source'],'by'=>$l['source']==='sheet'&&!$l['actor_name']?'Google Sheet':(string)$l['actor_name'],'at'=>(int)$l['time'],'live'=>in_array($l['booking_id'],$ids,true)],$log);
+  return [200,['month'=>$month,'applies'=>$month>=PROGRESS_BONUS_FROM,'total'=>$t['total'],'split'=>$t['split'],'share'=>$t['share'],'people'=>array_column($t['people'],'name'),'items'=>$items,'log'=>$log]];
  }
  if($path==='/payroll/bonuses/add'&&$method==='POST'){
   if(!bonus_can_enter($a))fail('Bạn chưa được Admin cấp quyền Nhập thưởng.',403);
@@ -142,12 +192,16 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
   if($a->closure($month))fail('Tháng này đã chốt lương. Admin cần mở lại trước khi nhập thưởng.',409);
   $user=bonus_target($a,$b['user_id']??null);$kind=$b['kind']??'';
   if(!is_string($kind)||$kind==='ot_rate'||!isset(PAYROLL_BONUS_KINDS[$kind]))fail('Khoản thưởng không hợp lệ.');
+  if(in_array($kind,PAYROLL_AUTO_KINDS,true)&&$month>=PROGRESS_BONUS_FROM)fail(PAYROLL_BONUS_KINDS[$kind].' '.PAYROLL_AUTO_WHY[$kind].', không nhập tay.');
+  if($month>=PROGRESS_BONUS_FROM&&!in_array($kind,profile_kinds(payroll_profile($a,$user)),true))fail(PAYROLL_BONUS_KINDS[$kind].' không áp dụng cho nhóm Trực Fanpage.');
+  if($kind==='retouch'&&$month>=PROGRESS_BONUS_FROM)fail('Chỉnh ảnh: cuối tháng Quản lý / Admin nhập số ảnh đã chỉnh trên phiếu lương (2.000đ/ảnh).');
   $amount=$b['amount']??null;if(!is_int($amount)||$amount===0||abs($amount)>100000000)fail('Số tiền cần khác 0 và không quá 100.000.000đ.');
   $note=input_text($b['note']??'','Ghi chú',0,300);
   $total=$a->tx(function()use($a,$id,$month,$day,$user,$kind,$amount,$note){
    $old=(int)($a->scalar('SELECT amount FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=? FOR UPDATE',[$month,$user,$kind])?:0);$new=$old+$amount;
-   if($new<0)fail(PAYROLL_BONUS_KINDS[$kind].' tháng này mới có '.number_format($old,0,',','.').'đ, không trừ bớt quá số đó.');
-   if($new>100000000)fail('Tổng '.PAYROLL_BONUS_KINDS[$kind].' trong tháng không quá 100.000.000đ.');
+   $base=bonus_base($kind,$month);
+   if($base+$new<0)fail(PAYROLL_BONUS_KINDS[$kind].' tháng này mới có '.number_format(max(0,$base+$old),0,',','.').'đ, không trừ bớt quá số đó.');
+   if($base+$new>100000000)fail('Tổng '.PAYROLL_BONUS_KINDS[$kind].' trong tháng không quá 100.000.000đ.');
    bonus_set($a,$month,$user,$kind,$new);bonus_entry_add($a,$id,$month,$day,$user,$kind,$amount,$note);
    $a->audit($user,'bonus:'.$month.':'.$kind.':'.$old.'>'.$new);return $new;
   });
@@ -158,11 +212,20 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
  if($a->closure($month))fail('Tháng này đã chốt lương. Admin cần mở lại trước khi sửa thưởng.',409);
  if(!is_int($b['user_id']??null)||!$a->one("SELECT id FROM {{users}} WHERE id=? AND role='employee' AND archived=0 AND status!='inactive'",[$b['user_id']]))fail('Nhân viên không tồn tại hoặc đã nghỉ.');
  if(!is_array($b['items']??null)||!$b['items'])fail('Chưa có khoản thưởng nào.');
- foreach($b['items'] as $kind=>$amount)if(!isset(PAYROLL_BONUS_KINDS[$kind])||!is_int($amount)||$amount<0||$amount>100000000)fail((PAYROLL_BONUS_KINDS[$kind]??'Khoản thưởng').' cần là số tiền từ 0 đến 100.000.000đ.');
+ foreach($b['items'] as $kind=>$amount)if(isset(PAYROLL_COUNT_KINDS[$kind])){if(!is_int($amount)||$amount<0||$amount>100000)fail(PAYROLL_COUNT_KINDS[$kind].' cần là số từ 0 đến 100.000.');}elseif(!isset(PAYROLL_BONUS_KINDS[$kind])||!is_int($amount)||$amount<0||$amount>100000000)fail((PAYROLL_BONUS_KINDS[$kind]??'Khoản thưởng').' cần là số tiền từ 0 đến 100.000.000đ.');
  $a->tx(function()use($a,$b,$month){
+  $fanpage=payroll_profile($a,$b['user_id'])==='fanpage';
   $today=local_day(now_ms());$day=$month===substr($today,0,7)?$today:($month<substr($today,0,7)?date('Y-m-t',strtotime($month.'-01T00:00:00Z')):$month.'-01');
-  foreach($b['items'] as $kind=>$amount){$old=(int)($a->scalar('SELECT amount FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$b['user_id'],$kind])?:0);if($old===$amount)continue;
+  foreach($b['items'] as $kind=>$amount){
+   // Tiền khách Tips, Ngoại cảnh tự tính từ lịch khách, khóa không sửa (chủ dự án chốt 02/11/2026: "để nó set cứng").
+   if($month>=PROGRESS_BONUS_FROM&&(in_array($kind,[...PAYROLL_AUTO_KINDS,'retouch'],true)||$fanpage))continue;
+   $old=(int)($a->scalar('SELECT amount FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$b['user_id'],$kind])?:0);
+   // Ăn uống: ô trên phiếu là tổng (mặc định 300.000đ ± phần đã cộng/trừ), lưu phần chênh với mặc định.
+   if($base=bonus_base($kind,$month)){$shown=max(0,$base+$old);if($amount===$shown)continue;bonus_set($a,$month,$b['user_id'],$kind,$amount-$base);
+    bonus_entry_add($a,uuid_v4(),$month,$day,$b['user_id'],$kind,$amount-$shown,'Sửa tổng trên phiếu lương: '.number_format($shown,0,',','.').'đ → '.number_format($amount,0,',','.').'đ');$a->audit($b['user_id'],'bonus:'.$month.':'.$kind.':'.$old.'>'.($amount-$base));continue;}
+   if($old===$amount)continue;
    bonus_set($a,$month,$b['user_id'],$kind,$amount);
+   if($kind==='retouch_count'){if($month>=PROGRESS_BONUS_FROM)bonus_entry_add($a,uuid_v4(),$month,$day,$b['user_id'],'retouch',($amount-$old)*RETOUCH_PHOTO_VND,'Số ảnh chỉnh: '.number_format($old,0,',','.').' → '.number_format($amount,0,',','.').' ảnh × '.number_format(RETOUCH_PHOTO_VND,0,',','.').'đ');$a->audit($b['user_id'],'bonus:'.$month.':'.$kind.':'.$old.'>'.$amount);continue;}
    if($kind!=='ot_rate')bonus_entry_add($a,uuid_v4(),$month,$day,$b['user_id'],$kind,$amount-$old,'Sửa tổng trên phiếu lương: '.number_format($old,0,',','.').'đ → '.number_format($amount,0,',','.').'đ');
    $a->audit($b['user_id'],'bonus:'.$month.':'.$kind.':'.$old.'>'.$amount);}
  });
@@ -171,11 +234,20 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
 // Gắn KPI vào từng dòng bảng lương. $money=false: tháng đã chốt từ trước khi có KPI, chỉ thêm điểm, giữ nguyên tiền đã chốt.
 function payroll_apply(App $a,string $month,array $rows,bool $money=true): array {
  $kpi=kpi_month_deductions($a,$month);
- $progress=$month>=PROGRESS_BONUS_FROM;$bookings=$progress?booking_month_commissions($a,$month,now_ms()):[];$bonuses=$money?payroll_bonuses($a,$month):[];
- foreach($rows as &$p){$used=$kpi[$p['id']]??0;$p['kpi_quota']=KPI_MONTHLY_POINTS;$p['kpi_deducted']=$used;$p['kpi_left']=KPI_MONTHLY_POINTS-$used;
+ $progress=$month>=PROGRESS_BONUS_FROM;$bookings=$progress?booking_month_commissions($a,$month,now_ms()):[];$bonuses=$money?payroll_bonuses($a,$month):[];$tips=$money&&$progress?tip_month($a,$month):null;$outdoor=$tips?outdoor_month($a,$month,now_ms()):[];$profiles=$progress?payroll_profiles($a):[];
+ foreach($rows as &$p){$used=$kpi[$p['id']]??0;$p['kpi_quota']=KPI_MONTHLY_POINTS;$p['kpi_deducted']=$used;$p['kpi_left']=KPI_MONTHLY_POINTS-$used;$profile=$progress?($profiles[(int)$p['id']]??'photo'):null;
   if($progress&&$p['role']==='employee'){$p['attendance_target']=attendance_target($month);$p['attendance_bonus_vnd']=ATTENDANCE_BONUS_VND;$p['attendance_bonus']=$p['days']>=$p['attendance_target']?ATTENDANCE_BONUS_VND:0;}
-  if($b=$bookings[$p['id']]??null){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_absent']=$b['absent'];$p['booking_commission']=$b['rate']*$b['units'];}
-  if(!$money)continue;$extra=$bonuses[$p['id']]??[];$items=$extra['items']??[];$p['ot_rate']=$items['ot_rate']??0;$p['ot_bonus']=$p['otSessions']*$p['ot_rate'];unset($items['ot_rate']);$p['bonus_items']=$items;$p['bonus_updated_at']=$extra['at']??null;$p['bonus_updated_by']=$extra['by']??null;
+  // Trực Fanpage không có hoa hồng khách chụp.
+  if($profile!=='fanpage'&&($b=$bookings[$p['id']]??null)){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_absent']=$b['absent'];$p['booking_commission']=$b['rate']*$b['units'];}
+  if(!$money)continue;$extra=$bonuses[$p['id']]??[];$items=$extra['items']??[];$p['ot_rate']=$items['ot_rate']??0;unset($items['ot_rate']);$photos=$items['retouch_count']??0;unset($items['retouch_count']);
+  if($progress){$p['bonus_profile']=$profile;$p['bonus_kinds']=profile_kinds($profile);
+   // Ca làm không có khách (chủ dự án chốt 02/11/2026): số ca × lương 1/2 ngày (lương cứng / số ngày của tháng / 2).
+   $empty=(int)round(($p['monthly_salary']??0)*($p['unbookedShifts']??0)/(2*max(1,(int)($p['monthDays']??30))));
+   if($profile==='fanpage'){$p['ot_rate']=0;$items=['no_customer'=>$empty,'fanpage'=>FANPAGE_BONUS_VND];}
+   else{unset($items['fanpage']);$items['no_customer']=$empty;$p['retouch_count']=$photos;$p['retouch_rate']=RETOUCH_PHOTO_VND;$items['retouch']=$photos*RETOUCH_PHOTO_VND;$p['meal_base']=MEAL_DEFAULT_VND;$p['meal_adjust']=$items['meal']??0;$items['meal']=max(0,MEAL_DEFAULT_VND+$p['meal_adjust']);
+    $p['tip_total']=$tips['total'];$p['tip_split']=$tips['split'];if(($share=tip_share($a,$month,(int)$p['id'],$tips))!==null){$p['tip_share']=$share;$items['tips']=$share;}else unset($items['tips']);
+    if($o=$outdoor[(int)$p['id']]??null){$items['outdoor']=$o['amount'];$p['outdoor_count']=$o['count'];$p['outdoor_days']=$o['days'];$p['outdoor_missed']=$o['missed'];$p['outdoor_rate']=OUTDOOR_BONUS_VND;}else unset($items['outdoor']);}}
+  $p['ot_bonus']=$p['otSessions']*$p['ot_rate'];$p['bonus_items']=$items;$p['bonus_updated_at']=$extra['at']??null;$p['bonus_updated_by']=$extra['by']??null;
   $p['bonus_total']=(int)$p['commission']+($p['booking_commission']??0)+($p['attendance_bonus']??0)+$p['ot_bonus']+array_sum($items);$p['kpi_money']=$used*KPI_POINT_VND;$p['kpi_applied']=max(0,min($p['kpi_money'],$p['bonus_total']));
   $p['gross_salary']=(int)$p['base_salary']+$p['bonus_total'];$p['salary']=$p['gross_salary']-$p['kpi_applied'];}
  unset($p);return $rows;

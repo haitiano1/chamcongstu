@@ -15,24 +15,24 @@ try{$a->tx(function()use($a){
 
  // Quyền Nhập thưởng: chỉ Admin tick cho Nhân viên; Makeup không được cấp.
  $as($admin);save_user_grants($a,(int)$mk['id'],'makeup',['bonus'=>true]);verify(!$a->one('SELECT 1 FROM {{payroll_bonus_editors}} WHERE user_id=?',[$mk['id']]),'Makeup không được cấp quyền Nhập thưởng');
- $as($tin);verify(bonus_can_enter($a)===false,'Nhân viên chưa tick không nhập thưởng');denied(fn()=>$add($huy,'tips',50000),403,'Chưa cấp quyền thì bị chặn');
+ $as($tin);verify(bonus_can_enter($a)===false,'Nhân viên chưa tick không nhập thưởng');denied(fn()=>$add($huy,'referral',50000),403,'Chưa cấp quyền thì bị chặn');
  $as($admin);save_user_grants($a,(int)$tin['id'],'employee',['event_log'=>false,'bookings'=>false,'meetings'=>false,'bonus'=>true]);
  $as($tin);verify(bonus_can_enter($a)===true,'Tick Nhập thưởng thì nhân viên nhập được');
  $as($admin);save_user_grants($a,(int)$tin['id'],'employee',['event_log'=>false,'bookings'=>false,'meetings'=>false]);verify((bool)$a->one('SELECT 1 FROM {{payroll_bonus_editors}} WHERE user_id=?',[$tin['id']]),'Giao diện cũ (không có ô) giữ quyền Nhập thưởng');
  $as($m);verify(bonus_can_enter($a)===true,'Quản lý luôn nhập được');
 
  // Tín cộng / trừ thưởng cho Huy theo ngày; không tự nhập cho mình.
- $as($tin);denied(fn()=>$add($tin,'tips',50000),403,'Không tự nhập thưởng cho chính mình');
- $id=uuid_v4();$r=$add($huy,'tips',100000,'',$id);verify($r[0]===201&&$total($huy,'tips')===100000,'Cộng 100k Tips');
- $r=$add($huy,'tips',100000,'',$id);verify(($r[1]['already_saved']??false)&&$total($huy,'tips')===100000,'Gửi lại cùng mã không cộng 2 lần');
- $add($huy,'tips',50000);verify($total($huy,'tips')===150000,'Cộng dồn trong tháng');
- denied(fn()=>$add($huy,'tips',-200000),400,'Không trừ bớt quá tổng');
- $add($huy,'tips',-150000);verify($total($huy,'tips')===0&&!$a->one('SELECT 1 FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$huy['id'],'tips']),'Trừ về 0 thì xóa dòng tổng');
+ $as($tin);denied(fn()=>$add($tin,'referral',50000),403,'Không tự nhập thưởng cho chính mình');
+ $id=uuid_v4();$r=$add($huy,'referral',100000,'',$id);verify($r[0]===201&&$total($huy,'referral')===100000,'Cộng 100k Giới thiệu khách');
+ $r=$add($huy,'referral',100000,'',$id);verify(($r[1]['already_saved']??false)&&$total($huy,'referral')===100000,'Gửi lại cùng mã không cộng 2 lần');
+ $add($huy,'referral',50000);verify($total($huy,'referral')===150000,'Cộng dồn trong tháng');
+ denied(fn()=>$add($huy,'referral',-200000),400,'Không trừ bớt quá tổng');
+ $add($huy,'referral',-150000);verify($total($huy,'referral')===0&&!$a->one('SELECT 1 FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$huy['id'],'referral']),'Trừ về 0 thì xóa dòng tổng');
  denied(fn()=>$add($huy,'ot_rate',1000),400,'Đơn giá OT không nhập theo ngày');
- denied(fn()=>$add($huy,'tips',0),400,'Số tiền 0 bị chặn');
- denied(fn()=>$add($huy,'tips',1000,local_day(now_ms()+86400000)),400,'Ngày tương lai bị chặn');
- denied(fn()=>$add($m,'tips',1000),400,'Chỉ nhập cho tài khoản Nhân viên');
- denied(fn()=>$route('/payroll/bonuses',['month'=>$month,'user_id'=>(int)$huy['id'],'items'=>['tips'=>1]]),403,'Nhân viên không sửa tổng trên phiếu lương');
+ denied(fn()=>$add($huy,'referral',0),400,'Số tiền 0 bị chặn');
+ denied(fn()=>$add($huy,'referral',1000,local_day(now_ms()+86400000)),400,'Ngày tương lai bị chặn');
+ denied(fn()=>$add($m,'referral',1000),400,'Chỉ nhập cho tài khoản Nhân viên');
+ denied(fn()=>$route('/payroll/bonuses',['month'=>$month,'user_id'=>(int)$huy['id'],'items'=>['referral'=>1]]),403,'Nhân viên không sửa tổng trên phiếu lương');
  $add($huy,'praise',30000);
 
  // Quản lý sửa tổng trên phiếu lương: ghi chênh lệch vào lịch sử để nhân viên xem.
@@ -47,7 +47,7 @@ try{$a->tx(function()use($a){
  verify($r['can_enter']&&in_array((int)$huy['id'],$ids,true)&&!in_array((int)$tin['id'],$ids,true)&&!in_array((int)$m['id'],$ids,true),'Tín thấy nhân viên khác, không có mình / Quản lý');
  $as($huy);$r=$route('/payroll/bonus-entries',[],'GET')[1];
  verify(!$r['can_enter']&&!$r['people']&&$r['entries']&&!array_filter($r['entries'],fn($e)=>(int)$e['user_id']!==(int)$huy['id']),'Huy chỉ thấy thưởng của mình');
- verify(count(array_filter($r['entries'],fn($e)=>$e['kind']==='tips'))===3,'Lịch sử giữ cả lượt cộng và trừ');
+ verify(count(array_filter($r['entries'],fn($e)=>$e['kind']==='referral'))===3,'Lịch sử giữ cả lượt cộng và trừ');
 
  // Phiếu thưởng: nhân viên thấy khoản thưởng, tổng thưởng, KPI trừ; không thấy lương cứng / lương cuối.
  $row=visible_summary(['role'=>'employee'],['bonus_items'=>['praise'=>80000],'bonus_total'=>500000,'kpi_applied'=>20000,'ot_bonus'=>0,'commission'=>0,'booking_rate'=>15000,'salary'=>1,'base_salary'=>2,'monthly_salary'=>3,'gross_salary'=>4]);

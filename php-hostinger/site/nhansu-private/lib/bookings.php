@@ -32,6 +32,61 @@ function booked_shifts(App $a,string $month): array {
  $out=[];foreach($a->all("SELECT b.shoot_day,b.minutes FROM {{shoot_bookings}} b WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=? AND b.minutes>=540 AND b.minutes<1140",[$month.'-01',$month.'-31']) as $r)if($shift=booking_shift((int)$r['minutes']))$out[$r['shoot_day'].':'.$shift]=true;
  return $out;
 }
+// Ca cả studio không có khách theo lịch (đồng bộ từ Sheet) trong cả tháng, từ BOOKING_CREDIT_FROM; cách tính giống booked_shifts.
+// Chủ dự án yêu cầu 02/11/2026 (VD khách đầu tiên 15h thì Ca 1 là ca không khách) để cuối tháng thưởng trên phiếu lương.
+// past: ca đã hết giờ (14:00 / 19:00); upcoming: ca chưa hết giờ, hiện còn trống (Sheet còn có thể thêm khách).
+function studio_empty_shifts(App $a,string $month,?int $now=null): ?array {
+ $last=gmdate('Y-m-t',strtotime($month.'-01T00:00:00Z'));if($last<BOOKING_CREDIT_FROM)return null;
+ $now??=now_ms();$booked=booked_shifts($a,$month);$out=['past'=>[],'upcoming'=>[]];
+ for($d=max($month.'-01',BOOKING_CREDIT_FROM);$d<=$last;$d=gmdate('Y-m-d',strtotime($d.'T00:00:00Z')+86400))
+  foreach(SHIFTS as $s)if(!isset($booked[$d.':'.$s['id']]))$out[day_time($d,$s['end'])<=$now?'past':'upcoming'][]=$d.':'.$s['id'];
+ return $out;
+}
+// Tiền Tip (chủ dự án yêu cầu 02/11/2026): chụp xong ghi Tip ở Sửa lịch (hoặc cột Tip trên Sheet); tổng Tip của tháng chia đều cho
+// các Nhân viên nhóm Thợ chụp đang làm (Huy, Cường → /2; Tín nhóm Trực Fanpage không nhận), tự điền vào khoản "Tiền khách Tips" trên phiếu lương / phiếu thưởng.
+// Mỗi lần số Tip của một lịch đổi thì ghi booking_tip_log (ai nhập, lúc nào, web hay Sheet) để xem nhật ký khi bấm vào khoản Tips.
+// Số tiền: 100000, 100.000, 100k; số dưới 1.000 coi là nghìn đồng như cách ghi trên Sheet (VD 50 = 50.000đ).
+function booking_tip_vnd(?string $label): int {
+ $v=preg_replace('/\s+/u','',(string)$label);if($v===''||!preg_match('/^(\d[\d.,]*)(k|đ|d|vnđ|vnd)?$/iuD',$v,$m))return 0;
+ $n=preg_match('/^\d+[.,]\d{1,2}$/D',$m[1])?(float)str_replace(',','.',$m[1]):(float)preg_replace('/[.,]/','',$m[1]);
+ if(strtolower($m[2]??'')==='k'||$n<1000)$n*=1000;return (int)round($n);
+}
+function booking_tip_log(App $a,array $row,string $oldLabel,string $label,string $source,?int $actor): void {
+ $old=booking_tip_vnd($oldLabel);$new=booking_tip_vnd($label);if($old===$new)return;
+ $a->run('INSERT INTO {{booking_tip_log}}(booking_id,shoot_day,minutes,customer_name,old_amount,amount,label,source,actor_id,time) VALUES(?,?,?,?,?,?,?,?,?,?)',[$row['id'],$row['shoot_day'],(int)$row['minutes'],$row['customer_name'],$old,$new,mb_substr($label,0,50),$source,$actor,now_ms()]);
+}
+// Tip của tháng: các lịch đang hoạt động có Tip; chia đều cho Nhân viên nhóm Thợ chụp đang làm, làm tròn tới đồng.
+function tip_month(App $a,string $month): array {
+ $items=[];$total=0;foreach($a->all("SELECT id,shoot_day,minutes,customer_name,package_label,tip_label FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? AND tip_label<>'' ORDER BY shoot_day,minutes,id",[$month.'-01',$month.'-31']) as $r){$v=booking_tip_vnd($r['tip_label']);if($v<=0)continue;$total+=$v;$items[]=$r+['amount'=>$v];}
+ // Chỉ nhóm Thợ chụp (Huy, Cường) nhận Tips; Trực Fanpage (Tín) không có khoản này (chủ dự án chốt 02/11/2026).
+ $profiles=payroll_profiles($a);$people=array_values(array_filter(finance_people($a),fn($p)=>($profiles[(int)$p['id']]??'photo')==='photo'));$split=count($people);
+ return ['total'=>$total,'split'=>$split,'share'=>$split?(int)round($total/$split):0,'people'=>array_map(fn($p)=>['id'=>(int)$p['id'],'name'=>$p['name']],$people),'items'=>$items];
+}
+// Phần Tip tự chia của một nhân viên trong tháng; null = tháng trước khi áp dụng hoặc người không thuộc danh sách chia.
+function tip_share(App $a,string $month,int $user,?array $t=null): ?int {
+ if($month<PROGRESS_BONUS_FROM)return null;$t??=tip_month($a,$month);
+ foreach($t['people'] as $p)if($p['id']===$user)return $t['share'];return null;
+}
+// Ngoại cảnh (chủ dự án yêu cầu 02/11/2026): lịch có chữ "ngoại cảnh" (ô Đặc Biệt, Ghi chú, tên khách, gói hoặc ô khác trên Sheet)
+// mà Nhân viên nhóm Thợ chụp có chấm công trong giờ chụp (cùng cách tính có mặt như hoa hồng khách) thì +150.000đ mỗi lịch cho người đó.
+// Sheet không có cột Thợ nên xét theo chấm công của mọi Nhân viên nhóm Thợ chụp; tự điền khoản Ngoại cảnh, không sửa tay.
+const OUTDOOR_BONUS_VND=150000;
+function booking_is_outdoor(array $r): bool {
+ $text=implode(' ',[$r['customer_name']??'',$r['package_label']??'',$r['note']??'']);
+ foreach(json_decode((string)($r['sheet_fields_json']??''),true)?:[] as $f)if(is_array($f))$text.=' '.($f['value']??'');
+ return str_contains(booking_fold($text),'ngoai canh');
+}
+function outdoor_month(App $a,string $month,int $now): array {
+ $start=$month.'-01';$end=gmdate('Y-m-t',strtotime($start.'T00:00:00Z'));$today=local_day($now);$minute=intdiv($now-day_time($today),60000);$rows=[];
+ foreach($a->all("SELECT id,shoot_day,minutes,customer_name,package_label,note,sheet_fields_json FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? ORDER BY shoot_day,minutes,id",[$start,$end]) as $r)
+  if(booking_is_outdoor($r)&&!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute)))$rows[]=$r;
+ $profiles=payroll_profiles($a);$people=array_values(array_filter(array_map(fn($p)=>(int)$p['id'],finance_people($a)),fn($id)=>($profiles[$id]??'photo')==='photo'));$present=$rows?attendance_presence($a,$people,$start,$end,$now):[];$out=[];
+ foreach($people as $id)$out[$id]=['count'=>0,'amount'=>0,'days'=>[],'missed'=>[]];
+ foreach($rows as $r){$from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;$key=$r['shoot_day'].' '.booking_hm((int)$r['minutes']);
+  foreach($people as $id){$here=false;foreach($present[$id]??[] as [$in,$exit])if($in<$to&&$exit>$from){$here=true;break;}
+   if($here){$out[$id]['count']++;$out[$id]['amount']+=OUTDOOR_BONUS_VND;$out[$id]['days'][]=$key;}else $out[$id]['missed'][]=$key;}}
+ return $out;
+}
 function expected_shifts(App $a,int $id,string $day): array {$out=[];foreach(['day_first','day_second'] as $shift)if($e=expected_shift($a,$id,$day,$shift))$out[$shift]=$e;return $out;}
 function freeze_booking_shift(App $a,int $id,string $day,string $shift): void {
  if($a->one('SELECT user_id FROM {{booking_shift_snapshots}} WHERE user_id=? AND day=? AND shift=?',[$id,$day,$shift]))return;
@@ -233,6 +288,7 @@ function import_bookings(App $a,array $b,string $sheet,?int $actor): array {
   freeze_existing_booking_day($a,$row['shoot_day']);if($old&&$old['shoot_day']!==$row['shoot_day'])freeze_existing_booking_day($a,$old['shoot_day']);
   if($old){$cols=array_values(array_diff(array_keys($row),['id']));$a->run('UPDATE {{shoot_bookings}} SET '.implode(',',array_map(fn($c)=>$c.'=?',$cols)).',updated_at=? WHERE id=?',[...array_map(fn($c)=>$row[$c],$cols),now_ms(),$row['id']]);$changed++;}
   else{$cols=array_keys($row);$a->run('INSERT INTO {{shoot_bookings}} ('.implode(',',$cols).',created_at,updated_at) VALUES('.implode(',',array_fill(0,count($cols)+2,'?')).')',[...array_values($row),now_ms(),now_ms()]);$created++;}
+  if(array_key_exists('tip_label',$row))booking_tip_log($a,$row,$old['tip_label']??'',$row['tip_label'],'sheet',$actor);
   relink_booking($a,$row);$a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$row['id'],$actor,$old?'updated':'created',$old?json_encode($old,JSON_THROW_ON_ERROR):null,json_encode($row,JSON_THROW_ON_ERROR),now_ms()]);
  }
  // Missing rows are deliberately NOT cancelled. Deletion/sorting/partial batches cannot erase history.
@@ -492,6 +548,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   freeze_existing_booking_day($a,$old['shoot_day']);if($row['shoot_day']!==$old['shoot_day'])freeze_existing_booking_day($a,$row['shoot_day']);
   $a->run('UPDATE {{shoot_bookings}} SET '.implode(',',array_map(fn($c)=>$c.'=?',array_keys($row))).',updated_at=? WHERE id=?',[...array_values($row),now_ms(),$id]);
   booking_enqueue_update($a,$id,$old['source_tab'],['makeup'=>$in['makeup'],'special'=>$in['special'],'note'=>$in['sheet_note'],'from_day'=>$old['shoot_day']],$changed);
+  if(in_array('tip',$changed,true))booking_tip_log($a,['id'=>$id]+$row,$old['tip_label']??'',$money['tip'],'web',(int)$a->user['id']);
   $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$id,$a->user['id'],'updated_web',json_encode($old,JSON_THROW_ON_ERROR),json_encode($row+['changed'=>$changed],JSON_THROW_ON_ERROR),now_ms()]);
   return [200,['ok'=>true,'changed'=>$changed,'tab'=>$old['source_tab'],'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
  }
