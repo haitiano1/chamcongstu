@@ -82,16 +82,18 @@ function attendance_presence(App $a,array $users,string $from,string $to,int $no
 function booking_month_commissions(App $a,string $month,int $now): array {
  $rates=booking_rates($a);if(!$rates)return [];
  $start=valid_month($month).'-01';$end=date('Y-m-t',strtotime($start));$today=local_day($now);$minute=intdiv($now-day_time($today),60000);$out=[];$rows=[];
- foreach($a->all("SELECT DISTINCT s.user_id,b.id,b.shoot_day,b.minutes,b.package_label,b.note FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?",[$start,$end]) as $r)
+ foreach($a->all("SELECT DISTINCT s.user_id,b.id,b.shoot_day,b.minutes,b.package_label,b.note,b.customer_name FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?",[$start,$end]) as $r)
   if(isset($rates[(int)$r['user_id']])&&!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute)))$rows[]=$r;
  $present=attendance_presence($a,array_values(array_unique(array_map(fn($r)=>(int)$r['user_id'],$rows))),$start,$end,$now);
- foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'units'=>0,'unpriced'=>0,'absent'=>0,'rate'=>$rate];
+ foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'units'=>0,'unpriced'=>0,'unpriced_list'=>[],'absent'=>0,'rate'=>$rate];
  foreach($rows as $r){$id=(int)$r['user_id'];
   $from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;
   $here=false;foreach($present[$id]??[] as [$in,$exit])if($in<$to&&$exit>$from){$here=true;break;}
   if(!$here){$out[$id]['absent']++;continue;}
   $units=BOOKING_PACKAGE_UNITS[booking_package_price($r['package_label'])??0]??0;
-  $out[$id]['customers']++;$out[$id]['units']+=$units;if(!$units)$out[$id]['unpriced']++;
+  $out[$id]['customers']++;$out[$id]['units']+=$units;if(!$units){$out[$id]['unpriced']++;
+   // Ghi rõ lịch nào chưa có mức (chủ dự án hỏi 02/11/2026): ô Gói trống (khách tới mới chọn) hoặc gói không thuộc 349/399/699/999/1499/2999.
+   $out[$id]['unpriced_list'][]=['day'=>$r['shoot_day'],'time'=>booking_hm((int)$r['minutes']),'customer_name'=>$r['customer_name'],'package_label'=>$r['package_label']];}
  }
  return $out;
 }
@@ -238,7 +240,7 @@ function payroll_apply(App $a,string $month,array $rows,bool $money=true): array
  foreach($rows as &$p){$used=$kpi[$p['id']]??0;$p['kpi_quota']=KPI_MONTHLY_POINTS;$p['kpi_deducted']=$used;$p['kpi_left']=KPI_MONTHLY_POINTS-$used;$profile=$progress?($profiles[(int)$p['id']]??'photo'):null;
   if($progress&&$p['role']==='employee'){$p['attendance_target']=attendance_target($month);$p['attendance_bonus_vnd']=ATTENDANCE_BONUS_VND;$p['attendance_bonus']=$p['days']>=$p['attendance_target']?ATTENDANCE_BONUS_VND:0;}
   // Trực Fanpage không có hoa hồng khách chụp.
-  if($profile!=='fanpage'&&($b=$bookings[$p['id']]??null)){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_absent']=$b['absent'];$p['booking_commission']=$b['rate']*$b['units'];}
+  if($profile!=='fanpage'&&($b=$bookings[$p['id']]??null)){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_unpriced_list']=$b['unpriced_list'];$p['booking_absent']=$b['absent'];$p['booking_commission']=$b['rate']*$b['units'];}
   if(!$money)continue;$extra=$bonuses[$p['id']]??[];$items=$extra['items']??[];$p['ot_rate']=$items['ot_rate']??0;unset($items['ot_rate']);$photos=$items['retouch_count']??0;unset($items['retouch_count']);
   if($progress){$p['bonus_profile']=$profile;$p['bonus_kinds']=profile_kinds($profile);
    // Ca làm không có khách (chủ dự án chốt 02/11/2026): số ca × lương 1/2 ngày (lương cứng / số ngày của tháng / 2).

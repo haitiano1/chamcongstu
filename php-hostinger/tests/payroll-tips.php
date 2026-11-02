@@ -106,6 +106,13 @@ try{$a->tx(function()use($a){
  $res=payroll_bonus_routes($a,'/payroll/bonus-entries',[],'GET')[1];$fp=array_values(array_filter($res['people'],fn($p)=>$p['id']===$uf))[0];verify($fp['kinds']===[]&&$fp['items']===[],'Nhập thưởng: Trực Fanpage không có khoản nhập tay');
  verify(in_array('ZZ Tip Fanpage',payroll_bonus_routes($a,'/payroll/tips',[],'GET')[1]['people'],true),'Nhật ký Tip chia cả cho Trực Fanpage');
  verify(!isset($f['outdoor_count']),'Ngoại cảnh chỉ tính cho nhóm Thợ chụp');
+ // Gói chưa có mức: phiếu ghi rõ lịch nào (ô Gói trống hoặc gói lạ) để chọn lại gói.
+ $a->run('INSERT INTO {{booking_rates}} VALUES(?,15000,?,?) ON DUPLICATE KEY UPDATE rate=15000',[$ua,$admin['id'],now_ms()]);
+ $u1=$book('2026-11-01',630,'','Chị Trống');$a->run("UPDATE {{shoot_bookings}} SET package_label='' WHERE id=?",[$u1]);$u2=$book('2026-11-01',690,'','Anh Lạ');$a->run("UPDATE {{shoot_bookings}} SET package_label='Combo 500' WHERE id=?",[$u2]);
+ foreach([$u1,$u2] as $id)$a->run("INSERT INTO {{booking_staff}} VALUES(?,?,'main')",[$id,$ua]);
+ $r=$row();$list=$r['booking_unpriced_list']??[];
+ verify($r['booking_unpriced']===2&&count($list)===2&&$list[0]['customer_name']==='Chị Trống'&&$list[0]['package_label']===''&&$list[1]['package_label']==='Combo 500'&&$list[0]['time']==='10:30','Ghi rõ 2 lịch chưa có mức: '.json_encode($list,JSON_UNESCAPED_UNICODE));
+ verify(isset(visible_summary(['role'=>'employee'],$r)['booking_unpriced_list']),'Nhân viên thấy lịch chưa có mức của mình');
  throw new RuntimeException('ROLLBACK');
 });}catch(RuntimeException $e){if($e->getMessage()!=='ROLLBACK')throw $e;}
 echo "PASS $n payroll tips + outdoor + retouch + meal + empty shift checks\n";

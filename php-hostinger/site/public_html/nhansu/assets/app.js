@@ -13,7 +13,7 @@ import { requestsPanel,bindRequests,payrollControls,updatePayrollControls,backup
 import { groupAttendanceByDay,markAttendanceStatus,markTeamAttendanceStatus } from './history.js';
 import { captureAttendancePhoto,bindPhotoButtons } from './camera.js?v=20261027-tasks2';
 import { employeesPage,bindEmployees } from './employees.js?v=20261102-tip2';
-import { kpiCells,progressCell,bookingCells,renderAdminPayroll,renderBonusPanel } from './payroll.js?v=20261102-tip2';
+import { kpiCells,progressCell,bookingCells,renderAdminPayroll,renderBonusPanel } from './payroll.js?v=20261102-tip3';
 import { readPosition } from './geolocation.js';
 import { locationPicker,bindLocationPicker } from './location-picker.js';
 import { time24,bindTime24,setTime24 } from './time24.js?v=20261102-24h1';

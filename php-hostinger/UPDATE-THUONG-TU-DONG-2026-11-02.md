@@ -45,6 +45,12 @@ Các khoản dưới đây áp dụng từ **tháng 11/2026**. Tháng đã chố
 - Mỗi người nhóm Thợ chụp có sẵn **300.000đ** Ăn uống mỗi tháng.
 - Mỗi lần đi ăn thì vào **Nhập thưởng nhân viên → Ăn uống → − Trừ bớt** số tiền đã ăn (hoặc sửa tổng trên phiếu lương). Không trừ quá số còn lại.
 
+### 7. Ghi rõ lịch "gói chưa có mức"
+
+- Trước đây phiếu chỉ ghi "2 khách gói chưa có mức, tính 0đ". Nay ghi rõ từng lịch, VD `01/11 10:30 Chị Lan · Gói trống` hoặc `· Gói "Combo 500"`.
+- Lịch bị tính 0đ khi ô **Gói trống** (lịch thêm trên web để trống ô Gói, khách tới mới chọn) hoặc gói không thuộc 349 / 399 / 699 / Couple 999 / 1499 / 2999.
+- Cách sửa: vào **Lịch chụp**, mở lịch đó, ở mục **Gói khách chụp** chọn đúng gói rồi bấm **Lưu gói**. Phiếu lương tự tính lại hoa hồng.
+
 ### Lưu ý
 
 - Trước bản này, các ô Tips, Ngoại cảnh, Chỉnh ảnh, Ca làm không có khách trên phiếu lương là ô nhập tay. Nếu ai đó đã gõ số vào các ô này cho tháng 11 thì số đó không còn được dùng; phiếu hiện số tự tính. Chưa ai gõ thì không ảnh hưởng gì.
