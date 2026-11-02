@@ -104,7 +104,55 @@ function payroll_bonuses(App $a,string $month): array {
   if((int)$r['updated_at']>($out[$id]['at']??0))$out[$id]=['at'=>(int)$r['updated_at'],'by'=>(string)$r['name']]+$out[$id];}
  return $out;
 }
+// Quyền Nhập thưởng (chủ dự án yêu cầu 02/11/2026): Admin, Quản lý luôn có; Nhân viên cần Admin tick "Nhập thưởng" (payroll_bonus_editors)
+// trong hồ sơ, VD Tín nhập thưởng cho nhân viên mỗi ngày. Nhân viên được cấp quyền không tự nhập thưởng cho chính mình.
+function bonus_can_enter(App $a): bool {
+ if(in_array($a->user['role'],['admin','manager'],true))return true;
+ return $a->user['role']==='employee'&&(bool)$a->one('SELECT user_id FROM {{payroll_bonus_editors}} WHERE user_id=?',[$a->user['id']]);
+}
+function bonus_target(App $a,mixed $id): int {
+ if(!is_int($id)||!$a->one("SELECT id FROM {{users}} WHERE id=? AND role='employee' AND archived=0 AND status!='inactive'",[$id]))fail('Nhân viên không tồn tại hoặc đã nghỉ.');
+ if($a->user['role']==='employee'&&$id===(int)$a->user['id'])fail('Không tự nhập thưởng cho chính mình. Quản lý hoặc Admin nhập khoản này.',403);
+ return $id;
+}
+// Mỗi lần thay đổi thưởng lưu một dòng payroll_bonus_entries (cộng thêm theo ngày, hoặc chênh lệch khi sửa tổng trên phiếu lương)
+// để nhân viên xem được lịch sử trong Phiếu thưởng.
+function bonus_entry_add(App $a,string $id,string $month,string $day,int $user,string $kind,int $amount,string $note): void {
+ $a->run('INSERT INTO {{payroll_bonus_entries}}(id,month,day,user_id,kind,amount,note,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)',[$id,$month,$day,$user,$kind,$amount,$note,$a->user['id'],now_ms()]);
+}
+function bonus_set(App $a,string $month,int $user,string $kind,int $amount): void {
+ if($amount)$a->run("INSERT INTO {{payroll_bonuses}} VALUES(?,?,?,?,'web',?,?) ON DUPLICATE KEY UPDATE amount=VALUES(amount),source='web',updated_by=VALUES(updated_by),updated_at=VALUES(updated_at)",[$month,$user,$kind,$amount,$a->user['id'],now_ms()]);
+ else $a->run('DELETE FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$user,$kind]);
+}
 function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?array {
+ if($path==='/payroll/bonus-entries'&&$method==='GET'){
+  $month=valid_month($_GET['month']??'');$can=bonus_can_enter($a);$me=(int)$a->user['id'];$staff=$a->user['role']==='employee';
+  $where='e.month=?';$params=[$month];if(!$can){$where.=' AND e.user_id=?';$params[]=$me;}
+  $entries=$a->all('SELECT e.id,e.day,e.user_id,e.kind,e.amount,e.note,e.created_at,u.name,c.name created_by_name FROM {{payroll_bonus_entries}} e JOIN {{users}} u ON u.id=e.user_id LEFT JOIN {{users}} c ON c.id=e.created_by WHERE '.$where.' ORDER BY e.day DESC,e.created_at DESC LIMIT 500',$params);
+  $people=[];
+  if($can){$totals=payroll_bonuses($a,$month);
+   foreach(finance_people($a) as $u){if($staff&&(int)$u['id']===$me)continue;$items=$totals[(int)$u['id']]['items']??[];unset($items['ot_rate']);$people[]=['id'=>(int)$u['id'],'name'=>$u['name'],'items'=>$items,'total'=>array_sum($items)];}}
+  return [200,['month'=>$month,'can_enter'=>$can,'closed'=>(bool)$a->closure($month),'kinds'=>array_slice(PAYROLL_BONUS_KINDS,1,null,true),'people'=>$people,'entries'=>$entries,'me'=>$me]];
+ }
+ if($path==='/payroll/bonuses/add'&&$method==='POST'){
+  if(!bonus_can_enter($a))fail('Bạn chưa được Admin cấp quyền Nhập thưởng.',403);
+  $id=entry_uuid($b['id']??null);
+  if($a->one('SELECT id FROM {{payroll_bonus_entries}} WHERE id=?',[$id]))return [200,['ok'=>true,'already_saved'=>true]];
+  $day=valid_day($b['day']??null);if($day>local_day(now_ms())||$day<'2026-01-01')fail('Ngày thưởng phải từ hôm nay trở về trước.');$month=substr($day,0,7);
+  if($a->closure($month))fail('Tháng này đã chốt lương. Admin cần mở lại trước khi nhập thưởng.',409);
+  $user=bonus_target($a,$b['user_id']??null);$kind=$b['kind']??'';
+  if(!is_string($kind)||$kind==='ot_rate'||!isset(PAYROLL_BONUS_KINDS[$kind]))fail('Khoản thưởng không hợp lệ.');
+  $amount=$b['amount']??null;if(!is_int($amount)||$amount===0||abs($amount)>100000000)fail('Số tiền cần khác 0 và không quá 100.000.000đ.');
+  $note=input_text($b['note']??'','Ghi chú',0,300);
+  $total=$a->tx(function()use($a,$id,$month,$day,$user,$kind,$amount,$note){
+   $old=(int)($a->scalar('SELECT amount FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=? FOR UPDATE',[$month,$user,$kind])?:0);$new=$old+$amount;
+   if($new<0)fail(PAYROLL_BONUS_KINDS[$kind].' tháng này mới có '.number_format($old,0,',','.').'đ, không trừ bớt quá số đó.');
+   if($new>100000000)fail('Tổng '.PAYROLL_BONUS_KINDS[$kind].' trong tháng không quá 100.000.000đ.');
+   bonus_set($a,$month,$user,$kind,$new);bonus_entry_add($a,$id,$month,$day,$user,$kind,$amount,$note);
+   $a->audit($user,'bonus:'.$month.':'.$kind.':'.$old.'>'.$new);return $new;
+  });
+  return [201,['ok'=>true,'total'=>$total]];
+ }
  if($path!=='/payroll/bonuses'||$method!=='POST')return null;
  $a->requireManager();$month=valid_month($b['month']??'');
  if($a->closure($month))fail('Tháng này đã chốt lương. Admin cần mở lại trước khi sửa thưởng.',409);
@@ -112,9 +160,10 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
  if(!is_array($b['items']??null)||!$b['items'])fail('Chưa có khoản thưởng nào.');
  foreach($b['items'] as $kind=>$amount)if(!isset(PAYROLL_BONUS_KINDS[$kind])||!is_int($amount)||$amount<0||$amount>100000000)fail((PAYROLL_BONUS_KINDS[$kind]??'Khoản thưởng').' cần là số tiền từ 0 đến 100.000.000đ.');
  $a->tx(function()use($a,$b,$month){
+  $today=local_day(now_ms());$day=$month===substr($today,0,7)?$today:($month<substr($today,0,7)?date('Y-m-t',strtotime($month.'-01T00:00:00Z')):$month.'-01');
   foreach($b['items'] as $kind=>$amount){$old=(int)($a->scalar('SELECT amount FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$b['user_id'],$kind])?:0);if($old===$amount)continue;
-   if($amount)$a->run("INSERT INTO {{payroll_bonuses}} VALUES(?,?,?,?,'web',?,?) ON DUPLICATE KEY UPDATE amount=VALUES(amount),source='web',updated_by=VALUES(updated_by),updated_at=VALUES(updated_at)",[$month,$b['user_id'],$kind,$amount,$a->user['id'],now_ms()]);
-   else $a->run('DELETE FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$b['user_id'],$kind]);
+   bonus_set($a,$month,$b['user_id'],$kind,$amount);
+   if($kind!=='ot_rate')bonus_entry_add($a,uuid_v4(),$month,$day,$b['user_id'],$kind,$amount-$old,'Sửa tổng trên phiếu lương: '.number_format($old,0,',','.').'đ → '.number_format($amount,0,',','.').'đ');
    $a->audit($b['user_id'],'bonus:'.$month.':'.$kind.':'.$old.'>'.$amount);}
  });
  return [200,['ok'=>true]];
@@ -145,6 +194,20 @@ function finance_people(App $a,bool $all=false): array {
 function finance_page(): int {
  $p=filter_var($_GET['page']??1,FILTER_VALIDATE_INT);if(!$p||$p<1||$p>100000)fail('Trang không hợp lệ.');return $p;
 }
+// Ứng lương (chủ dự án yêu cầu 02/11/2026): không ứng gấp. Nhân viên tạo phiếu lúc nào cũng được (kể cả ngày ứng là hôm nay),
+// nhưng không được duyệt liền: Telegram báo ngay Admin và Quản lý (trừ người gửi), họ duyệt trong 24 giờ tới.
+function advance_request_text(string $name,string $day,int $amount,string $reason,int $now): string {
+ $weekday=['CN','T2','T3','T4','T5','T6','T7'][(int)date('w',strtotime($day.'T00:00:00Z'))];
+ return "💰 Anh Gấu Studio · Yêu cầu ứng lương\n".$name.' xin ứng '.number_format($amount,0,',','.')."đ\nNgày muốn nhận: ".$weekday.' '.date('d/m/Y',strtotime($day.'T00:00:00Z'))."\nLý do: ".$reason
+  ."\n\nVui lòng duyệt trong 24 giờ tới (trước ".gmdate('H:i d/m',(int)floor($now/1000)+86400+7*3600).'). Vào mục Ứng lương để Duyệt hoặc Từ chối.';
+}
+function advance_notify_managers(App $a,string $text,?Telegram $tg=null): int {
+ if(!class_exists('Telegram'))return 0;$tg??=new Telegram($a);if(!$tg->configured())return 0;$sent=0;
+ foreach($a->all("SELECT l.chat_id FROM {{telegram_links}} l JOIN {{users}} u ON u.id=l.user_id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' AND u.id!=? ORDER BY u.id",[$a->user['id']]) as $m){
+  try{$tg->call('sendMessage',['chat_id'=>$m['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở Ứng lương',$a->config['app_url'].'/#advances'));$sent++;}catch(Throwable $e){$a->meta('telegram_error',$e->getMessage());}
+ }
+ return $sent;
+}
 function advance_routes(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/advances'&&!str_starts_with($path,'/advances/'))return null;
  $manager=$a->user['role']!=='employee';
@@ -156,7 +219,9 @@ function advance_routes(App $a,string $path,array $b,string $method): ?array {
   $existing=$a->one('SELECT * FROM {{salary_advances}} WHERE id=?',[$id]);
   if($existing){if($existing['user_id']===$a->user['id']&&$existing['requested_date']===$day&&$existing['amount']===$b['amount']&&$existing['reason']===$reason)return [200,['id'=>$id,'already_saved'=>true]];fail('Mã yêu cầu đã được sử dụng.',409);}
   $a->run("INSERT INTO {{salary_advances}}(id,user_id,requested_date,amount,reason,created_at,review_note,payment_note) VALUES(?,?,?,?,?,?,'','')",[$id,$a->user['id'],$day,$b['amount'],$reason,now_ms()]);
-  finance_audit($a,'advance',$id,'created',$reason);return [201,['id'=>$id]];
+  finance_audit($a,'advance',$id,'created',$reason);
+  $sent=advance_notify_managers($a,advance_request_text($a->user['name'],$day,$b['amount'],$reason,now_ms()));
+  return [201,['id'=>$id,'notified'=>$sent]];
  }
  if($path==='/advances'&&$method==='GET'){
   [$start,$end]=finance_range();$basis=$_GET['basis']??'requested';if(!in_array($basis,['requested','paid'],true))fail('Loại ngày không hợp lệ.');
@@ -229,7 +294,7 @@ function log_points_note(int $deduction,?int $offense,?array $rule): string {
 }
 // Cấp quyền trong hồ sơ nhân viên (chủ dự án yêu cầu 30/10/2026): Viết Event Log, Lên lịch chụp; thêm Sửa Biên bản họp (02/11/2026). Chỉ Admin tick;
 // Admin và Quản lý luôn có đủ các quyền nên không giữ dòng cấp quyền cho họ; Makeup không được cấp quyền nào.
-const USER_GRANTS=['event_log'=>['event_log_recorders','grant_event_log','revoke_event_log'],'bookings'=>['booking_creators','grant_booking_create','revoke_booking_create'],'meetings'=>['meeting_editors','grant_meeting_edit','revoke_meeting_edit']];
+const USER_GRANTS=['event_log'=>['event_log_recorders','grant_event_log','revoke_event_log'],'bookings'=>['booking_creators','grant_booking_create','revoke_booking_create'],'meetings'=>['meeting_editors','grant_meeting_edit','revoke_meeting_edit'],'bonus'=>['payroll_bonus_editors','grant_bonus_entry','revoke_bonus_entry']];
 function user_grants(App $a): array {$out=[];foreach(USER_GRANTS as $k=>[$table])$out[$k]=array_fill_keys(array_map('intval',array_column($a->all('SELECT user_id FROM {{'.$table.'}}'),'user_id')),true);return $out;}
 function save_user_grants(App $a,int $id,string $role,mixed $grants): void {
  if(!is_array($grants))fail('Cấp quyền không hợp lệ.');

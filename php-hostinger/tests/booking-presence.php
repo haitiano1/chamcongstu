@@ -39,9 +39,9 @@ try{$a->tx(function()use($a){
  // Khách chưa tới giờ chụp (20/11) chưa tính, cũng không đếm là vắng.
  $r=booking_month_commissions($a,'2026-11',$at('2026-11-30','23:00'))[$id];verify($r['customers']+$r['absent']===12,'Khách 20/11 tính khi đã qua giờ: '.json_encode($r));
  verify($r['absent']===4,'20/11 không chấm công thì không tính');
- // Bảng công nhân viên thấy số khách không tính, không thấy tiền khác.
+ // Bảng công nhân viên thấy số khách không tính; từ 02/11/2026 thấy cả mức hoa hồng (Phiếu thưởng), vẫn không thấy lương.
  $row=visible_summary(['role'=>'employee'],['booking_absent'=>3,'booking_customers'=>8,'booking_commission'=>90000,'salary'=>1,'booking_rate'=>10000]);
- verify(($row['booking_absent']??null)===3&&!isset($row['salary'])&&!isset($row['booking_rate']),'Nhân viên thấy số khách không tính, không thấy lương/mức');
+ verify(($row['booking_absent']??null)===3&&!isset($row['salary'])&&($row['booking_rate']??null)===10000,'Nhân viên thấy số khách không tính và mức hoa hồng, không thấy lương');
  throw new RuntimeException('ROLLBACK');
 });}catch(RuntimeException $e){if($e->getMessage()!=='ROLLBACK')throw $e;}
 echo "PASS $n booking presence checks: commission only while checked in\n";
