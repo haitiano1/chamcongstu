@@ -96,14 +96,15 @@ try{$a->tx(function()use($a){
  payroll_bonus_routes($a,'/payroll/bonuses',['month'=>'2026-11','user_id'=>$ua,'items'=>['meal'=>250000]],'POST');verify($count()===$before,'Lưu lại không đổi thì không ghi thêm');
  $res=payroll_bonus_routes($a,'/payroll/bonus-entries',[],'GET')[1];$mine=array_values(array_filter($res['people'],fn($p)=>$p['id']===$ua))[0];
  verify($mine['items']['meal']===250000&&!isset($mine['items']['retouch_count'])&&!isset($res['kinds']['retouch'])&&isset($res['kinds']['meal'])&&in_array('meal',$mine['kinds'],true)&&!in_array('retouch',$mine['kinds'],true),'Khung Nhập thưởng hiện đúng Ăn uống, không nhập tiền Chỉnh ảnh');
- // Trực Fanpage: Chuyên cần + Ca không khách + Tips (chia 3) + 2.000.000đ; không nhận Ngoại cảnh, Chỉnh ảnh, Ăn uống, OT; Nhập thưởng không có khoản nào.
+ // Trực Fanpage: Chuyên cần + Ca không khách + Tips (chia 3) + Ăn uống 300k (thêm 03/11/2026) + 2.000.000đ; không Ngoại cảnh, Chỉnh ảnh, OT; Nhập thưởng chỉ có Ăn uống.
  $f=array_values(array_filter($a->monthly('2026-11')['rows'],fn($x)=>(int)$x['id']===$uf))[0];
- $fs=$f['tip_share'];verify($f['bonus_profile']==='fanpage'&&$f['bonus_items']===['tips'=>$fs,'no_customer'=>0,'fanpage'=>2000000]&&$fs===tip_month($a,'2026-11')['share']&&!isset($f['outdoor_count'])&&!isset($f['booking_commission'])&&$f['ot_bonus']===0,'Trực Fanpage: '.json_encode($f['bonus_items']));
- verify($f['bonus_total']===2000000+$fs+($f['attendance_bonus']??0),'Tổng thưởng Trực Fanpage = 2tr + Tips + chuyên cần');
- try{payroll_bonus_routes($a,'/payroll/bonuses/add',['id'=>uuid_v4(),'day'=>'2026-11-01','user_id'=>$uf,'kind'=>'meal','amount'=>-1000,'note'=>''],'POST');verify(false,'Ăn uống cho Trực Fanpage phải bị chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'Trực Fanpage'),'Không nhập Ăn uống cho Trực Fanpage');}
- payroll_bonus_routes($a,'/payroll/bonuses',['month'=>'2026-11','user_id'=>$uf,'items'=>['praise'=>50000,'ot_rate'=>30000]],'POST');$f=array_values(array_filter($a->monthly('2026-11')['rows'],fn($x)=>(int)$x['id']===$uf))[0];
- verify($f['bonus_items']===['tips'=>$fs,'no_customer'=>0,'fanpage'=>2000000]&&$f['ot_rate']===0,'Phiếu lương không lưu khoản khác cho Trực Fanpage');
- $res=payroll_bonus_routes($a,'/payroll/bonus-entries',[],'GET')[1];$fp=array_values(array_filter($res['people'],fn($p)=>$p['id']===$uf))[0];verify($fp['kinds']===[]&&$fp['items']===[],'Nhập thưởng: Trực Fanpage không có khoản nhập tay');
+ $fs=$f['tip_share'];verify($f['bonus_profile']==='fanpage'&&$f['bonus_items']===['tips'=>$fs,'no_customer'=>0,'meal'=>300000,'fanpage'=>2000000]&&$f['meal_base']===300000&&$fs===tip_month($a,'2026-11')['share']&&!isset($f['outdoor_count'])&&!isset($f['booking_commission'])&&$f['ot_bonus']===0,'Trực Fanpage: '.json_encode($f['bonus_items']));
+ verify($f['bonus_total']===2000000+300000+$fs+($f['attendance_bonus']??0),'Tổng thưởng Trực Fanpage = 2tr + Ăn uống + Tips + chuyên cần');
+ payroll_bonus_routes($a,'/payroll/bonuses/add',['id'=>uuid_v4(),'day'=>'2026-11-01','user_id'=>$uf,'kind'=>'meal','amount'=>-50000,'note'=>'Đi ăn'],'POST');
+ try{payroll_bonus_routes($a,'/payroll/bonuses/add',['id'=>uuid_v4(),'day'=>'2026-11-01','user_id'=>$uf,'kind'=>'praise','amount'=>1000,'note'=>''],'POST');verify(false,'Nóng/Khen cho Trực Fanpage phải bị chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'Trực Fanpage'),'Không nhập Nóng/Khen cho Trực Fanpage');}
+ payroll_bonus_routes($a,'/payroll/bonuses',['month'=>'2026-11','user_id'=>$uf,'items'=>['praise'=>50000,'ot_rate'=>30000,'meal'=>280000]],'POST');$f=array_values(array_filter($a->monthly('2026-11')['rows'],fn($x)=>(int)$x['id']===$uf))[0];
+ verify($f['bonus_items']===['tips'=>$fs,'no_customer'=>0,'meal'=>280000,'fanpage'=>2000000]&&$f['ot_rate']===0&&$f['meal_adjust']===-20000,'Phiếu lương Trực Fanpage chỉ lưu Ăn uống: '.json_encode($f['bonus_items']));
+ $res=payroll_bonus_routes($a,'/payroll/bonus-entries',[],'GET')[1];$fp=array_values(array_filter($res['people'],fn($p)=>$p['id']===$uf))[0];verify($fp['kinds']===['meal']&&$fp['items']===['meal'=>280000],'Nhập thưởng: Trực Fanpage chỉ có Ăn uống');
  verify(in_array('ZZ Tip Fanpage',payroll_bonus_routes($a,'/payroll/tips',[],'GET')[1]['people'],true),'Nhật ký Tip chia cả cho Trực Fanpage');
  verify(!isset($f['outdoor_count']),'Ngoại cảnh chỉ tính cho nhóm Thợ chụp');
  // Gói chưa có mức: phiếu ghi rõ lịch nào (ô Gói trống hoặc gói lạ) để chọn lại gói.

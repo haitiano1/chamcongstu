@@ -5,7 +5,7 @@ const num=v=>new Intl.NumberFormat('vi-VN').format(v);
 export const money=v=>new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND'}).format(v);
 // Khoản nhập tay trên web, đúng thứ tự bảng thưởng của studio (đơn giá OT nằm ở dòng OT). Khóa phải khớp PAYROLL_BONUS_KINDS.
 const MANUAL=[['tips','Tiền khách Tips'],['praise','Nóng / Khen'],['referral','Giới thiệu khách'],['outdoor','Ngoại cảnh'],['full_day','Full khách ngày'],['retouch','Chỉnh ảnh'],['no_customer','Ca làm không có khách'],['meal','Ăn uống'],['fanpage','Trực Fanpage']];
-// Nhóm thưởng (chủ dự án chốt 02/11/2026): Thợ chụp (Huy, Cường) có mọi khoản; Trực Fanpage (Tín) chỉ Chuyên cần, Ca làm không có khách, Tips, Trực Fanpage 2tr.
+// Nhóm thưởng (chủ dự án chốt 02/11/2026): Thợ chụp (Huy, Cường) có mọi khoản; Trực Fanpage (Tín) chỉ Chuyên cần, Ca làm không có khách, Tips, Ăn uống (thêm 03/11/2026), Trực Fanpage 2tr.
 const manualKinds=p=>p.bonus_kinds?MANUAL.filter(([k])=>p.bonus_kinds.includes(k)):MANUAL.filter(([k])=>k!=='fanpage'||p.bonus_items?.fanpage);
 const fanpage=p=>p.bonus_profile==='fanpage';
 const openSlips=new Set();
@@ -163,7 +163,7 @@ export async function renderBonusPanel(el,{api,toast,month,row,staff,reload}){if
   el.innerHTML=(staff?staffSlip(row,mine,r.month):'')+(r.can_enter?entryCard(r,staff):'');
   el.onclick=e=>{if(e.target.closest('[data-tips]'))openTipLog(api,month);};
   const form=el.querySelector('.bonus-entry-form');if(!form)return;
-  // Mỗi người chỉ hiện khoản nhập được theo nhóm thưởng (Trực Fanpage không có khoản nhập tay).
+  // Mỗi người chỉ hiện khoản nhập được theo nhóm thưởng (Trực Fanpage chỉ nhập được Ăn uống).
   const allKinds=Object.entries(r.kinds||{});form.user_id.onchange=()=>{const person=r.people.find(p=>p.id===Number(form.user_id.value)),list=person?.kinds?allKinds.filter(([k])=>person.kinds.includes(k)):allKinds,keep=form.kind.value;
    form.kind.innerHTML=`<option value="">${list.length?'Chọn khoản':'Không có khoản nhập tay cho người này'}</option>`+list.map(([k,l])=>`<option value="${k}">${esc(l)}</option>`).join('');if(list.some(([k])=>k===keep))form.kind.value=keep;form.kind.disabled=!list.length;};
   form.amount.oninput=()=>{const d=form.amount.value.replace(/\D/g,'').replace(/^0+(?=\d)/,'').slice(0,9);form.amount.value=d?num(Number(d)):'';};

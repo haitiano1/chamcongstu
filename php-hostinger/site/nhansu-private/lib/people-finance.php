@@ -104,11 +104,11 @@ function booking_month_commissions(App $a,string $month,int $now): array {
 const PAYROLL_AUTO_KINDS=['tips','outdoor','no_customer','fanpage'];
 const PAYROLL_AUTO_WHY=['tips'=>'tự chia từ Tip của lịch khách','outdoor'=>'tự tính từ lịch ngoại cảnh có chấm công','no_customer'=>'tự tính: số ca × lương 1/2 ngày','fanpage'=>'cố định 2.000.000đ/tháng'];
 // Nhóm thưởng (chủ dự án chốt 02/11/2026): Thợ chụp (Huy, Cường) có mọi khoản thưởng; Trực Fanpage (Tín) chỉ có Chuyên cần,
-// Ca làm không có khách, Tiền khách Tips (Tip chia 3) và Thưởng trực Fanpage 2.000.000đ (không Ngoại cảnh, Chỉnh ảnh, Ăn uống, OT, hoa hồng khách…).
+// Ca làm không có khách, Tiền khách Tips (Tip chia 3), Ăn uống 300.000đ (thêm 03/11/2026) và Thưởng trực Fanpage 2.000.000đ (không Ngoại cảnh, Chỉnh ảnh, OT, hoa hồng khách…).
 // Chọn trong hồ sơ nhân viên (bảng payroll_profiles, mặc định Thợ chụp); lần đầu tự đặt Tín là Trực Fanpage.
 const PAYROLL_PROFILES=['photo'=>'Thợ chụp','fanpage'=>'Trực Fanpage'];
 const FANPAGE_BONUS_VND=2000000;
-function profile_kinds(string $profile): array {return $profile==='fanpage'?['tips','no_customer','fanpage']:array_values(array_diff(array_keys(array_slice(PAYROLL_BONUS_KINDS,1,null,true)),['fanpage']));}
+function profile_kinds(string $profile): array {return $profile==='fanpage'?['tips','no_customer','meal','fanpage']:array_values(array_diff(array_keys(array_slice(PAYROLL_BONUS_KINDS,1,null,true)),['fanpage']));}
 function payroll_profiles_seed(App $a): void {
  if(!function_exists('task_fold')||$a->meta('payroll_profiles_seeded'))return;$a->meta('payroll_profiles_seeded','1');
  $admin=$a->scalar("SELECT id FROM {{users}} WHERE role='admin' AND archived=0 ORDER BY id LIMIT 1");if(!$admin)return;
@@ -220,7 +220,7 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
   $today=local_day(now_ms());$day=$month===substr($today,0,7)?$today:($month<substr($today,0,7)?date('Y-m-t',strtotime($month.'-01T00:00:00Z')):$month.'-01');
   foreach($b['items'] as $kind=>$amount){
    // Tiền khách Tips, Ngoại cảnh tự tính từ lịch khách, khóa không sửa (chủ dự án chốt 02/11/2026: "để nó set cứng").
-   if($month>=PROGRESS_BONUS_FROM&&(in_array($kind,[...PAYROLL_AUTO_KINDS,'retouch'],true)||$fanpage))continue;
+   if($month>=PROGRESS_BONUS_FROM&&(in_array($kind,[...PAYROLL_AUTO_KINDS,'retouch'],true)||($fanpage&&!in_array($kind,profile_kinds('fanpage'),true))))continue;
    $old=(int)($a->scalar('SELECT amount FROM {{payroll_bonuses}} WHERE month=? AND user_id=? AND kind=?',[$month,$b['user_id'],$kind])?:0);
    // Ăn uống: ô trên phiếu là tổng (mặc định 300.000đ ± phần đã cộng/trừ), lưu phần chênh với mặc định.
    if($base=bonus_base($kind,$month)){$shown=max(0,$base+$old);if($amount===$shown)continue;bonus_set($a,$month,$b['user_id'],$kind,$amount-$base);
@@ -247,7 +247,8 @@ function payroll_apply(App $a,string $month,array $rows,bool $money=true): array
    $empty=(int)round(($p['monthly_salary']??0)*($p['unbookedShifts']??0)/(2*max(1,(int)($p['monthDays']??30))));
    // Tips chia đều cho cả 3 nhân viên (chủ dự án chốt 02/11/2026: "Tip chia 3"), kể cả nhóm Trực Fanpage.
    $p['tip_total']=$tips['total'];$p['tip_split']=$tips['split'];$share=tip_share($a,$month,(int)$p['id'],$tips);if($share!==null)$p['tip_share']=$share;
-   if($profile==='fanpage'){$p['ot_rate']=0;$items=['tips'=>$share??0,'no_customer'=>$empty,'fanpage'=>FANPAGE_BONUS_VND];}
+   // Trực Fanpage cũng có Ăn uống 300.000đ/tháng như Thợ chụp (chủ dự án yêu cầu 03/11/2026).
+   if($profile==='fanpage'){$p['ot_rate']=0;$p['meal_base']=MEAL_DEFAULT_VND;$p['meal_adjust']=$items['meal']??0;$items=['tips'=>$share??0,'no_customer'=>$empty,'meal'=>max(0,MEAL_DEFAULT_VND+$p['meal_adjust']),'fanpage'=>FANPAGE_BONUS_VND];}
    else{unset($items['fanpage']);$items['no_customer']=$empty;$p['retouch_count']=$photos;$p['retouch_rate']=RETOUCH_PHOTO_VND;$items['retouch']=$photos*RETOUCH_PHOTO_VND;$p['meal_base']=MEAL_DEFAULT_VND;$p['meal_adjust']=$items['meal']??0;$items['meal']=max(0,MEAL_DEFAULT_VND+$p['meal_adjust']);
     if($share!==null)$items['tips']=$share;else unset($items['tips']);
     if($o=$outdoor[(int)$p['id']]??null){$items['outdoor']=$o['amount'];$p['outdoor_count']=$o['count'];$p['outdoor_days']=$o['days'];$p['outdoor_missed']=$o['missed'];$p['outdoor_rate']=OUTDOOR_BONUS_VND;}else unset($items['outdoor']);}}
