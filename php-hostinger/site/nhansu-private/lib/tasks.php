@@ -77,16 +77,17 @@ function task_pending(App $a): int {
 }
 function task_routes(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/tasks'&&!str_starts_with($path,'/tasks/'))return null;
+ if($path==='/tasks/support'||str_starts_with($path,'/tasks/support/'))return support_routes($a,$path,$b,$method);
  $manager=$a->user['role']!=='employee';$me=$a->user['id'];
  daily_tasks_ensure($a,local_day(now_ms()));
  $r=daily_template_routes($a,$path,$b,$method);if($r!==null)return $r;
- if($path==='/tasks/summary'&&$method==='GET')return [200,['pending'=>task_pending($a)]];
+ if($path==='/tasks/summary'&&$method==='GET')return [200,['pending'=>task_pending($a),'support'=>support_pending($a)]];
  if($path==='/tasks'&&$method==='GET'){
   $rows=$manager?$a->all(task_list_sql()."LEFT JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? WHERE t.status<>'deleted' ORDER BY t.created_at DESC LIMIT 300",[$me]):$a->all(task_list_sql()."JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? WHERE t.status<>'deleted' ORDER BY t.created_at DESC LIMIT 300",[$me]);
   // Danh sách việc chia theo ngày (chủ dự án yêu cầu 03/11/2026): Admin/Quản lý thấy tên người nhận trên từng thẻ.
   $names=[];if($manager&&$rows)foreach($a->all('SELECT r.task_id,u.name FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id IN ('.implode(',',array_fill(0,count($rows),'?')).') ORDER BY u.name',array_column($rows,'id')) as $x)$names[$x['task_id']][]=$x['name'];
   foreach($rows as &$r){$r['mine']=(bool)$r['mine'];$r['my_has_proof']=(bool)$r['my_has_proof'];if(!$manager)unset($r['seen'],$r['done']);else $r['recipients']=$names[$r['id']]??[];}unset($r);
-  return [200,['rows'=>$rows,'pending'=>task_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
+  return [200,['rows'=>$rows,'pending'=>task_pending($a),'support'=>support_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
  }
  if($path==='/tasks'&&$method==='POST'){
   $a->requireManager();$r=task_create($a,$me,$b);
@@ -456,4 +457,94 @@ function task_telegram_command(App $a,Telegram $tg,array $m): bool {
   $reply('✅ Đã giao '.($kind==='task'?'Task':'Nhắc nhở').' cho '.$names."\n«".$r['title'].'»'.($r['due_at']?"\nHạn: ".date('H:i d/m/Y',intdiv($r['due_at'],1000)):'').($r['require_photo']?"\n📷 Bắt buộc chụp ".($r['require_photo']>1?$r['require_photo'].' ':'')."ảnh khi báo xong":'')."\nNgười nhận đã liên kết Telegram sẽ được nhắn riêng. Xem tiến độ: ".$a->config['app_url'].'/#tasks');
  }catch(HttpError $e){$reply('⚠️ '.$e->getMessage());}
  return true;
+}
+// ===== Hỗ trợ (chủ dự án yêu cầu 03/11/2026, tab Việc → Hỗ trợ, #support) =====
+// Nhân viên gửi yêu cầu (loại, tiêu đề, nội dung, tối đa 3 ảnh) để bớt nhắn tin riêng; Telegram báo Admin + Quản lý.
+// Hai bên trao đổi trong yêu cầu; Admin/Quản lý Duyệt / Từ chối (bắt buộc lý do) / Đã xử lý xong, mỗi bước Telegram báo nhân viên.
+// Nhân viên chỉ thấy yêu cầu của mình, rút được khi còn Chờ xử lý. Đường dẫn /tasks/support để nằm cùng file Việc.
+const SUPPORT_CATEGORIES=['equipment'=>'Thiết bị / cơ sở vật chất','shift'=>'Đổi ca / nghỉ','pay'=>'Lương / thưởng','other'=>'Khác'];
+const SUPPORT_STATUS=['pending'=>'Chờ xử lý','approved'=>'Đã duyệt','rejected'=>'Từ chối','done'=>'Đã xong','withdrawn'=>'Đã rút'];
+const SUPPORT_MAX_PHOTOS=3;
+function support_manager(App $a): bool {return in_array($a->user['role'],['admin','manager'],true);}
+// Số trên nút Việc: Admin/Quản lý = yêu cầu chưa xong (Chờ xử lý, Đã duyệt); nhân viên = yêu cầu có trả lời / đổi trạng thái chưa xem.
+function support_pending(App $a): int {
+ if(support_manager($a))return (int)$a->scalar("SELECT COUNT(*) FROM {{support_requests}} WHERE status IN ('pending','approved')");
+ return (int)$a->scalar('SELECT COUNT(*) FROM {{support_requests}} WHERE user_id=? AND staff_notice_at>staff_seen_at',[$a->user['id']]);
+}
+function support_notify(App $a,?int $to,string $text,string $id): int {
+ if(!class_exists('Telegram'))return 0;$tg=new Telegram($a);if(!$tg->configured())return 0;$sent=0;
+ $rows=$to===null?$a->all("SELECT l.chat_id FROM {{telegram_links}} l JOIN {{users}} u ON u.id=l.user_id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' AND u.id!=? ORDER BY u.id",[$a->user['id']]):$a->all('SELECT chat_id FROM {{telegram_links}} WHERE user_id=?',[$to]);
+ foreach($rows as $m){try{$tg->call('sendMessage',['chat_id'=>$m['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở yêu cầu',$a->config['app_url'].'/#support:'.$id));$sent++;}catch(Throwable $e){$a->meta('telegram_error',$e->getMessage());}}
+ return $sent;
+}
+function support_clip(string $text,int $max=300): string {return text_length($text)>$max?mb_substr($text,0,$max,'UTF-8').'…':$text;}
+function support_find(App $a,string $id): array {
+ $r=$a->one('SELECT s.*,u.name FROM {{support_requests}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.id=?',[$id]);
+ if(!$r||(!support_manager($a)&&(int)$r['user_id']!==(int)$a->user['id']))fail('Không tìm thấy yêu cầu.',404);
+ return $r;
+}
+function support_row(array $r): array {
+ foreach(['user_id','photos','created_at','updated_at','staff_seen_at','staff_notice_at','closed_at','version','messages','last_at'] as $k)if(isset($r[$k]))$r[$k]=(int)$r[$k];
+ $r['unread']=$r['staff_notice_at']>$r['staff_seen_at'];return $r;
+}
+function support_routes(App $a,string $path,array $b,string $method): ?array {
+ $manager=support_manager($a);$me=(int)$a->user['id'];$now=now_ms();
+ if($path==='/tasks/support'&&$method==='GET'){
+  $rows=$a->all("SELECT s.id,s.user_id,u.name,s.category,s.title,s.body,s.status,s.photos,s.created_at,s.updated_at,s.staff_seen_at,s.staff_notice_at,s.closed_at,s.version,(SELECT COUNT(*) FROM {{support_messages}} m WHERE m.request_id=s.id AND m.kind='comment') messages,GREATEST(s.updated_at,s.created_at) last_at FROM {{support_requests}} s JOIN {{users}} u ON u.id=s.user_id".($manager?'':' WHERE s.user_id=?').' ORDER BY s.created_at DESC LIMIT 300',$manager?[]:[$me]);
+  return [200,['rows'=>array_map('support_row',$rows),'pending'=>support_pending($a),'can_manage'=>$manager,'can_create'=>$a->user['role']==='employee','categories'=>SUPPORT_CATEGORIES,'today'=>local_day($now)]];
+ }
+ if($path==='/tasks/support'&&$method==='POST'){
+  if($a->user['role']!=='employee')fail('Chỉ nhân viên gửi yêu cầu hỗ trợ.',403);
+  $id=entry_uuid($b['id']??null);if($a->one('SELECT id FROM {{support_requests}} WHERE id=?',[$id]))return [200,['ok'=>true,'id'=>$id,'already_saved'=>true]];
+  $category=$b['category']??'';if(!is_string($category)||!isset(SUPPORT_CATEGORIES[$category]))fail('Chọn loại yêu cầu.');
+  $title=input_text($b['title']??'','Tiêu đề',3,150);$body=input_text($b['body']??'','Nội dung',5,3000);
+  $list=$b['photos']??[];if(!is_array($list)||!array_is_list($list)||count($list)>SUPPORT_MAX_PHOTOS)fail('Gửi tối đa '.SUPPORT_MAX_PHOTOS.' ảnh.');
+  $photos=array_values(array_filter(array_map('task_photo',$list),fn($x)=>$x!==null));
+  $a->tx(function()use($a,$id,$me,$category,$title,$body,$photos,$now){
+   $a->run("INSERT INTO {{support_requests}}(id,user_id,category,title,body,status,photos,created_at,updated_at,staff_seen_at,staff_notice_at,version) VALUES(?,?,?,?,?,'pending',?,?,?,?,0,1)",[$id,$me,$category,$title,$body,count($photos),$now,$now,$now]);
+   foreach($photos as $i=>$p)$a->run('INSERT INTO {{support_photos}}(request_id,idx,photo_jpeg) VALUES(?,?,?)',[$id,$i+1,$p]);
+  });
+  $sent=support_notify($a,null,"🆘 Yêu cầu hỗ trợ mới\n👤 {$a->user['name']}\n📂 ".SUPPORT_CATEGORIES[$category]."\n📝 $title\n\n".support_clip($body).($photos?"\n📷 ".count($photos).' ảnh':''),$id);
+  return [201,['ok'=>true,'id'=>$id,'notified'=>$sent]];
+ }
+ if(!preg_match('~^/tasks/support/([a-f0-9-]{36})(?:/(photo/(\d)|reply|status|withdraw))?$~D',$path,$m))return null;
+ $id=entry_uuid($m[1]);$r=support_find($a,$id);$owner=(int)$r['user_id']===$me;$action=$m[2]??'';
+ if($action===''&&$method==='GET'){
+  $messages=$a->all('SELECT m.id,m.user_id,u.name,u.role,m.kind,m.status,m.body,m.created_at FROM {{support_messages}} m LEFT JOIN {{users}} u ON u.id=m.user_id WHERE m.request_id=? ORDER BY m.id',[$id]);
+  if($owner&&$r['staff_notice_at']>$r['staff_seen_at']){$a->run('UPDATE {{support_requests}} SET staff_seen_at=? WHERE id=?',[$now,$id]);$r['staff_seen_at']=$now;}
+  unset($r['closed_by']);return [200,['request'=>support_row($r),'messages'=>array_map(fn($x)=>['id'=>(int)$x['id'],'user_id'=>$x['user_id']===null?null:(int)$x['user_id'],'name'=>$x['name'],'staff'=>$x['role']==='employee','kind'=>$x['kind'],'status'=>$x['status'],'body'=>$x['body'],'created_at'=>(int)$x['created_at']],$messages),'pending'=>support_pending($a)]];
+ }
+ if(str_starts_with($action,'photo/')&&$method==='GET'){
+  $photo=$a->scalar('SELECT photo_jpeg FROM {{support_photos}} WHERE request_id=? AND idx=?',[$id,(int)$m[3]]);if(!$photo)fail('Không có ảnh.',404);
+  header('Content-Type: image/jpeg');header('Content-Disposition: inline');header('Cache-Control: private, max-age=86400');echo $photo;exit;
+ }
+ if($method!=='POST')return null;
+ if($action==='reply'){
+  if(!$owner&&!$manager)fail('Bạn không trả lời được yêu cầu này.',403);if($r['status']==='withdrawn')fail('Yêu cầu đã rút.',409);
+  $body=input_text($b['body']??'','Nội dung trả lời',1,2000);
+  $a->tx(function()use($a,$id,$me,$body,$now,$owner){$a->run("INSERT INTO {{support_messages}}(request_id,user_id,kind,status,body,created_at) VALUES(?,?,'comment',NULL,?,?)",[$id,$me,$body,$now]);
+   $a->run('UPDATE {{support_requests}} SET updated_at=?'.($owner?',staff_seen_at=?':',staff_notice_at=?').' WHERE id=?',[$now,$now,$id]);});
+  $owner?support_notify($a,null,"💬 {$a->user['name']} trả lời yêu cầu hỗ trợ\n📝 {$r['title']}\n\n".support_clip($body),$id):support_notify($a,(int)$r['user_id'],"💬 {$a->user['name']} trả lời yêu cầu của bạn\n📝 {$r['title']}\n\n".support_clip($body),$id);
+  return [201,['ok'=>true]];
+ }
+ if($action==='withdraw'){
+  if(!$owner)fail('Chỉ người gửi rút được yêu cầu.',403);if($r['status']!=='pending')fail('Chỉ rút được yêu cầu đang Chờ xử lý.',409);
+  $a->tx(function()use($a,$id,$me,$now){$a->run("UPDATE {{support_requests}} SET status='withdrawn',updated_at=?,staff_seen_at=?,closed_by=?,closed_at=?,version=version+1 WHERE id=? AND status='pending'",[$now,$now,$me,$now,$id]);
+   $a->run("INSERT INTO {{support_messages}}(request_id,user_id,kind,status,body,created_at) VALUES(?,?,'status','withdrawn','',?)",[$id,$me,$now]);});
+  support_notify($a,null,"↩️ {$a->user['name']} đã rút yêu cầu hỗ trợ\n📝 {$r['title']}",$id);
+  return [200,['ok'=>true]];
+ }
+ if($action==='status'){
+  if(!$manager)fail('Chỉ Admin hoặc Quản lý xử lý yêu cầu.',403);
+  $to=$b['status']??'';$allowed=['pending'=>['approved','rejected','done'],'approved'=>['rejected','done']][$r['status']]??[];
+  if(!is_string($to)||!in_array($to,$allowed,true))fail('Yêu cầu đang '.SUPPORT_STATUS[$r['status']].', không chuyển được sang trạng thái này.',409);
+  $note=input_text($b['note']??'','Ghi chú',$to==='rejected'?5:0,1000);if(($b['version']??null)!==(int)$r['version'])fail('Yêu cầu vừa được người khác cập nhật. Mở lại để xem bản mới.',409);
+  $a->tx(function()use($a,$id,$me,$to,$note,$now,$r){$closed=in_array($to,['rejected','done'],true);
+   $a->run('UPDATE {{support_requests}} SET status=?,updated_at=?,staff_notice_at=?,closed_by=?,closed_at=?,version=version+1 WHERE id=? AND version=?',[$to,$now,$now,$closed?$me:null,$closed?$now:null,$id,(int)$r['version']]);
+   $a->run("INSERT INTO {{support_messages}}(request_id,user_id,kind,status,body,created_at) VALUES(?,?,'status',?,?,?)",[$id,$me,$to,$note,$now]);});
+  $icon=['approved'=>'✅','rejected'=>'❌','done'=>'✔️'][$to];
+  support_notify($a,(int)$r['user_id'],"$icon Yêu cầu hỗ trợ của bạn: ".SUPPORT_STATUS[$to]."\n📝 {$r['title']}\n👤 Xử lý: {$a->user['name']}".($note!==''?"\n\n".support_clip($note):''),$id);
+  return [200,['ok'=>true,'status'=>$to]];
+ }
+ return null;
 }

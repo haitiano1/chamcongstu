@@ -1,8 +1,8 @@
-# Cập nhật 03/11/2026 — Tín có Ăn uống 300k; ô nhập tiền tự thêm dấu chấm; danh sách Việc chia theo ngày; thống kê Lịch chụp theo tháng, số khách lịch Team
+# Cập nhật 03/11/2026 — Tín có Ăn uống 300k; ô nhập tiền tự thêm dấu chấm; danh sách Việc chia theo ngày; thống kê Lịch chụp theo tháng, số khách lịch Team; mục Hỗ trợ
 
 Gói này **cộng dồn** mọi gói ngày 02/11. Chưa upload gói 02/11 thì upload gói này là đủ.
 
-## Thay đổi (v1.3.49)
+## Thay đổi (v1.3.50)
 
 ### 1. Nhóm Trực Fanpage (Tín) có thêm Ăn uống 300.000đ/tháng
 
@@ -40,13 +40,25 @@ Gõ 50000 thì ô tự hiện **50.000**:
 - Nếu trên Sheet đã ghi mỗi người một dòng Team cùng giờ thì khi nhập ở web, cả nhóm tính theo số đã nhập (không đếm trùng). Chưa nhập thì mỗi dòng Team vẫn là 1 khách như trước.
 - Số khách Team chỉ lưu trên web, không ghi xuống Google Sheet.
 
+### 6. Mục Hỗ trợ: nhân viên gửi yêu cầu, Admin/Quản lý duyệt (bớt nhắn tin riêng)
+
+- Tab **Việc** có 2 tab con: **📋 Việc được giao** | **🆘 Hỗ trợ**.
+- Nhân viên bấm **＋ Gửi yêu cầu** (trong tab Hỗ trợ, hoặc khung **🆘 Cần hỗ trợ?** ở trang Chấm công): chọn loại (Thiết bị / cơ sở vật chất, Đổi ca / nghỉ, Lương / thưởng, Khác), ghi tiêu đề, nội dung, thêm tối đa 3 ảnh (chụp mới hoặc chọn ảnh có sẵn).
+- Gửi xong, **Telegram báo ngay Admin + Quản lý**, có nút mở thẳng yêu cầu đó.
+- Mở yêu cầu có khung **Trao đổi**: hai bên nhắn qua lại ngay trong yêu cầu, mỗi lần trả lời Telegram báo bên kia.
+- Admin/Quản lý bấm **✅ Duyệt**, **✔️ Đã xử lý xong** hoặc **Từ chối** (bắt buộc ghi lý do). Mỗi bước Telegram báo nhân viên.
+- Nhân viên chỉ thấy yêu cầu của mình, **rút** được khi còn Chờ xử lý.
+- Số đỏ trên nút **Việc**: Admin/Quản lý thấy số yêu cầu chưa xong; nhân viên thấy số yêu cầu có trả lời mới.
+- Danh sách chia theo ngày, phân trang, lọc Đang mở / Đã xong / Từ chối – rút / Tất cả.
+- Ứng lương và Yêu cầu bổ sung công vẫn ở chỗ cũ.
+
 ## File cần upload
 
 Như các lần trước, chỉ upload **file bên trong** từng ZIP và chọn Replace:
 
 1. `1-private-lib.zip` → giải nén vào `nhansu-private/lib/` (Replace): `people-finance.php`, `tasks.php`, `bookings.php`, `schema.php` (cùng các file lib khác trong gói).
 2. `2-private-bin.zip` → `nhansu-private/bin/` (Replace): `cron.php` (không đổi, có sẵn để gói đủ bộ).
-3. `3-public-assets.zip` → `public_html/nhansu/assets/` (Replace): `app.js`, `bookings.js`, `employees.js`, `payroll.js`, `people-finance.js`, `tasks.js`, `tasks.css`, `studio-journal.css` và **file mới `money-input.js`** (thiếu file này app sẽ không mở được), cùng các file khác trong gói.
+3. `3-public-assets.zip` → `public_html/nhansu/assets/` (Replace): `app.js`, `bookings.js`, `employees.js`, `payroll.js`, `people-finance.js`, `tasks.js`, `tasks.css`, `studio-journal.css` và **2 file mới `money-input.js`, `support.js`** (thiếu một trong hai file này app sẽ không mở được), cùng các file khác trong gói.
 4. `4-public-root.zip` → `public_html/nhansu/` (Replace): `index.php`, `kiemtra-capnhat.php`.
 
 Không đổi Google Apps Script, không đổi cron.
