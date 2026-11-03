@@ -83,7 +83,9 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
  if($path==='/tasks/summary'&&$method==='GET')return [200,['pending'=>task_pending($a)]];
  if($path==='/tasks'&&$method==='GET'){
   $rows=$manager?$a->all(task_list_sql()."LEFT JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? WHERE t.status<>'deleted' ORDER BY t.created_at DESC LIMIT 300",[$me]):$a->all(task_list_sql()."JOIN {{task_recipients}} my ON my.task_id=t.id AND my.user_id=? WHERE t.status<>'deleted' ORDER BY t.created_at DESC LIMIT 300",[$me]);
-  foreach($rows as &$r){$r['mine']=(bool)$r['mine'];$r['my_has_proof']=(bool)$r['my_has_proof'];if(!$manager)unset($r['seen'],$r['done']);}unset($r);
+  // Danh sách việc chia theo ngày (chủ dự án yêu cầu 03/11/2026): Admin/Quản lý thấy tên người nhận trên từng thẻ.
+  $names=[];if($manager&&$rows)foreach($a->all('SELECT r.task_id,u.name FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id IN ('.implode(',',array_fill(0,count($rows),'?')).') ORDER BY u.name',array_column($rows,'id')) as $x)$names[$x['task_id']][]=$x['name'];
+  foreach($rows as &$r){$r['mine']=(bool)$r['mine'];$r['my_has_proof']=(bool)$r['my_has_proof'];if(!$manager)unset($r['seen'],$r['done']);else $r['recipients']=$names[$r['id']]??[];}unset($r);
   return [200,['rows'=>$rows,'pending'=>task_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
  }
  if($path==='/tasks'&&$method==='POST'){

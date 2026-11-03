@@ -94,3 +94,47 @@
 .text-button.danger{color:#b42318}
 /* Xóa việc đã giao (02/11/2026) */
 .task-delete-button{color:#b42318!important;font-size:13px}
+/* Danh sách Việc / Nhắc nhở chia theo ngày + phân trang (03/11/2026) */
+.task-list{gap:18px;margin-top:12px}
+.task-kind-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.task-tabs.task-kinds button{padding:6px 11px}
+.task-tab-count{display:inline-block;min-width:18px;height:18px;line-height:18px;margin-left:4px;padding:0 5px;border-radius:9px;background:#d92d20;color:#fff;font-size:10px;font-weight:700;text-align:center;vertical-align:1px}
+.task-day{display:grid;gap:8px}
+.task-day-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 2px 6px;border-bottom:1px solid #e9eef5}
+.task-day-head h3{margin:0;font-size:14px;font-weight:700;color:#14233a;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.task-day-head h3 em{font-style:normal;font-size:11px;font-weight:700;color:#fff;background:#185fc4;border-radius:999px;padding:2px 8px}
+.task-day-head h3 em.past{background:#64748b}
+.task-day-head span{font-size:12px;color:#6d7b91;white-space:nowrap}.task-day-head b{color:#b45309;font-weight:600}
+.task-day-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.task-card{padding:11px 13px;border-left-width:3px;border-radius:12px;box-shadow:0 1px 2px #0f172a0a}
+.task-card.late{border-left-color:#d92d20}
+.task-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.task-card .task-meta{gap:5px}
+.task-card .task-kind,.task-card .task-state,.task-card .task-chip,.task-card .task-due{font-size:11px;padding:3px 8px}
+.task-chip.who{background:#f5f3ff;color:#5b21b6}
+.task-due.late{background:#fff0f0;color:#b42318;font-weight:600}
+.task-card h3{margin:7px 0 2px;font-size:15px;line-height:1.35}
+.task-card .task-body{font-size:13px;line-height:1.5}
+.task-card .task-progress{margin-top:7px;font-size:11.5px}.task-card .task-bar{height:5px;max-width:140px}
+.task-card .task-foot{margin-top:8px;gap:8px}.task-card .task-foot small{font-size:11.5px}
+.task-delete-icon{flex:none;width:30px;height:30px;margin:-4px -6px 0 0;border:0;border-radius:50%;background:transparent;font-size:14px;line-height:1;display:grid;place-items:center;opacity:.55;cursor:pointer}
+.task-delete-icon:hover,.task-delete-icon:focus-visible{opacity:1;background:#fff0f0}
+.task-bundle details{border:1px solid #dbe6f7;border-radius:12px;background:#f6f9ff;overflow:hidden}
+.task-bundle summary{list-style:none;display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;min-height:44px}
+.task-bundle summary::-webkit-details-marker{display:none}
+.task-bundle summary::after{content:'';width:8px;height:8px;border-right:2px solid #64748b;border-bottom:2px solid #64748b;transform:rotate(45deg);margin:0 4px 4px 2px;transition:transform .15s}
+.task-bundle details[open] summary::after{transform:rotate(-135deg);margin-bottom:-2px}
+.task-bundle-icon{width:30px;height:30px;border-radius:50%;background:#e3edff;display:grid;place-items:center;font-size:14px;flex:none}
+.task-bundle-name{flex:1;min-width:0;font-size:14px;font-weight:700;color:#1f4e8c;display:grid}.task-bundle-name small{font-size:12px;font-weight:500;color:#6d7b91}
+.task-bundle-done{font-size:12px;font-weight:700;color:#b45309;background:#fff4e5;border-radius:999px;padding:3px 9px;white-space:nowrap}.task-bundle-done.ok{color:#15803d;background:#e7f6ec}
+.task-bundle .task-day-list{padding:0 8px 8px}
+.task-pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:16px}
+.task-pager[hidden]{display:none}
+.task-pager button{width:auto;margin:0;min-height:40px;padding:0 16px}
+.task-pager span{display:grid;justify-items:center;font-size:13px;color:#334155}.task-pager small{font-size:11px;color:#6d7b91}
+@media(max-width:800px){.task-kind-row .task-tabs{flex:1}.task-card{padding:11px 12px}.task-card .task-foot{flex-direction:row;align-items:center;flex-wrap:wrap}.task-card .task-foot .task-actions{flex:1 1 100%}.task-pager{gap:8px}.task-pager button{flex:1}}
+.task-pager span{white-space:nowrap}.task-pager b{font-weight:700}
+.task-card.compact{padding:9px 11px;border-left-width:3px;box-shadow:none}
+.task-card.compact h3{margin:5px 0 0;font-size:14px}
+.task-card.compact .task-state.new{background:#fff4e5;color:#b45309}
+.task-bundle details{margin:0}
