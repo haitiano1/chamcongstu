@@ -55,6 +55,7 @@ function schema(): array {return [
 'meeting_editors'=>"user_id BIGINT PRIMARY KEY,granted_by BIGINT NOT NULL,granted_at BIGINT NOT NULL",
 'payroll_bonus_editors'=>"user_id BIGINT PRIMARY KEY,granted_by BIGINT NOT NULL,granted_at BIGINT NOT NULL",
 'payroll_profiles'=>"user_id BIGINT PRIMARY KEY,profile VARCHAR(16) NOT NULL,updated_by BIGINT NOT NULL,updated_at BIGINT NOT NULL",
+'guide_checks'=>"user_id BIGINT NOT NULL,item VARCHAR(32) NOT NULL,version INT NOT NULL,title VARCHAR(150) NOT NULL,checked_at BIGINT NOT NULL,PRIMARY KEY(user_id,item,version)",
 'support_requests'=>"id CHAR(36) PRIMARY KEY,user_id BIGINT NOT NULL,category VARCHAR(16) NOT NULL,title VARCHAR(150) NOT NULL,body TEXT NOT NULL,status VARCHAR(16) NOT NULL,photos TINYINT NOT NULL DEFAULT 0,created_at BIGINT NOT NULL,updated_at BIGINT NOT NULL,staff_seen_at BIGINT NOT NULL DEFAULT 0,staff_notice_at BIGINT NOT NULL DEFAULT 0,closed_by BIGINT NULL,closed_at BIGINT NULL,version INT NOT NULL DEFAULT 1,INDEX support_user(user_id,status),INDEX support_status(status,created_at)",
 'support_messages'=>"id BIGINT PRIMARY KEY AUTO_INCREMENT,request_id CHAR(36) NOT NULL,user_id BIGINT NULL,kind VARCHAR(16) NOT NULL,status VARCHAR(16) NULL,body TEXT NOT NULL,created_at BIGINT NOT NULL,INDEX support_msg(request_id,id)",
 'support_photos'=>"request_id CHAR(36) NOT NULL,idx TINYINT NOT NULL,photo_jpeg MEDIUMBLOB NOT NULL,PRIMARY KEY(request_id,idx)",

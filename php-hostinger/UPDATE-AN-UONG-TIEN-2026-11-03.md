@@ -1,8 +1,8 @@
-# Cập nhật 03/11/2026 — Tín có Ăn uống 300k; ô nhập tiền tự thêm dấu chấm; danh sách Việc chia theo ngày; thống kê Lịch chụp theo tháng, số khách lịch Team; mục Hỗ trợ; Task cần duyệt
+# Cập nhật 03/11/2026 — Tín có Ăn uống 300k; ô nhập tiền tự thêm dấu chấm; danh sách Việc chia theo ngày; thống kê Lịch chụp theo tháng, số khách lịch Team; mục Hỗ trợ; Task cần duyệt; Tìm hiểu web
 
 Gói này **cộng dồn** mọi gói ngày 02/11. Chưa upload gói 02/11 thì upload gói này là đủ.
 
-## Thay đổi (v1.3.51)
+## Thay đổi (v1.3.52)
 
 ### 1. Nhóm Trực Fanpage (Tín) có thêm Ăn uống 300.000đ/tháng
 
@@ -63,13 +63,22 @@ Gõ 50000 thì ô tự hiện **50.000**:
 - **Không tick:** như cũ, nhân viên báo xong là Đã xong.
 - Việc hằng ngày chưa có chế độ duyệt.
 
+### 8. Tìm hiểu web: checklist hướng dẫn có ảnh động, nhân viên tick xác nhận
+
+- Trang mới **Thêm → Tìm hiểu web** (nhóm Studio, cạnh Biên bản họp). Có 15 mục: Mở app, Liên kết Telegram, Chấm công vào ca, Làm cả ngày, Chấm ra & làm tiếp, OT, Yêu cầu bổ sung công, Lịch chụp, Đăng ký ca, Việc & Nhắc nhở, Hỗ trợ, Bảng công & Phiếu thưởng, KPI & Luật Studio, Ứng lương, Biên bản họp.
+- Mỗi mục: hướng dẫn **từng bước**, **ảnh động** (ảnh chụp app tự chạy qua từng bước, vòng đỏ nhấp nháy đúng chỗ cần bấm, có nút ‹ ⏸ ›) và nút **Mở trang này để thử**.
+- Nhân viên phải mở mục và đọc một lúc thì ô **"Tôi đã đọc, đã được hướng dẫn và nắm rõ chức năng này"** mới mở. Tick xong app hỏi lại, rồi lưu **giờ xác nhận**. **Không bỏ tick được** (làm bằng chứng đã được hướng dẫn).
+- Trang Chấm công của nhân viên có khung **📚 Tìm hiểu web x/15** cho tới khi xác nhận đủ.
+- Admin/Quản lý: xem tiến độ từng người, từng mục, giờ xác nhận; **🔔 Nhắc người chưa xong** qua Telegram; **⬇ Xuất CSV**. Nhân viên xác nhận đủ 15/15 thì Telegram báo Admin/Quản lý.
+- Ảnh hướng dẫn chụp bằng dữ liệu thử (khách demo, tài khoản test), không có dữ liệu thật.
+
 ## File cần upload
 
 Như các lần trước, chỉ upload **file bên trong** từng ZIP và chọn Replace:
 
-1. `1-private-lib.zip` → giải nén vào `nhansu-private/lib/` (Replace): `people-finance.php`, `tasks.php`, `bookings.php`, `schema.php`, `bootstrap.php`, `telegram.php` (cùng các file lib khác trong gói).
+1. `1-private-lib.zip` → giải nén vào `nhansu-private/lib/` (Replace): `people-finance.php`, `tasks.php`, `bookings.php`, `schema.php`, `bootstrap.php`, `telegram.php`, `studio-rules.php` (cùng các file lib khác trong gói).
 2. `2-private-bin.zip` → `nhansu-private/bin/` (Replace): `cron.php` (không đổi, có sẵn để gói đủ bộ).
-3. `3-public-assets.zip` → `public_html/nhansu/assets/` (Replace): `app.js`, `bookings.js`, `employees.js`, `payroll.js`, `people-finance.js`, `tasks.js`, `tasks.css`, `studio-journal.css` và **2 file mới `money-input.js`, `support.js`** (thiếu một trong hai file này app sẽ không mở được), cùng các file khác trong gói.
+3. `3-public-assets.zip` → `public_html/nhansu/assets/` (Replace): `app.js`, `bookings.js`, `employees.js`, `payroll.js`, `people-finance.js`, `tasks.js`, `tasks.css`, `studio-journal.css` và **các file mới `money-input.js`, `support.js`, `guide.js`, `guide-media.js` và 45 ảnh `guide-….jpg`** (thiếu file .js mới thì app sẽ không mở được; thiếu ảnh thì khung ảnh động trống), cùng các file khác trong gói.
 4. `4-public-root.zip` → `public_html/nhansu/` (Replace): `index.php`, `kiemtra-capnhat.php`.
 
 Không đổi Google Apps Script, không đổi cron.
