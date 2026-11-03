@@ -1,8 +1,8 @@
-# Cập nhật 03/11/2026 — Tín có Ăn uống 300k; ô nhập tiền tự thêm dấu chấm; danh sách Việc chia theo ngày
+# Cập nhật 03/11/2026 — Tín có Ăn uống 300k; ô nhập tiền tự thêm dấu chấm; danh sách Việc chia theo ngày; thống kê Lịch chụp theo tháng, số khách lịch Team
 
 Gói này **cộng dồn** mọi gói ngày 02/11. Chưa upload gói 02/11 thì upload gói này là đủ.
 
-## Thay đổi (v1.3.48)
+## Thay đổi (v1.3.49)
 
 ### 1. Nhóm Trực Fanpage (Tín) có thêm Ăn uống 300.000đ/tháng
 
@@ -27,13 +27,26 @@ Gõ 50000 thì ô tự hiện **50.000**:
 - Admin/Quản lý: việc hằng ngày của cùng một ngày gộp vào một mục **Việc hằng ngày · x/y xong**, bấm để mở xem từng người.
 - Tab Cần làm (Tất cả đã giao) không còn hiện việc hằng ngày của các ngày đã qua, vì không báo xong được nữa. Muốn xem lại thì chọn tab **Tất cả**.
 
+### 4. Thống kê Lịch chụp theo tháng, thêm Số khách đã chụp
+
+- Khối thống kê bên trái Lịch chụp (trên máy tính) giờ tính **trong tháng đang xem**: **Tổng lịch tháng**, **Lịch hôm nay**, **Lịch sắp tới** (chưa tới giờ chụp), **Số khách đã chụp** (lịch đã qua giờ chụp), Đã hủy. Chuyển sang tháng khác thì số đổi theo tháng đó.
+- Số khách đã chụp đếm giống mục **Khách chụp → Số khách chụp** trên phiếu lương. Riêng phiếu lương vẫn chỉ tính khách lúc thợ có chấm công trong giờ chụp; khách bị loại ghi ở dòng "khách lúc đã chấm ra / không chấm công".
+
+### 5. Lịch Team: thợ nhập số khách theo gói sau khi chụp
+
+- Mở lịch gói **Team** đã qua giờ chụp, popup có khung **Số khách đã chụp (Team)**: mỗi gói (Team 349k, 399k, 699k, Couple 999k, 1499k, 2999k) có nút − / + để nhập số khách, ghi tổng khách và số suất hoa hồng. Bấm **Lưu số khách**.
+- Thợ của lịch, Quản lý, Admin và người được tick Lên lịch chụp nhập được. Tháng đã chốt lương thì không sửa được.
+- Nhập xong, số khách này cộng vào **Số khách đã chụp** (thống kê Lịch chụp) và **Số khách chụp** trên phiếu lương. Hoa hồng tính theo từng gói (Couple 999 ×2, 1499 ×4, 2999 ×8). Thẻ lịch ghi thêm "- 10 khách".
+- Nếu trên Sheet đã ghi mỗi người một dòng Team cùng giờ thì khi nhập ở web, cả nhóm tính theo số đã nhập (không đếm trùng). Chưa nhập thì mỗi dòng Team vẫn là 1 khách như trước.
+- Số khách Team chỉ lưu trên web, không ghi xuống Google Sheet.
+
 ## File cần upload
 
 Như các lần trước, chỉ upload **file bên trong** từng ZIP và chọn Replace:
 
-1. `1-private-lib.zip` → giải nén vào `nhansu-private/lib/` (Replace): `people-finance.php`, `tasks.php` (cùng các file lib khác trong gói).
+1. `1-private-lib.zip` → giải nén vào `nhansu-private/lib/` (Replace): `people-finance.php`, `tasks.php`, `bookings.php`, `schema.php` (cùng các file lib khác trong gói).
 2. `2-private-bin.zip` → `nhansu-private/bin/` (Replace): `cron.php` (không đổi, có sẵn để gói đủ bộ).
-3. `3-public-assets.zip` → `public_html/nhansu/assets/` (Replace): `app.js`, `bookings.js`, `employees.js`, `payroll.js`, `people-finance.js`, `tasks.js`, `tasks.css` và **file mới `money-input.js`** (thiếu file này app sẽ không mở được), cùng các file khác trong gói.
+3. `3-public-assets.zip` → `public_html/nhansu/assets/` (Replace): `app.js`, `bookings.js`, `employees.js`, `payroll.js`, `people-finance.js`, `tasks.js`, `tasks.css`, `studio-journal.css` và **file mới `money-input.js`** (thiếu file này app sẽ không mở được), cùng các file khác trong gói.
 4. `4-public-root.zip` → `public_html/nhansu/` (Replace): `index.php`, `kiemtra-capnhat.php`.
 
 Không đổi Google Apps Script, không đổi cron.

@@ -55,6 +55,7 @@ function schema(): array {return [
 'meeting_editors'=>"user_id BIGINT PRIMARY KEY,granted_by BIGINT NOT NULL,granted_at BIGINT NOT NULL",
 'payroll_bonus_editors'=>"user_id BIGINT PRIMARY KEY,granted_by BIGINT NOT NULL,granted_at BIGINT NOT NULL",
 'payroll_profiles'=>"user_id BIGINT PRIMARY KEY,profile VARCHAR(16) NOT NULL,updated_by BIGINT NOT NULL,updated_at BIGINT NOT NULL",
+'booking_team_counts'=>"booking_id CHAR(36) NOT NULL,price INT NOT NULL,count INT NOT NULL,updated_by BIGINT NOT NULL,updated_at BIGINT NOT NULL,PRIMARY KEY(booking_id,price)",
 'booking_tip_log'=>"id BIGINT PRIMARY KEY AUTO_INCREMENT,booking_id CHAR(36) NOT NULL,shoot_day VARCHAR(10) NOT NULL,minutes INT NOT NULL,customer_name VARCHAR(150) NOT NULL,old_amount BIGINT NOT NULL,amount BIGINT NOT NULL,label VARCHAR(50) NOT NULL,source VARCHAR(8) NOT NULL,actor_id BIGINT NULL,time BIGINT NOT NULL,INDEX tip_log_day(shoot_day),INDEX tip_log_booking(booking_id)",
 'payroll_bonus_entries'=>"id CHAR(36) PRIMARY KEY,month VARCHAR(7) NOT NULL,day VARCHAR(10) NOT NULL,user_id BIGINT NOT NULL,kind VARCHAR(20) NOT NULL,amount BIGINT NOT NULL,note VARCHAR(300) NOT NULL DEFAULT '',created_by BIGINT NOT NULL,created_at BIGINT NOT NULL,INDEX bonus_entry_month(month,user_id)",
 'meeting_audit'=>"id BIGINT PRIMARY KEY AUTO_INCREMENT,meeting_id CHAR(36) NOT NULL,actor_id BIGINT NULL,action VARCHAR(32) NOT NULL,before_json MEDIUMTEXT NULL,after_json MEDIUMTEXT NULL,note TEXT NOT NULL,time BIGINT NOT NULL,INDEX meeting_audit_entry(meeting_id)",

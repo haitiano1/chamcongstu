@@ -44,6 +44,24 @@ const BOOKING_PACKAGE_UNITS=[349=>1,399=>1,699=>1,999=>2,1499=>4,2999=>8];
 const BOOKING_RATE_SEED=[['huy',17500],['cuong',15000]];
 function attendance_target(string $month): int {return substr($month,5,2)==='02'?26:28;}
 // "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699; chỉ ghi chữ "Couple" → 999, "Team" → 349.
+// Lịch Team (chủ dự án yêu cầu 03/11/2026): chụp xong thợ nhập số khách theo từng gói (team 10 người, mỗi người một gói),
+// bảng booking_team_counts, chỉ lưu trên web. Lịch Team đã nhập thì cả nhóm Team cùng ngày, cùng giờ tính theo số đã nhập
+// (các dòng Team khác cùng giờ trên Sheet không đếm thêm); chưa nhập thì mỗi dòng Team vẫn là 1 khách như trước.
+function booking_team_counts(App $a,array $ids): array {
+ $ids=array_values(array_unique($ids));if(!$ids)return [];$out=[];
+ foreach($a->all('SELECT booking_id,price,count FROM {{booking_team_counts}} WHERE count>0 AND booking_id IN ('.implode(',',array_fill(0,count($ids),'?')).') ORDER BY price',$ids) as $r)$out[$r['booking_id']][(int)$r['price']]=(int)$r['count'];
+ return $out;
+}
+// Số khách và số suất hoa hồng của từng lịch (id => customers, units, unpriced). Dùng chung cho phiếu lương và thống kê Lịch chụp.
+function booking_customer_items(App $a,array $rows): array {
+ $team=[];foreach($rows as $r)if(booking_package_price($r['package_label'])===BOOKING_TEAM_PRICE)$team[$r['id']]=$r['shoot_day'].'|'.$r['minutes'];
+ $counts=booking_team_counts($a,array_keys($team));$entered=[];foreach($counts as $id=>$c)$entered[$team[$id]]=true;$out=[];
+ foreach($rows as $r){$id=$r['id'];if(isset($out[$id]))continue;
+  if(isset($counts[$id])){$units=0;foreach($counts[$id] as $price=>$n)$units+=$n*(BOOKING_PACKAGE_UNITS[$price]??0);$out[$id]=['customers'=>array_sum($counts[$id]),'units'=>$units,'unpriced'=>false,'team'=>$counts[$id]];continue;}
+  if(isset($team[$id])&&isset($entered[$team[$id]])){$out[$id]=['customers'=>0,'units'=>0,'unpriced'=>false,'team'=>null];continue;}
+  $units=BOOKING_PACKAGE_UNITS[booking_package_price($r['package_label'])??0]??0;$out[$id]=['customers'=>1,'units'=>$units,'unpriced'=>!$units,'team'=>null];}
+ return $out;
+}
 function booking_package_price(string $label): ?int {
  if(!preg_match('/\d{1,3}(?:[.,]\d{3})+|\d+/',$label,$m)){$text=mb_strtolower($label,'UTF-8');return str_contains($text,'couple')?999:(str_contains($text,'team')?349:null);}
  $n=(int)preg_replace('/\D/','',$m[0]);return $n>=10000?intdiv($n,1000):$n;
@@ -86,12 +104,13 @@ function booking_month_commissions(App $a,string $month,int $now): array {
   if(isset($rates[(int)$r['user_id']])&&!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute)))$rows[]=$r;
  $present=attendance_presence($a,array_values(array_unique(array_map(fn($r)=>(int)$r['user_id'],$rows))),$start,$end,$now);
  foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'units'=>0,'unpriced'=>0,'unpriced_list'=>[],'absent'=>0,'rate'=>$rate];
+ $items=booking_customer_items($a,$rows);
  foreach($rows as $r){$id=(int)$r['user_id'];
   $from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;
+  $it=$items[$r['id']];if(!$it['customers'])continue;
   $here=false;foreach($present[$id]??[] as [$in,$exit])if($in<$to&&$exit>$from){$here=true;break;}
-  if(!$here){$out[$id]['absent']++;continue;}
-  $units=BOOKING_PACKAGE_UNITS[booking_package_price($r['package_label'])??0]??0;
-  $out[$id]['customers']++;$out[$id]['units']+=$units;if(!$units){$out[$id]['unpriced']++;
+  if(!$here){$out[$id]['absent']+=$it['customers'];continue;}
+  $out[$id]['customers']+=$it['customers'];$out[$id]['units']+=$it['units'];if($it['unpriced']){$out[$id]['unpriced']++;
    // Ghi rõ lịch nào chưa có mức (chủ dự án hỏi 02/11/2026): ô Gói trống (khách tới mới chọn) hoặc gói không thuộc 349/399/699/999/1499/2999.
    $out[$id]['unpriced_list'][]=['day'=>$r['shoot_day'],'time'=>booking_hm((int)$r['minutes']),'customer_name'=>$r['customer_name'],'package_label'=>$r['package_label']];}
  }

@@ -116,3 +116,15 @@
 .booking-card.dup{outline:2px solid #d92d20;outline-offset:-2px}
 .booking-card-dup{display:block;margin-top:3px;font-size:11px;font-weight:700;color:#b42318}
 .booking-slot-other label{color:#33445c}
+/* Lịch Team: số khách đã chụp theo gói (03/11/2026) */
+.booking-team-form,.booking-team-view{margin:14px 0 0;padding:12px;border:1px solid #cfe0f7;border-radius:10px;background:#f6f9ff;display:grid;gap:10px}
+.booking-team-head,.booking-team-view{font-size:13px}.booking-team-head>span,.booking-team-view>span{display:block;font-size:12px;font-weight:700;color:#1f4e8c}
+.booking-team-head small,.booking-team-view small{display:block;color:#5b6b82;line-height:1.45;margin-top:2px}.booking-team-view b{font-size:16px;color:#14233a}
+.booking-team-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.booking-team-row{display:flex;align-items:center;justify-content:space-between;gap:6px;background:#fff;border:1px solid #e1e8f2;border-radius:9px;padding:6px 6px 6px 10px;font-size:13px;font-weight:600;color:#14233a;margin:0}
+.booking-team-row small{display:block;font-size:11px;font-weight:500;color:#6d7b91}
+.booking-team-step{display:flex;align-items:center;gap:2px;flex:none}
+.booking-team-step button{width:32px;height:32px;min-height:32px;padding:0;margin:0;border:1px solid #d6dee9;border-radius:8px;background:#f8fafc;color:#1f5fbf;font-size:18px;line-height:1;display:grid;place-items:center}
+.booking-team-step input{width:40px!important;min-height:32px;height:32px;padding:0!important;margin:0!important;text-align:center;font-size:16px;font-weight:700;border:0!important;background:transparent;box-shadow:none}
+.booking-team-total{margin:0;font-size:13px;color:#334155}.booking-team-total b{color:#14233a}
+@media(max-width:420px){.booking-team-rows{grid-template-columns:1fr}}
