@@ -59,21 +59,47 @@ function task_create(App $a,int $me,array $b,string $note=''): array {
   $kind=$b['kind']??'';if(!in_array($kind,TASK_KINDS,true))fail('Chọn loại: Task hoặc Nhắc nhở.');
   $title=task_text($b['title']??null,'Tiêu đề',3,150);$body=task_text($b['body']??'','Nội dung',0,2000);$due=task_due($b['due_at']??null,$kind);
   $photo=$kind==='task'?task_photo_count($b['require_photo']??false):0;
+  // Task cần duyệt (chủ dự án yêu cầu 03/11/2026): người nhận báo xong thì Chờ duyệt, Admin/Quản lý Duyệt mới thành Đã xong.
+  if(array_key_exists('require_review',$b)&&!is_bool($b['require_review']))fail('Ô Task cần duyệt không hợp lệ.');$review=$kind==='task'&&!empty($b['require_review'])?1:0;
   $audience=$b['audience']??'';$ids=task_recipient_ids($a,$me,$audience,$b['user_ids']??null);
   $id=task_uuid();$now=now_ms();
-  $a->run("INSERT INTO {{tasks}}(id,kind,title,body,due_at,require_photo,audience,status,cancel_reason,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,'open','',?,?,?,?)",[$id,$kind,$title,$body,$due,$photo,$audience,$me,$now,$me,$now]);
+  $a->run("INSERT INTO {{tasks}}(id,kind,title,body,due_at,require_photo,require_review,audience,status,cancel_reason,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,'open','',?,?,?,?)",[$id,$kind,$title,$body,$due,$photo,$review,$audience,$me,$now,$me,$now]);
   foreach($ids as $uid)$a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'','pending')",[$id,$uid]);
-  task_audit($a,$id,'created',null,['kind'=>$kind,'title'=>$title,'body'=>$body,'due_at'=>$due,'require_photo'=>$photo,'audience'=>$audience,'recipients'=>$ids],$note,$me);
-  return ['id'=>$id,'recipients'=>$ids,'kind'=>$kind,'title'=>$title,'due_at'=>$due,'require_photo'=>$photo,'audience'=>$audience];
+  task_audit($a,$id,'created',null,['kind'=>$kind,'title'=>$title,'body'=>$body,'due_at'=>$due,'require_photo'=>$photo,'require_review'=>$review,'audience'=>$audience,'recipients'=>$ids],$note,$me);
+  return ['id'=>$id,'recipients'=>$ids,'kind'=>$kind,'title'=>$title,'due_at'=>$due,'require_photo'=>$photo,'require_review'=>$review,'audience'=>$audience];
 }
 function task_list_sql(): string {
- return "SELECT t.template_id,t.task_day,t.id,t.kind,t.title,t.body,t.due_at,t.require_photo,t.audience,t.status,t.cancel_reason,t.created_by,t.created_at,t.updated_at,t.version,(SELECT name FROM {{users}} WHERE id=t.created_by) creator_name,
- (SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id) total,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND seen_at IS NOT NULL) seen,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND done_at IS NOT NULL) done,
- my.seen_at my_seen_at,my.done_at my_done_at,my.done_note my_done_note,(my.proof_jpeg IS NOT NULL) my_has_proof,(my.proof_jpeg IS NOT NULL)+(SELECT COUNT(*) FROM {{task_proofs}} p WHERE p.task_id=t.id AND p.user_id=my.user_id) my_proof_count,(my.user_id IS NOT NULL) mine
+ return "SELECT t.template_id,t.task_day,t.id,t.kind,t.title,t.body,t.due_at,t.require_photo,t.require_review,t.audience,t.status,t.cancel_reason,t.created_by,t.created_at,t.updated_at,t.version,(SELECT name FROM {{users}} WHERE id=t.created_by) creator_name,
+ (SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id) total,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND seen_at IS NOT NULL) seen,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND done_at IS NOT NULL AND COALESCE(review_state,'')<>'pending') done,(SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=t.id AND done_at IS NOT NULL AND review_state='pending') reviewing,
+ my.seen_at my_seen_at,my.done_at my_done_at,my.done_note my_done_note,my.review_state my_review_state,my.review_note my_review_note,my.reviewed_at my_reviewed_at,(SELECT name FROM {{users}} WHERE id=my.reviewed_by) my_reviewer_name,(my.proof_jpeg IS NOT NULL) my_has_proof,(my.proof_jpeg IS NOT NULL)+(SELECT COUNT(*) FROM {{task_proofs}} p WHERE p.task_id=t.id AND p.user_id=my.user_id) my_proof_count,(my.user_id IS NOT NULL) mine
  FROM {{tasks}} t ";
 }
+// Admin/Quản lý: cộng thêm số lượt báo xong đang Chờ duyệt (không tính lượt của chính mình).
+function task_review_pending(App $a): int {
+ if(!in_array($a->user['role'],['admin','manager'],true))return 0;
+ return (int)$a->scalar("SELECT COUNT(*) FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id WHERE t.status='open' AND r.done_at IS NOT NULL AND r.review_state='pending' AND r.user_id<>?",[$a->user['id']]);
+}
+function task_reviews(App $a): array {
+ return array_map(fn($r)=>['task_id'=>$r['task_id'],'title'=>$r['title'],'user_id'=>(int)$r['user_id'],'name'=>$r['name'],'done_at'=>(int)$r['done_at'],'done_note'=>$r['done_note'],'proof_count'=>(int)$r['proof_count'],'due_at'=>$r['due_at']===null?null:(int)$r['due_at']],
+  $a->all("SELECT r.task_id,t.title,t.due_at,r.user_id,u.name,r.done_at,r.done_note,(r.proof_jpeg IS NOT NULL)+(SELECT COUNT(*) FROM {{task_proofs}} p WHERE p.task_id=r.task_id AND p.user_id=r.user_id) proof_count FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id JOIN {{users}} u ON u.id=r.user_id WHERE t.status='open' AND r.done_at IS NOT NULL AND r.review_state='pending' AND r.user_id<>? ORDER BY r.done_at LIMIT 100",[$a->user['id']]));
+}
+// Telegram khi báo xong việc cần duyệt: Admin + Quản lý (trừ người báo), kèm ảnh bằng chứng đầu tiên nếu có.
+function task_review_notify(App $a,array $t,string $note,?string $photo,int $count): int {
+ if(!class_exists('Telegram'))return 0;$tg=support_telegram()??new Telegram($a);if(!$tg->configured())return 0;$sent=0;
+ $text="📋 {$a->user['name']} báo xong việc · chờ duyệt\n📝 {$t['title']}".($note!==''?"\n💬 ".support_clip($note):'').($count?"\n📷 $count ảnh bằng chứng":'')."\n\nMở mục Việc để Duyệt hoặc Chưa duyệt.";
+ $button=$tg->button('Mở Việc',$a->config['app_url'].'/#tasks');
+ foreach($a->all("SELECT l.chat_id FROM {{telegram_links}} l JOIN {{users}} u ON u.id=l.user_id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' AND u.id!=? ORDER BY u.id",[$a->user['id']]) as $m){
+  if($photo!==null&&$tg->photo($m['chat_id'],$photo,$text,$button)){$sent++;continue;}
+  try{$tg->call('sendMessage',['chat_id'=>$m['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$button);$sent++;}catch(Throwable $e){$a->meta('telegram_error',$e->getMessage());}
+ }
+ return $sent;
+}
+function task_review_reply(App $a,int $uid,string $text): void {
+ if(!class_exists('Telegram'))return;$tg=support_telegram()??new Telegram($a);if(!$tg->configured())return;
+ foreach($a->all('SELECT chat_id FROM {{telegram_links}} WHERE user_id=?',[$uid]) as $m){try{$tg->call('sendMessage',['chat_id'=>$m['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở Việc',$a->config['app_url'].'/#tasks'));}catch(Throwable $e){$a->meta('telegram_error',$e->getMessage());}}
+}
 function task_pending(App $a): int {
- return (int)$a->scalar("SELECT COUNT(*) FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id WHERE r.user_id=? AND t.status='open' AND (t.task_day IS NULL OR t.task_day=?) AND (t.kind='notice' AND r.seen_at IS NULL OR t.kind='task' AND r.done_at IS NULL)",[$a->user['id'],local_day(now_ms())]);
+ return task_review_pending($a)+(int)$a->scalar("SELECT COUNT(*) FROM {{task_recipients}} r JOIN {{tasks}} t ON t.id=r.task_id WHERE r.user_id=? AND t.status='open' AND (t.task_day IS NULL OR t.task_day=?) AND (t.kind='notice' AND r.seen_at IS NULL OR t.kind='task' AND r.done_at IS NULL)",[$a->user['id'],local_day(now_ms())]);
 }
 function task_routes(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/tasks'&&!str_starts_with($path,'/tasks/'))return null;
@@ -87,7 +113,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   // Danh sách việc chia theo ngày (chủ dự án yêu cầu 03/11/2026): Admin/Quản lý thấy tên người nhận trên từng thẻ.
   $names=[];if($manager&&$rows)foreach($a->all('SELECT r.task_id,u.name FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id IN ('.implode(',',array_fill(0,count($rows),'?')).') ORDER BY u.name',array_column($rows,'id')) as $x)$names[$x['task_id']][]=$x['name'];
   foreach($rows as &$r){$r['mine']=(bool)$r['mine'];$r['my_has_proof']=(bool)$r['my_has_proof'];if(!$manager)unset($r['seen'],$r['done']);else $r['recipients']=$names[$r['id']]??[];}unset($r);
-  return [200,['rows'=>$rows,'pending'=>task_pending($a),'support'=>support_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
+  return [200,['rows'=>$rows,'reviews'=>$manager?task_reviews($a):[],'pending'=>task_pending($a),'support'=>support_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
  }
  if($path==='/tasks'&&$method==='POST'){
   $a->requireManager();$r=task_create($a,$me,$b);
@@ -97,7 +123,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   $t=task_row($a,$m[1]);$mine=$a->one('SELECT 1 FROM {{task_recipients}} WHERE task_id=? AND user_id=?',[$t['id'],$me]);
   if(!$manager&&!$mine)fail('Bạn không có quyền xem việc này.',403);
   $t['creator_name']=$a->scalar('SELECT name FROM {{users}} WHERE id=?',[$t['created_by']]);
-  $recipients=$a->all('SELECT r.user_id,u.name,r.seen_at,r.done_at,r.done_note,(r.proof_jpeg IS NOT NULL) has_proof,(r.proof_jpeg IS NOT NULL)+(SELECT COUNT(*) FROM {{task_proofs}} p WHERE p.task_id=r.task_id AND p.user_id=r.user_id) proof_count,r.notify_state FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=?'.($manager?'':' AND r.user_id=?').' ORDER BY u.name',$manager?[$t['id']]:[$t['id'],$me]);
+  $recipients=$a->all('SELECT r.user_id,u.name,r.seen_at,r.done_at,r.done_note,r.review_state,r.review_note,r.reviewed_at,(SELECT name FROM {{users}} WHERE id=r.reviewed_by) reviewer_name,(r.proof_jpeg IS NOT NULL) has_proof,(r.proof_jpeg IS NOT NULL)+(SELECT COUNT(*) FROM {{task_proofs}} p WHERE p.task_id=r.task_id AND p.user_id=r.user_id) proof_count,r.notify_state FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=?'.($manager?'':' AND r.user_id=?').' ORDER BY u.name',$manager?[$t['id']]:[$t['id'],$me]);
   foreach($recipients as &$r){$r['has_proof']=(bool)$r['has_proof'];$r['proof_count']=(int)$r['proof_count'];}unset($r);
   $audit=$manager?$a->all('SELECT x.action,x.before_json,x.after_json,x.note,x.time,u.name actor_name FROM {{task_audit}} x JOIN {{users}} u ON u.id=x.actor_id WHERE x.task_id=? ORDER BY x.id',[$t['id']]):[];
   return [200,['task'=>$t,'recipients'=>$recipients,'audit'=>$audit,'can_manage'=>$manager]];
@@ -108,7 +134,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   header('Content-Type: image/jpeg');header('Content-Disposition: inline');echo $photo;exit;
  }
  if(preg_match('~^/tasks/declines/([a-f0-9-]{36})/(approve|reject|withdraw)$~D',$path,$m)&&$method==='POST')return task_decline_review($a,$m[1],$m[2],$b);
- if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel|decline|due|assign|delete)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
+ if(!preg_match('~^/tasks/([a-f0-9-]{36})/(seen|done|undo|edit|cancel|decline|due|assign|delete|review)$~D',$path,$m)||$method!=='POST')fail('Không tìm thấy chức năng Việc.',404);
  $t=task_row($a,$m[1]);$action=$m[2];
  if($action==='seen'){$r=task_mine($a,$t);if($r['seen_at']===null)$a->run('UPDATE {{task_recipients}} SET seen_at=? WHERE task_id=? AND user_id=?',[now_ms(),$t['id'],$me]);return [200,['ok'=>true,'pending'=>task_pending($a)]];}
  if($action==='done'){
@@ -118,19 +144,37 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   $list=array_key_exists('photos',$b)?$b['photos']:(($b['photo']??null)!==null&&$b['photo']!==''?[$b['photo']]:[]);if(!is_array($list)||!array_is_list($list)||count($list)>TASK_MAX_PHOTOS)fail('Gửi tối đa '.TASK_MAX_PHOTOS.' ảnh bằng chứng.');
   $photos=array_values(array_filter(array_map('task_photo',$list),fn($x)=>$x!==null));$need=(int)$t['require_photo'];
   if(count($photos)<$need)fail($need>1?'Việc này cần chụp đủ '.$need.' ảnh bằng chứng (mới có '.count($photos).').':'Việc này bắt buộc chụp ảnh bằng chứng bằng camera.');$now=now_ms();
-  $a->run('UPDATE {{task_recipients}} SET seen_at=COALESCE(seen_at,?),done_at=?,done_note=?,proof_jpeg=? WHERE task_id=? AND user_id=?',[$now,$now,$note,$photos[0]??null,$t['id'],$me]);
+  $review=(int)($t['require_review']??0)===1;
+  $a->run('UPDATE {{task_recipients}} SET seen_at=COALESCE(seen_at,?),done_at=?,done_note=?,proof_jpeg=?,review_state=?,reviewed_by=NULL,reviewed_at=NULL WHERE task_id=? AND user_id=?',[$now,$now,$note,$photos[0]??null,$review?'pending':null,$t['id'],$me]);
   $a->run('DELETE FROM {{task_proofs}} WHERE task_id=? AND user_id=?',[$t['id'],$me]);foreach(array_slice($photos,1) as $i=>$photo)$a->run('INSERT INTO {{task_proofs}} VALUES(?,?,?,?)',[$t['id'],$me,$i+2,$photo]);
-  task_audit($a,$t['id'],'done',null,['note'=>$note,'photo'=>(bool)$photos,'photos'=>count($photos)]);
+  task_audit($a,$t['id'],$review?'submitted':'done',null,['note'=>$note,'photo'=>(bool)$photos,'photos'=>count($photos)]);
   $a->run("UPDATE {{task_declines}} SET status='withdrawn',reviewed_at=? WHERE task_id=? AND user_id=? AND status='pending'",[$now,$t['id'],$me]);
-  return [200,['ok'=>true,'pending'=>task_pending($a)]];
+  $notified=$review?task_review_notify($a,$t,$note,$photos[0]??null,count($photos)):0;
+  return [200,['ok'=>true,'pending'=>task_pending($a),'review'=>$review,'notified'=>$notified]];
  }
  if($action==='undo'){
-  $r=task_mine($a,$t);if($r['done_at']===null)fail('Việc chưa được báo xong.',409);
-  $a->run("UPDATE {{task_recipients}} SET done_at=NULL,done_note='',proof_jpeg=NULL WHERE task_id=? AND user_id=?",[$t['id'],$me]);$a->run('DELETE FROM {{task_proofs}} WHERE task_id=? AND user_id=?',[$t['id'],$me]);
+  $r=task_mine($a,$t);if($r['done_at']===null)fail('Việc chưa được báo xong.',409);if(($r['review_state']??null)==='approved')fail('Việc đã được duyệt, không hoàn tác được.',409);
+  $a->run("UPDATE {{task_recipients}} SET done_at=NULL,done_note='',proof_jpeg=NULL,review_state=NULL WHERE task_id=? AND user_id=?",[$t['id'],$me]);$a->run('DELETE FROM {{task_proofs}} WHERE task_id=? AND user_id=?',[$t['id'],$me]);
   task_audit($a,$t['id'],'undone',['note'=>$r['done_note'],'photo'=>$r['proof_jpeg']!==null],null);
   return [200,['ok'=>true,'pending'=>task_pending($a)]];
  }
  if($action==='decline')return task_decline_request($a,$t,$b);
+ // Duyệt / Chưa duyệt lượt báo xong của Task cần duyệt (chủ dự án yêu cầu 03/11/2026). Chưa duyệt: bắt buộc lý do, việc quay lại Cần làm
+ // cho người đó (ảnh cũ giữ tới khi báo xong lại), Telegram báo người làm. Không tự duyệt lượt của mình.
+ if($action==='review'){
+  if(!$manager||$a->user['role']==='makeup')fail('Chỉ Admin hoặc Quản lý duyệt việc.',403);if($t['status']!=='open')fail('Việc không còn mở.',409);
+  $uid=$b['user_id']??null;if(!is_int($uid))fail('Thiếu người làm.');if($uid===$me)fail('Không tự duyệt việc của chính mình.',403);
+  $decision=$b['decision']??'';if(!in_array($decision,['approve','reject'],true))fail('Chọn Duyệt hoặc Chưa duyệt.');
+  $note=task_text($b['note']??'','Lý do',$decision==='reject'?3:0,1000);
+  $r=$a->one('SELECT r.*,u.name FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=? AND r.user_id=?',[$t['id'],$uid]);
+  if(!$r||$r['done_at']===null||$r['review_state']!=='pending')fail('Lượt báo xong này không còn chờ duyệt (có thể người khác vừa duyệt hoặc người làm đã hoàn tác).',409);
+  $now=now_ms();
+  if($decision==='approve')$a->run("UPDATE {{task_recipients}} SET review_state='approved',review_note=?,reviewed_by=?,reviewed_at=? WHERE task_id=? AND user_id=? AND review_state='pending'",[$note,$me,$now,$t['id'],$uid]);
+  else $a->run("UPDATE {{task_recipients}} SET review_state='rejected',review_note=?,reviewed_by=?,reviewed_at=?,done_at=NULL WHERE task_id=? AND user_id=? AND review_state='pending'",[$note,$me,$now,$t['id'],$uid]);
+  task_audit($a,$t['id'],$decision==='approve'?'review_approved':'review_rejected',['user'=>$r['name'],'done_at'=>(int)$r['done_at']],['user'=>$r['name']],$note);
+  task_review_reply($a,$uid,$decision==='approve'?"✅ Việc của bạn đã được duyệt · Đã xong\n📝 {$t['title']}\n👤 Duyệt: {$a->user['name']}".($note!==''?"\n💬 $note":''):"❌ Việc của bạn chưa được duyệt\n📝 {$t['title']}\n👤 {$a->user['name']}: $note\n\nLàm lại rồi bấm Báo đã xong trong mục Việc.");
+  return [200,['ok'=>true,'pending'=>task_pending($a)]];
+ }
  // Xóa việc đã giao (chủ dự án yêu cầu 02/11/2026: danh sách việc lộn xộn). Admin / Quản lý xóa được việc đang mở hoặc đã hủy.
  // Xóa mềm: status='deleted', ẩn khỏi mọi danh sách, không còn tính việc chờ, không khóa chấm ra, không nhắn Telegram; giữ dòng + lịch sử.
  // Việc hằng ngày chỉ xóa việc của ngày đó (không tự tạo lại trong ngày); muốn ngừng hẳn thì xóa mẫu ở Việc hằng ngày.
@@ -167,13 +211,17 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   $title=task_text($b['title']??null,'Tiêu đề',3,150);$body=task_text($b['body']??'','Nội dung',0,2000);
   $due=($b['due_at']??null)===$t['due_at']?$t['due_at']:task_due($b['due_at']??null,$t['kind']);
   $before=['title'=>$t['title'],'body'=>$t['body'],'due_at'=>$t['due_at']];$after=['title'=>$title,'body'=>$body,'due_at'=>$due];
+  $review=(int)($t['require_review']??0);if(array_key_exists('require_review',$b)&&$t['kind']==='task'){if(!is_bool($b['require_review']))fail('Ô Task cần duyệt không hợp lệ.');$review=$b['require_review']?1:0;}
+  if($review!==(int)($t['require_review']??0)){$before['require_review']=(int)$t['require_review'];$after['require_review']=$review;}
   // Đổi người nhận (chủ dự án yêu cầu 30/10/2026): giao cho người khác. Người đã báo xong giữ lại; người mới nhận tin Telegram như việc mới.
   $old=array_map('intval',array_column($a->all('SELECT user_id FROM {{task_recipients}} WHERE task_id=?',[$t['id']]),'user_id'));sort($old);$new=$old;$audience=$t['audience'];
   if(array_key_exists('audience',$b)){$audience=$b['audience'];$new=task_recipient_ids($a,(int)$t['created_by'],$audience,$b['user_ids']??null,$old);
    if($audience==='all')foreach($a->all('SELECT user_id FROM {{task_recipients}} WHERE task_id=? AND done_at IS NOT NULL',[$t['id']]) as $x)if(!in_array((int)$x['user_id'],$new,true))$new[]=(int)$x['user_id'];sort($new);
    foreach($a->all('SELECT r.user_id,u.name FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id=? AND r.done_at IS NOT NULL',[$t['id']]) as $x)if(!in_array((int)$x['user_id'],$new,true))fail($x['name'].' đã báo xong việc này nên không bỏ khỏi người nhận được.',409);}
   if($before===$after&&$new===$old&&$audience===$t['audience'])fail('Chưa có thay đổi nào.');
-  $a->run('UPDATE {{tasks}} SET title=?,body=?,due_at=?,audience=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$title,$body,$due,$audience,$me,now_ms(),$t['id']]);
+  $a->run('UPDATE {{tasks}} SET title=?,body=?,due_at=?,require_review=?,audience=?,updated_by=?,updated_at=?,version=version+1 WHERE id=?',[$title,$body,$due,$review,$audience,$me,now_ms(),$t['id']]);
+  // Bỏ tick Task cần duyệt: các lượt đang Chờ duyệt coi như Đã xong.
+  if(!$review)$a->run("UPDATE {{task_recipients}} SET review_state='approved',reviewed_by=?,reviewed_at=? WHERE task_id=? AND review_state='pending'",[$me,now_ms(),$t['id']]);
   if($new!==$old){
    foreach(array_diff($old,$new) as $uid){$a->run('DELETE FROM {{task_proofs}} WHERE task_id=? AND user_id=?',[$t['id'],$uid]);$a->run('DELETE FROM {{task_recipients}} WHERE task_id=? AND user_id=?',[$t['id'],$uid]);}
    // Việc hằng ngày không nhắn Telegram (giống lúc tự tạo mỗi ngày).

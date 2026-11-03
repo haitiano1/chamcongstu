@@ -1,8 +1,8 @@
-# Cập nhật 03/11/2026 — Tín có Ăn uống 300k; ô nhập tiền tự thêm dấu chấm; danh sách Việc chia theo ngày; thống kê Lịch chụp theo tháng, số khách lịch Team; mục Hỗ trợ
+# Cập nhật 03/11/2026 — Tín có Ăn uống 300k; ô nhập tiền tự thêm dấu chấm; danh sách Việc chia theo ngày; thống kê Lịch chụp theo tháng, số khách lịch Team; mục Hỗ trợ; Task cần duyệt
 
 Gói này **cộng dồn** mọi gói ngày 02/11. Chưa upload gói 02/11 thì upload gói này là đủ.
 
-## Thay đổi (v1.3.50)
+## Thay đổi (v1.3.51)
 
 ### 1. Nhóm Trực Fanpage (Tín) có thêm Ăn uống 300.000đ/tháng
 
@@ -52,11 +52,22 @@ Gõ 50000 thì ô tự hiện **50.000**:
 - Danh sách chia theo ngày, phân trang, lọc Đang mở / Đã xong / Từ chối – rút / Tất cả.
 - Ứng lương và Yêu cầu bổ sung công vẫn ở chỗ cũ.
 
+### 7. Task cần duyệt
+
+- Khi **Giao việc / Nhắc nhở** (loại Task) có ô **☐ Task cần duyệt**. Sửa việc cũng bật / tắt được.
+- **Có tick:** nhân viên bấm **Báo đã xong** (kèm ảnh nếu việc bắt buộc ảnh) → việc chuyển **⏳ Chờ duyệt**, **Telegram báo ngay Admin + Quản lý kèm ảnh bằng chứng**.
+  - Trang Việc của Admin/Quản lý có khung **📋 Việc chờ duyệt**: xem ghi chú, ảnh, bấm **✅ Duyệt** → Đã xong.
+  - Bấm **Chưa duyệt** → hiện ô ghi **lý do** (bắt buộc) → nhân viên thấy lý do ngay trên việc ("Chưa duyệt · làm lại") và nhận Telegram; việc quay lại Cần làm để làm lại rồi bấm Báo đã xong lần nữa.
+  - Đang chờ duyệt thì nhân viên vẫn chấm ra được (đã làm phần của mình); bị Chưa duyệt mà việc hạn hôm nay thì lại khóa chấm ra ca 2 tới khi báo xong lại.
+  - Số đỏ trên nút Việc của Admin/Quản lý cộng thêm số việc chờ duyệt.
+- **Không tick:** như cũ, nhân viên báo xong là Đã xong.
+- Việc hằng ngày chưa có chế độ duyệt.
+
 ## File cần upload
 
 Như các lần trước, chỉ upload **file bên trong** từng ZIP và chọn Replace:
 
-1. `1-private-lib.zip` → giải nén vào `nhansu-private/lib/` (Replace): `people-finance.php`, `tasks.php`, `bookings.php`, `schema.php` (cùng các file lib khác trong gói).
+1. `1-private-lib.zip` → giải nén vào `nhansu-private/lib/` (Replace): `people-finance.php`, `tasks.php`, `bookings.php`, `schema.php`, `bootstrap.php`, `telegram.php` (cùng các file lib khác trong gói).
 2. `2-private-bin.zip` → `nhansu-private/bin/` (Replace): `cron.php` (không đổi, có sẵn để gói đủ bộ).
 3. `3-public-assets.zip` → `public_html/nhansu/assets/` (Replace): `app.js`, `bookings.js`, `employees.js`, `payroll.js`, `people-finance.js`, `tasks.js`, `tasks.css`, `studio-journal.css` và **2 file mới `money-input.js`, `support.js`** (thiếu một trong hai file này app sẽ không mở được), cùng các file khác trong gói.
 4. `4-public-root.zip` → `public_html/nhansu/` (Replace): `index.php`, `kiemtra-capnhat.php`.
