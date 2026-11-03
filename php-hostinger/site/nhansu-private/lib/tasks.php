@@ -471,8 +471,10 @@ function support_pending(App $a): int {
  if(support_manager($a))return (int)$a->scalar("SELECT COUNT(*) FROM {{support_requests}} WHERE status IN ('pending','approved')");
  return (int)$a->scalar('SELECT COUNT(*) FROM {{support_requests}} WHERE user_id=? AND staff_notice_at>staff_seen_at',[$a->user['id']]);
 }
+// Test gắn Telegram giả lập qua support_telegram($tg); chạy thật thì tạo Telegram mới.
+function support_telegram(?Telegram $set=null): ?Telegram {static $tg=null;if($set!==null)$tg=$set;return $tg;}
 function support_notify(App $a,?int $to,string $text,string $id): int {
- if(!class_exists('Telegram'))return 0;$tg=new Telegram($a);if(!$tg->configured())return 0;$sent=0;
+ if(!class_exists('Telegram'))return 0;$tg=support_telegram()??new Telegram($a);if(!$tg->configured())return 0;$sent=0;
  $rows=$to===null?$a->all("SELECT l.chat_id FROM {{telegram_links}} l JOIN {{users}} u ON u.id=l.user_id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' AND u.id!=? ORDER BY u.id",[$a->user['id']]):$a->all('SELECT chat_id FROM {{telegram_links}} WHERE user_id=?',[$to]);
  foreach($rows as $m){try{$tg->call('sendMessage',['chat_id'=>$m['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở yêu cầu',$a->config['app_url'].'/#support:'.$id));$sent++;}catch(Throwable $e){$a->meta('telegram_error',$e->getMessage());}}
  return $sent;

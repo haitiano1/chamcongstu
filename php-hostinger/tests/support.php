@@ -1,6 +1,6 @@
 <?php
 // Hỗ trợ: nhân viên gửi yêu cầu, Admin/Quản lý trả lời, duyệt / từ chối / xong; chạy trong giao dịch rồi hoàn tác.
-require_once __DIR__.'/../site/nhansu-private/lib/bootstrap.php';require_once __DIR__.'/../site/nhansu-private/lib/people-finance.php';require_once __DIR__.'/../site/nhansu-private/lib/bookings.php';require_once __DIR__.'/../site/nhansu-private/lib/tasks.php';
+require_once __DIR__.'/../site/nhansu-private/lib/bootstrap.php';require_once __DIR__.'/../site/nhansu-private/lib/people-finance.php';require_once __DIR__.'/../site/nhansu-private/lib/bookings.php';require_once __DIR__.'/../site/nhansu-private/lib/tasks.php';require_once __DIR__.'/../site/nhansu-private/lib/telegram.php';
 $a=new App('/var/nhansu-private');$n=0;function verify($v,$message){global $n;if(!$v)throw new RuntimeException('FAIL: '.$message);$n++;}
 try{$a->tx(function()use($a){
  $a->run('DELETE FROM {{telegram_links}}');// không nhắn Telegram thật trong lúc test
@@ -44,6 +44,21 @@ try{$a->tx(function()use($a){
  verify((int)$a->scalar('SELECT COUNT(*) FROM {{support_photos}} WHERE request_id=?',[$id3])===2&&(int)$a->scalar('SELECT photos FROM {{support_requests}} WHERE id=?',[$id3])===2,'Lưu 2 ảnh');
  $fail(fn()=>$call('/tasks/support',['id'=>uuid_v4(),'category'=>'pay','title'=>'Ảnh lỗi','body'=>'Ảnh không hợp lệ','photos'=>['data:image/png;base64,AAAA']]),'Ảnh sai định dạng');
  $fail(fn()=>$call('/tasks/support',['id'=>uuid_v4(),'category'=>'pay','title'=>'Nhiều ảnh','body'=>'Quá nhiều ảnh','photos'=>[$jpg,$jpg,$jpg,$jpg]]),'Quá 3 ảnh');
+ // Telegram (giả lập, không gửi thật): gửi yêu cầu → mọi Admin + Quản lý có liên kết; Quản lý trả lời / đổi trạng thái → nhân viên;
+ // nhân viên trả lời → Admin + Quản lý (trừ người gửi).
+ $a->config['telegram_token']='12345:'.str_repeat('x',30);$sent=[];support_telegram(new Telegram($a,function($method,$b)use(&$sent){$sent[]=$b;return ['ok'=>true,'result'=>['message_id'=>1]];}));
+ $admins=array_map('intval',array_column($a->all("SELECT id FROM {{users}} WHERE role IN ('admin','manager') AND archived=0 AND status!='inactive'"),'id'));
+ foreach([...$admins,(int)$staff['id'],(int)$other['id']] as $i=>$uid)$a->run('INSERT INTO {{telegram_links}}(user_id,chat_id,linked_at) VALUES(?,?,?)',[$uid,'chat-'.$uid,now_ms()]);
+ $chats=function()use(&$sent){return array_values(array_unique(array_column($sent,'chat_id')));};$mgr=array_map(fn($x)=>'chat-'.$x,$admins);sort($mgr);
+ $as($staff);$id4=uuid_v4();$x=$call('/tasks/support',['id'=>$id4,'category'=>'other','title'=>'Xin thêm ghế chờ','body'=>'Khách đông, cần thêm 2 ghế chờ.'])[1];
+ $c=$chats();sort($c);verify($x['notified']===count($admins)&&$c===$mgr&&str_contains($sent[0]['text'],'Yêu cầu hỗ trợ mới')&&str_contains($sent[0]['text'],'Support Staff')&&str_contains($sent[0]['text'],'Xin thêm ghế chờ'),'Gửi yêu cầu: Telegram báo đủ '.count($admins).' Admin/Quản lý, không báo nhân viên; được '.json_encode($c));
+ $sent=[];$as($manager);$call("/tasks/support/$id4/reply",['body'=>'Mai anh mua nhé.']);
+ verify($chats()===['chat-'.$staff['id']]&&str_contains($sent[0]['text'],'Support Manager trả lời yêu cầu của bạn')&&str_contains($sent[0]['text'],'Mai anh mua nhé.'),'Quản lý trả lời: chỉ nhân viên gửi nhận tin');
+ $sent=[];$as($staff);$call("/tasks/support/$id4/reply",['body'=>'Dạ em cảm ơn.']);
+ $c=$chats();sort($c);verify($c===$mgr&&str_contains($sent[0]['text'],'Support Staff trả lời yêu cầu hỗ trợ'),'Nhân viên trả lời: Admin + Quản lý nhận tin');
+ $sent=[];$as($manager);$call("/tasks/support/$id4/status",['status'=>'rejected','note'=>'Studio đủ ghế rồi','version'=>1]);
+ verify($chats()===['chat-'.$staff['id']]&&str_contains($sent[0]['text'],'Từ chối')&&str_contains($sent[0]['text'],'Studio đủ ghế rồi'),'Từ chối: nhân viên nhận tin kèm lý do');
+ $btn=$sent[0]['reply_markup']['inline_keyboard'][0][0]['url']??null;verify($btn===null||str_ends_with($btn,'/#support:'.$id4),'Nút Telegram mở đúng yêu cầu');
  // Số trên nút Việc: /tasks/summary trả thêm support.
  $as($manager);verify(($call('/tasks/summary',[],'GET')[1]['support']??null)===support_pending($a),'tasks/summary có số Hỗ trợ');
  throw new RuntimeException('ROLLBACK');
