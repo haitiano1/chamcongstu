@@ -68,7 +68,7 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 .slip-line.final{border-top:2px solid #14233a;margin-top:2px;padding-top:10px;font-size:15px;font-weight:700}.slip-line.final b{font-size:19px;color:#0f6b3d}
 .pay-input{width:130px;text-align:right;padding:7px 10px;border:1px solid #cfdbea;border-radius:8px;font:inherit;font-weight:600;color:#14233a;background:#fff}.pay-input::placeholder{color:#b4c0cf}.pay-input:focus{outline:2px solid #2472e0;outline-offset:0;border-color:#2472e0}.pay-input:disabled{background:#f4f6f9;color:#8290a3}.slip-line small .pay-input{width:110px}
 .slip-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:12px 0 4px;border-top:1px solid #e6ecf4;margin-top:6px}.slip-actions .primary{margin:0;width:auto;padding:11px 22px}.slip-actions small{margin:0;font-size:11px;color:#7c8ca2}
-@media(max-width:1100px){.slip{grid-template-columns:1fr}.pay-totals{grid-template-columns:1fr 1fr}}
+.pay-totals.five{grid-template-columns:repeat(5,minmax(0,1fr))}.pay-totals strong.out{color:#b42318}@media(max-width:1100px){.slip{grid-template-columns:1fr}.pay-totals,.pay-totals.five{grid-template-columns:1fr 1fr}.pay-totals.five>div:last-child{grid-column:1/-1}}
 /* Mời liên kết Telegram ở đầu trang Chấm công (31/10/2026). */
 .tg-icon{width:20px;height:20px;flex:none;vertical-align:-5px;margin-right:8px}
 .tg-invite{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#e8f5fd,#f4faff);border:1px solid #b9dff5;border-radius:16px;padding:14px 16px;margin:0 0 14px}

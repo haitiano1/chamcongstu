@@ -276,6 +276,17 @@ function payroll_apply(App $a,string $month,array $rows,bool $money=true): array
   $p['gross_salary']=(int)$p['base_salary']+$p['bonus_total'];$p['salary']=$p['gross_salary']-$p['kpi_applied'];}
  unset($p);return $rows;
 }
+// Ứng lương trên phiếu lương (chủ dự án yêu cầu 04/11/2026): phiếu Đã chi có ngày chi trong tháng trừ vào Tổng tiền cuối cùng.
+// Tính trực tiếp từ mục Ứng lương (cả tháng đã chốt), nên Sửa ngày phiếu ứng thì phiếu lương tháng đó đổi theo.
+// Phiếu chờ duyệt / đã duyệt chưa chi (theo ngày đề nghị) chỉ nhắc, chưa trừ. Chỉ Admin/Quản lý thấy.
+function advance_payroll(App $a,string $month,array $rows): array {
+ $start=$month.'-01';$end=date('Y-m-t',strtotime($start));$paid=[];$open=[];
+ foreach($a->all("SELECT id,user_id,requested_date,paid_date,amount,reason FROM {{salary_advances}} WHERE status='paid' AND paid_date>=? AND paid_date<=? ORDER BY paid_date,created_at",[$start,$end]) as $r)$paid[(int)$r['user_id']][]=['id'=>$r['id'],'paid_date'=>$r['paid_date'],'requested_date'=>$r['requested_date'],'amount'=>(int)$r['amount'],'reason'=>mb_substr($r['reason'],0,80)];
+ foreach($a->all("SELECT user_id,COUNT(*) n,SUM(amount) total FROM {{salary_advances}} WHERE status IN ('pending','approved') AND requested_date>=? AND requested_date<=? GROUP BY user_id",[$start,$end]) as $r)$open[(int)$r['user_id']]=['count'=>(int)$r['n'],'total'=>(int)$r['total']];
+ foreach($rows as &$p){$items=$paid[(int)$p['id']]??[];$p['advance_items']=$items;$p['advance_total']=array_sum(array_column($items,'amount'));
+  $p['advance_open_count']=$open[(int)$p['id']]['count']??0;$p['advance_open_total']=$open[(int)$p['id']]['total']??0;$p['payout']=(int)($p['salary']??0)-$p['advance_total'];}
+ unset($p);return $rows;
+}
 function entry_version(array $body,array $row): void {
  if(!is_int($body['version']??null)||$body['version']!==$row['version'])fail('Dữ liệu đã thay đổi. Tải lại trước khi xử lý.',409);
 }
@@ -325,6 +336,8 @@ function advance_routes(App $a,string $path,array $b,string $method): ?array {
   $scope=$_GET['scope']??'all';if(!in_array($scope,['all','mine'],true))fail('Phạm vi không hợp lệ.');
   if(!$manager||$scope==='mine'){$where.=' AND r.user_id=?';$params[]=$a->user['id'];}
   if(!empty($_GET['user_id'])){if(!ctype_digit((string)$_GET['user_id']))fail('Nhân viên không hợp lệ.');$where.=' AND r.user_id=?';$params[]=(int)$_GET['user_id'];}
+  // Số phiếu theo từng trạng thái (nút lọc trạng thái), cùng tháng / nhân viên / phạm vi nhưng không lọc trạng thái.
+  $counts=['all'=>0];foreach($a->all('SELECT r.status,COUNT(*) n FROM {{salary_advances}} r WHERE '.$where.' GROUP BY r.status',$params) as $c){$counts[$c['status']]=(int)$c['n'];$counts['all']+=(int)$c['n'];}
   $status=$_GET['status']??'';if($status!==''){if(!in_array($status,['pending','approved','paid','rejected','cancelled'],true))fail('Trạng thái không hợp lệ.');$where.=' AND r.status=?';$params[]=$status;}
   $sum="COUNT(*) requests,COALESCE(SUM(r.amount),0) requested_total,COALESCE(SUM(CASE WHEN r.status='pending' THEN r.amount ELSE 0 END),0) pending_total,COALESCE(SUM(CASE WHEN r.status='approved' THEN r.amount ELSE 0 END),0) approved_total,COALESCE(SUM(CASE WHEN r.status='paid' THEN r.amount ELSE 0 END),0) paid_total";
   $summary=$a->one('SELECT '.$sum.' FROM {{salary_advances}} r WHERE '.$where,$params);
@@ -332,9 +345,9 @@ function advance_routes(App $a,string $path,array $b,string $method): ?array {
   $rows=$a->all('SELECT r.*,u.name,u.employee_code,u.role,(SELECT name FROM {{users}} WHERE id=r.reviewed_by) reviewer_name,(SELECT name FROM {{users}} WHERE id=r.paid_by) payer_name FROM {{salary_advances}} r JOIN {{users}} u ON u.id=r.user_id WHERE '.$where.' ORDER BY '.$column.' DESC,r.created_at DESC,r.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
   $byPerson=$a->all('SELECT r.user_id,u.name,'.$sum.' FROM {{salary_advances}} r JOIN {{users}} u ON u.id=r.user_id WHERE '.$where.' GROUP BY r.user_id,u.name ORDER BY u.name',$params);
   $byDay=$a->all('SELECT '.$column.' day,'.$sum.' FROM {{salary_advances}} r WHERE '.$where.' GROUP BY '.$column.' ORDER BY '.$column.' DESC',$params);
-  return [200,['rows'=>$rows,'summary'=>$summary,'by_person'=>$byPerson,'by_day'=>$byDay,'people'=>$people,'page'=>$page,'total'=>(int)$summary['requests'],'start'=>$start,'end'=>$end,'basis'=>$basis]];
+  return [200,['rows'=>$rows,'summary'=>$summary,'by_person'=>$byPerson,'by_day'=>$byDay,'people'=>$people,'page'=>$page,'total'=>(int)$summary['requests'],'start'=>$start,'end'=>$end,'basis'=>$basis,'status_counts'=>$counts]];
  }
- if(preg_match('~^/advances/([a-f0-9-]{36})/(review|pay|cancel|audit)$~D',$path,$m)){
+ if(preg_match('~^/advances/([a-f0-9-]{36})/(review|pay|cancel|audit|date)$~D',$path,$m)){
   $id=entry_uuid($m[1]);$row=$a->one('SELECT * FROM {{salary_advances}} WHERE id=?',[$id]);if(!$row)fail('Không tìm thấy yêu cầu ứng lương.',404);
   if(!$manager&&$row['user_id']!==$a->user['id'])fail('Bạn không có quyền xem yêu cầu này.',403);
   if($m[2]==='audit'&&$method==='GET')return [200,['rows'=>$a->all('SELECT h.*,u.name actor_name FROM {{advance_audit}} h JOIN {{users}} u ON u.id=h.actor_id WHERE advance_id=? ORDER BY h.time,h.id',[$id])]];
@@ -344,7 +357,21 @@ function advance_routes(App $a,string $path,array $b,string $method): ?array {
    entry_version($b,$row);if($row['status']!=='pending')fail('Chỉ hủy được yêu cầu đang chờ duyệt.',409);
    $a->run("UPDATE {{salary_advances}} SET status='cancelled',version=version+1 WHERE id=?",[$id]);finance_audit($a,'advance',$id,'cancelled','Nhân viên hủy yêu cầu.');return [200,['ok'=>true]];
   }
-  $a->requireManager();if($row['user_id']===$a->user['id'])fail('Không được tự duyệt hoặc xác nhận chi yêu cầu của mình.',403);$a->target($row['user_id'],true);entry_version($b,$row);
+  $a->requireManager();if($row['user_id']===$a->user['id'])fail('Không được tự duyệt, xác nhận chi hoặc sửa ngày yêu cầu của mình.',403);$a->target($row['user_id'],true);entry_version($b,$row);
+  // Sửa ngày (chủ dự án yêu cầu 04/11/2026): trả lương xong thì chuyển các phiếu ứng thuộc kỳ lương trước về tháng trước,
+  // để danh sách và thống kê tháng mới bắt đầu lại. Đổi ngày đề nghị, phiếu đã chi đổi cả ngày đã chi; lịch sử giữ ngày cũ.
+  if($m[2]==='date'){
+   $req=valid_day($b['requested_date']??null);if($req<'2020-01-01'||day_time($req)>now_ms()+366*86400000)fail('Ngày đề nghị không hợp lệ.');
+   $paid=$row['paid_date'];
+   if($row['status']==='paid'){$paid=valid_day($b['paid_date']??null);if($paid<'2020-01-01'||$paid>local_day(now_ms()))fail('Ngày đã chi phải từ 2020 đến hôm nay.');}
+   if($req===$row['requested_date']&&$paid===$row['paid_date'])fail('Ngày chưa thay đổi.');
+   $note=input_text($b['note']??'','Lý do đổi ngày',0,500);$dmy=fn($d)=>$d?implode('/',array_reverse(explode('-',$d))):'—';$parts=[];
+   if($req!==$row['requested_date'])$parts[]='Ngày đề nghị '.$dmy($row['requested_date']).' → '.$dmy($req);
+   if($paid!==$row['paid_date'])$parts[]='Ngày đã chi '.$dmy($row['paid_date']).' → '.$dmy($paid);
+   $a->run('UPDATE {{salary_advances}} SET requested_date=?,paid_date=?,version=version+1 WHERE id=?',[$req,$paid,$id]);
+   finance_audit($a,'advance',$id,'date_changed',implode(' · ',$parts).($note!==''?' · '.$note:''));
+   return [200,['ok'=>true,'requested_date'=>$req,'paid_date'=>$paid]];
+  }
   if($m[2]==='review'){
    if($row['status']!=='pending')fail('Yêu cầu đã được xử lý.',409);
    $status=$b['status']??'';if(!in_array($status,['approved','rejected'],true))fail('Kết quả duyệt không hợp lệ.');
