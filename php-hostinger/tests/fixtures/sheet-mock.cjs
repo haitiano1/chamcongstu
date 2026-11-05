@@ -41,7 +41,7 @@ class Range{
  getValues(){return this.each(c=>c.v==null?'':c.v)}
  getValue(){return this.s.cell(this.r,this.c).v}
  getDisplayValue(){return display(this.s.cell(this.r,this.c))}
- setValue(v){const c=this.s.cell(this.r,this.c);c.v=parseInput(v,c.fmt);c.formula='';return this;}
+ setValue(v){const c=this.s.cell(this.r,this.c);if(c.dv&&c.dv.strict&&v!==''&&!c.dv.values.map(String).includes(String(v)))throw new Error('The data you entered violates the data validation rules');c.v=parseInput(v,c.fmt);c.formula='';return this;}
  setNumberFormat(f){this.each(c=>{c.fmt=f});return this}
  getNumberFormat(){return this.s.cell(this.r,this.c).fmt||''}
  getNotes(){return this.each(c=>c.note||'')}
@@ -50,12 +50,17 @@ class Range{
  setBackgrounds(a){this.each((c,i,j)=>{c.bg=a[i][j]});return this}
  copyTo(t){const src=this.each(c=>({...c}));t.s.book.log.push('copyTo');for(let i=0;i<this.nr;i++)for(let j=0;j<this.nc;j++)Object.assign(t.s.cell(t.r+i,t.c+j),src[i][j]);}
  clearContent(){this.each(c=>{c.v='';c.formula=''});return this}
- getDataValidation(){const c=this.s.cell(this.r,this.c);return c.dv?{getCriteriaType:()=>c.dv.type,getCriteriaValues:()=>[c.dv.values]}:null}
+ getDataValidation(){const c=this.s.cell(this.r,this.c);return ruleOf(c.dv)}
+ getColumn(){return this.c}
+ getDataValidations(){return this.each(c=>ruleOf(c.dv))}
+ setDataValidation(r){this.each(c=>{c.dv=r&&r.dv});return this}
+ setDataValidations(a){this.each((c,i,j)=>{c.dv=a[i][j]&&a[i][j].dv});return this}
  getMergedRanges(){return this.s.merges.filter(m=>m.c===this.c&&m.r1<=this.r&&m.r2>=this.r).map(m=>({getRow:()=>m.r1,getLastRow:()=>m.r2,breakApart:()=>{this.s.merges.splice(this.s.merges.indexOf(m),1);}}))}
  merge(){this.s.merges=this.s.merges.filter(m=>!(m.c===this.c&&m.r1>=this.r&&m.r2<=this.r+this.nr-1));this.s.merges.push({c:this.c,r1:this.r,r2:this.r+this.nr-1});return this}
  getFormulasR1C1(){return this.each(c=>c.formula||'')}
  setFormulaR1C1(f){const c=this.s.cell(this.r,this.c);c.formula=f;c.v='=f';return this}
 }
+const ruleOf=dv=>dv?{dv,getCriteriaType:()=>dv.type,getCriteriaValues:()=>[dv.values,true],copy(){const b={requireValueInList(values){b.values=values;return b},build:()=>ruleOf({...dv,values:b.values})};return b}}:null;
 class Book{
  constructor(){this.sheets=[];this.log=[];this.toasts=[];}
  add(name,rows){const s=new Sheet(this,name,rows);this.sheets.push(s);return s;}

@@ -28,9 +28,11 @@ function agFindHeader_(headers,names){return headers.findIndex(v=>names.indexOf(
 // tabMonth: ô "2/1" trong tab Tháng 12 là tháng 1 năm sau (và ngược lại).
 function agDate_(v,year,tabMonth){const s=String(v).trim();let m;if((m=s.match(/^(20\d{2})-(\d{2})-(\d{2})$/)))return s;if(!(m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2}|20\d{2}))?$/)))throw new Error('Ngày không hợp lệ: cần ngày/tháng hoặc ngày/tháng/năm.');const day=Number(m[1]),month=Number(m[2]),y=m[3]?Number(m[3].length===2?'20'+m[3]:m[3]):Number(year)+(tabMonth===12&&month===1?1:tabMonth===1&&month===12?-1:0),d=new Date(Date.UTC(y,month-1,day));if(d.getUTCDate()!==day||d.getUTCMonth()!==month-1)throw new Error('Ngày không tồn tại.');return y+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');}
 function agTime_(v){const m=String(v).trim().replace(/[hH]$/,'h00').match(/^(\d{1,2})(?:[:hH.](\d{1,2}))?(?::\d{2})?$/);if(!m||Number(m[1])>23||Number(m[2]||0)>59)throw new Error('Giờ không hợp lệ, cần dạng 12:00.');return String(Number(m[1])).padStart(2,'0')+':'+String(Number(m[2]||0)).padStart(2,'0');}
-// Mỗi khung giờ 1 khách: Couple 999 / 1499 / 2999 chiếm 2 tiếng (chụp + make up), 399/699 (hoặc ô Gói trống) 1 tiếng;
+// Mỗi khung giờ 1 khách: Couple 999 / Body 999 / 1499 / 2999 chiếm 2 tiếng (chụp + make up), 399/699 (hoặc ô Gói trống) 1 tiếng;
 // Team 349 và gói khác theo "Giữ N tiếng" trong Ghi chú. Giống booking_length() trên web.
-function agPrice_(label){const s=String(label||''),m=s.match(/\d{1,3}(?:[.,]\d{3})+|\d+/);if(!m){const t=agNormalize_(s);return t.indexOf('couple')!==-1?999:t.indexOf('team')!==-1?349:0;}const n=Number(m[0].replace(/\D/g,''));return n>=10000?Math.floor(n/1000):n;}
+function agPrice_(label){const s=String(label||''),m=s.match(/\d{1,3}(?:[.,]\d{3})+|\d+/);if(!m){const t=agNormalize_(s);return t.indexOf('couple')!==-1||t.indexOf('body')!==-1?999:t.indexOf('team')!==-1?349:0;}const n=Number(m[0].replace(/\D/g,''));return n>=10000?Math.floor(n/1000):n;}
+// Body 999 cùng giá Couple 999 (05/11/2026): so cả chữ Body để không ghi nhầm lựa chọn Couple.
+function agPackageKey_(label){return agPrice_(label)+(agNormalize_(label).indexOf('body')!==-1?'b':'');}
 function agLength_(label,note){const n=agPrice_(label);if(n===999||n===1499||n===2999)return 120;if(n===399||n===699)return 60;const m=agNormalize_(note).match(/giu (?:cho )?([1-8]) ?(?:tieng|h)\b/);return m?Number(m[1])*60:60;}
 function agHm_(n){return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');}
 function agMonthTabs_(book,now){
@@ -151,6 +153,15 @@ function agOptions_(cell){
  try{const rule=cell.getDataValidation(),C=SpreadsheetApp.DataValidationCriteria;if(rule){const type=rule.getCriteriaType(),value=rule.getCriteriaValues()[0];return type===C.VALUE_IN_LIST?value.map(String):type===C.VALUE_IN_RANGE?value.getDisplayValues().reduce((a,row)=>a.concat(row),[]):[];}}catch(e){}
  return [];
 }
+// Ô Gói: lấy lựa chọn đúng gói. Dropdown chưa có gói này (VD Body 999 mới thêm) thì thêm vào dropdown cả cột của tab, vì dropdown từ chối chữ lạ sẽ báo lỗi.
+// Dropdown lấy từ vùng ô thì không tự thêm được: ghi lỗi sẽ báo ⚠ trên web, thêm tay vào vùng đó.
+function agPackageOption_(t,cell,value){
+ const options=agOptions_(cell),found=options.find(o=>agPackageKey_(o)===agPackageKey_(value));if(found||!options.length)return found||null;
+ const C=SpreadsheetApp.DataValidationCriteria,rule=cell.getDataValidation();if(rule.getCriteriaType()!==C.VALUE_IN_LIST)return null;
+ const args=rule.getCriteriaValues(),next=rule.copy().requireValueInList(options.concat([value]),args[1]!==false).build();
+ const col=t.sheet.getRange(t.parsed.header+2,cell.getColumn(),Math.max(t.sheet.getLastRow()-t.parsed.header-1,1),1);
+ col.setDataValidations(col.getDataValidations().map(r=>[r[0]&&r[0].getCriteriaType()===C.VALUE_IN_LIST?next:r[0]]));cell.setDataValidation(next);return value;
+}
 // Lịch cũ có Makeup chọn nhiều thì cách nhau ", " như dropdown chọn nhiều.
 function agPickOptions_(cell,text){const options=agOptions_(cell);return text.split(',').map(x=>x.trim()).filter(Boolean).map(x=>options.find(o=>agNormalize_(o)===agNormalize_(x))||x).join(', ');}
 // keys: lịch sửa trên web, chỉ ghi các cột này và ô bỏ trống thì xóa chữ cũ. Không có keys (lịch mới): ghi đủ.
@@ -163,7 +174,7 @@ function agWriteValues_(t,r,q,samples,keys){
   // Gói/cọc đang là số trên Sheet thì ghi số (giữ công thức cộng tiền); còn lại ghi chữ để giữ số 0 đầu SĐT.
   const sample=samples[k]||null,number=/^\d[\d.,]*k?$/i.test(value)?Number(value.replace(/[.,]/g,'').replace(/k$/i,''))*(/k$/i.test(value)?1000:1):NaN;
   if(k==='makeup'||k==='special'){cell(k).setValue(agPickOptions_(cell(k),value));return;}
-  const option=k==='package_label'?agOptions_(cell(k)).find(o=>agPrice_(o)===agPrice_(value)):null;if(option){cell(k).setValue(option);return;}
+  const option=k==='package_label'?agPackageOption_(t,cell(k),value):null;if(option){cell(k).setValue(option);return;}
   if(sample&&typeof sample.value==='number'&&!isNaN(number))cell(k).setValue(k==='package_label'&&number>=10000&&sample.value<10000?number/1000:number);else cell(k).setNumberFormat('@').setValue(value);});
  // Phụ thu, Tip (nhập ở Sửa lịch trên web; dòng chuyển chỗ thì ghi lại số đang có): Sheet chưa có cột thì thêm cột ở cuối. Số tiền (100000, 100.000, 100k) ghi dạng số để cộng được.
  [['surcharge','Phụ thu'],['tip','Tip']].forEach(([k,label])=>{if(keys&&keys.indexOf(k)===-1)return;const value=String(v[k]||'').trim();if(!keys&&!value)return;

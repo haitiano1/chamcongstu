@@ -5,7 +5,7 @@ files=[]
 for f in sorted((private/'lib').iterdir()):
  if f.is_file() and f.suffix in ['.php','.json','.pdf']:files.append(('private','lib/'+f.name,hashlib.sha256(f.read_bytes()).hexdigest()))
 files.append(('private','bin/cron.php',hashlib.sha256((private/'bin/cron.php').read_bytes()).hexdigest()))
-for name in ['api.php','index.php','assets/app.js','assets/style.css','assets/api-response.js','assets/people-finance.js','assets/payroll.js','assets/bookings.js','assets/studio-journal.css','assets/roster.js','assets/tasks.js','assets/tasks.css','assets/employees.js','assets/camera.js','assets/mobile.css','assets/availability.js','assets/availability.css','assets/roster.js','assets/studio-rules.js','assets/studio-rules.css','assets/meetings.js','assets/meetings.css','assets/rule-picker.js','assets/time24.js','assets/money-input.js','assets/support.js','assets/guide.js','assets/guide-media.js','assets/app-icon.svg','assets/app-icon-180.png','assets/app-icon-192.png','assets/app-icon-512.png','assets/app.webmanifest']:
+for name in ['api.php','index.php','assets/app.js','assets/style.css','assets/api-response.js','assets/people-finance.js','assets/payroll.js','assets/bookings.js','assets/update.js','assets/studio-journal.css','assets/roster.js','assets/tasks.js','assets/tasks.css','assets/employees.js','assets/camera.js','assets/mobile.css','assets/availability.js','assets/availability.css','assets/roster.js','assets/studio-rules.js','assets/studio-rules.css','assets/meetings.js','assets/meetings.css','assets/rule-picker.js','assets/time24.js','assets/money-input.js','assets/support.js','assets/guide.js','assets/guide-media.js','assets/app-icon.svg','assets/app-icon-180.png','assets/app-icon-192.png','assets/app-icon-512.png','assets/app.webmanifest']:
  files.append(('public',name,hashlib.sha256((public/name).read_bytes()).hexdigest()))
 data=json.dumps(files,ensure_ascii=True,separators=(',',':'))
 code=r'''<?php
@@ -16,7 +16,7 @@ $private=getenv('APP_PRIVATE_DIR')?:dirname(__DIR__,2).'/nhansu-private';
 $manifest=json_decode('MANIFEST_JSON',true);
 $checks=array();
 $checks[]=array('PHP từ 8.2',PHP_VERSION_ID>=80200?'Đạt — '.PHP_VERSION:'Chưa đạt — '.PHP_VERSION,PHP_VERSION_ID>=80200);
-foreach(array('pdo_mysql'=>'PDO MySQL','gd'=>'GD xử lý ảnh','curl'=>'cURL','zlib'=>'Gzip') as $extension=>$label){$ok=extension_loaded($extension);$checks[]=array($label,$ok?'Đã bật':'Chưa bật',$ok);}
+foreach(array('pdo_mysql'=>'PDO MySQL','gd'=>'GD xử lý ảnh','curl'=>'cURL','zlib'=>'Gzip','openssl'=>'OpenSSL') as $extension=>$label){$ok=extension_loaded($extension);$checks[]=array($label,$ok?'Đã bật':'Chưa bật',$ok);}
 $checks[]=array('Private nằm ngoài thư mục web',is_dir($private)?'Đã tìm thấy thư mục nhansu-private':'Không tìm thấy nhansu-private ngang cấp public_html',is_dir($private));
 $checks[]=array('config.php',is_readable($private.'/config.php')?'Có file và PHP đọc được (không đọc nội dung cấu hình)':'Thiếu file hoặc PHP không đọc được',is_readable($private.'/config.php'));
 foreach($manifest as $entry){$file=($entry[0]==='private'?$private:__DIR__).'/'.$entry[1];$ok=false;if(!is_file($file))$status='THIẾU FILE — kiểm tra có giải nén lồng thư mục không';elseif(!is_readable($file))$status='KHÔNG ĐỌC ĐƯỢC — kiểm tra quyền file';elseif(hash_file('sha256',$file)!==$entry[2])$status='KHÁC GÓI SỬA — có thể chưa thay file hoặc file tải lên chưa đầy đủ';else{$status='Đúng gói sửa';$ok=true;}$checks[]=array(($entry[0]==='private'?'nhansu-private/':'nhansu/').$entry[1],$status,$ok);}

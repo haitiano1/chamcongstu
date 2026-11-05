@@ -109,6 +109,12 @@ function relink_booking(App $a,array $row,?array $defaults=null): void {
 // Admin, Quản lý và nhân viên được Admin cấp quyền. Lịch mới vào hàng chờ; Apps Script lấy về mỗi phút, chèn dòng vào tab "Tháng N" rồi báo lại.
 const BOOKING_WEB_PACKAGES=[399=>60,699=>60,999=>120,1499=>120,2999=>120];
 const BOOKING_TEAM_PRICE=349;
+// Body 999k (chủ dự án yêu cầu 05/11/2026): cùng giá Couple 999 nên không phân biệt được bằng số tiền. Web gửi mã 'body', ô Gói ghi "Body 999";
+// số tiếng và hệ số hoa hồng vẫn tính theo giá 999 như Couple.
+const BOOKING_BODY='body',BOOKING_BODY_LABEL='Body 999';
+function booking_package_code(string $label): int|string|null {$price=booking_package_price($label);return $price===999&&str_contains(mb_strtolower($label,'UTF-8'),'body')?BOOKING_BODY:$price;}
+function booking_package_ok(mixed $code): bool {return $code===BOOKING_BODY||is_int($code)&&(isset(BOOKING_WEB_PACKAGES[$code])||$code===BOOKING_TEAM_PRICE);}
+function booking_package_cell(int|string|null $code): string {return $code===BOOKING_BODY?BOOKING_BODY_LABEL:(string)$code;}
 const BOOKING_OPEN_MINUTES=540,BOOKING_CLOSE_MINUTES=1140;
 // Lịch thêm trên web mặc định thợ chính Huy, thợ phụ Cường (chủ dự án chốt 29/10/2026); đổi thợ thì sửa trên Sheet.
 const BOOKING_DEFAULT_STAFF=['main_alias'=>'huy','support_alias'=>'cuong'];
@@ -140,9 +146,9 @@ function booking_fold(string $s): string {
  return preg_replace('/\s+/u',' ',str_replace('đ','d',class_exists('Normalizer')?preg_replace('/\p{Mn}/u','',Normalizer::normalize($s,Normalizer::FORM_D)):$s));
 }
 // Giá trị form Thêm/Sửa lịch rút từ một lịch: gói, giữ chỗ Team, Make up, Đặc biệt (cột Sheet, không có thì đoạn "Make up: …" trong Ghi chú)
-// và phần ghi chú còn lại. Gói khác Couple/1499/2999/Team (trống, 399, 699…) là mặc định; không đổi thì giữ nguyên chữ trên Sheet.
+// và phần ghi chú còn lại. Gói khác Couple/Body/1499/2999/Team (trống, 399, 699…) là mặc định; không đổi thì giữ nguyên chữ trên Sheet.
 function booking_form(array $row): array {
- $price=booking_package_price($row['package_label']);$package=in_array($price,[999,1499,2999,BOOKING_TEAM_PRICE],true)?$price:null;
+ $price=booking_package_code($row['package_label']);$package=in_array($price,[999,BOOKING_BODY,1499,2999,BOOKING_TEAM_PRICE],true)?$price:null;
  $code=function(?string $value,array $options){if($value===null)return '';foreach($options as $k=>$label)if(booking_fold($label)===booking_fold($value))return $k;return '';};
  $cells=[];foreach(json_decode($row['sheet_fields_json']??'null',true)?:[] as $f){$l=booking_fold((string)($f['label']??''));if(preg_match('/^(make ?up|trang diem)\b/',$l))$cells['makeup']??=(string)$f['value'];elseif($l==='dac biet')$cells['special']??=(string)$f['value'];}
  $makeup=$cells['makeup']??null;$special=$cells['special']??null;$hold=null;$plain=[];
@@ -176,7 +182,7 @@ function booking_input(array $b,?string $keepDay=null): array {
  $range=booking_web_range();$day=valid_day($b['day']??null);$vn=fn($d)=>implode('/',array_reverse(explode('-',$d)));if($day!==$keepDay&&($day<$range['min']||$day>$range['max']))fail('Chỉ chọn ngày chụp từ '.$vn($range['min']).' đến '.$vn($range['max']).'.');
  $time=$b['time']??'';if(!is_string($time)||!preg_match('/^([01]\d|2[0-3]):([0-5]\d)$/D',$time,$m))fail('Giờ chụp phải dạng HH:mm.');$start=(int)$m[1]*60+(int)$m[2];
  // Không chọn gói = 399/699 (khách tới mới chọn), 1 tiếng. Team: giữ chỗ 1–4 tiếng, mặc định 2.
- $price=$b['package']??null;if($price!==null&&(!is_int($price)||!isset(BOOKING_WEB_PACKAGES[$price])&&$price!==BOOKING_TEAM_PRICE))fail('Gói không hợp lệ: để mặc định 399/699 hoặc chọn Couple 999, 1499, 2999, Team 349.');
+ $price=$b['package']??null;if($price!==null&&!booking_package_ok($price))fail('Gói không hợp lệ: để mặc định 399/699 hoặc chọn Couple 999, Body 999, 1499, 2999, Team 349.');
  $team=$price===BOOKING_TEAM_PRICE;$hold=$team?($b['hold']??120):null;if($team&&!in_array($hold,[60,120,180,240],true))fail('Gói Team: giữ chỗ 1–4 tiếng.');
  // Cọc ghi luôn trong tên khách (chủ dự án chốt 29/10/2026), không có ô riêng.
  $name=input_text($b['customer_name']??null,'Tên khách',1,150);$phone=input_text($b['customer_phone']??'','Số điện thoại',0,50);$plain=input_text($b['note']??'','Ghi chú',0,1900);
@@ -523,8 +529,8 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  }
  if($path==='/bookings/create'&&$method==='POST'){
   if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền thêm lịch.',403);
-  $in=booking_input($b);if($stop=booking_check_slot($a,$b,$in['day'],$in['start'],$in['start']+($in['team']?$in['hold']:($in['price']!==null?BOOKING_WEB_PACKAGES[$in['price']]:60))))return $stop;
-  $row=['id'=>uuid_v4(),'source_sheet'=>$a->meta('sheet_sync_id')?:'web','source_tab'=>booking_sheet_tab($in['day']),'source_row'=>0,'shoot_day'=>$in['day'],'minutes'=>$in['start'],'package_label'=>$in['price']===null?'':(string)$in['price'],'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'deposit_label'=>'']+booking_default_staff($a)+['note'=>$in['note'],'received_label'=>'','status'=>'active'];
+  $in=booking_input($b);if($stop=booking_check_slot($a,$b,$in['day'],$in['start'],$in['start']+($in['team']?$in['hold']:booking_length(booking_package_cell($in['price'])))))return $stop;
+  $row=['id'=>uuid_v4(),'source_sheet'=>$a->meta('sheet_sync_id')?:'web','source_tab'=>booking_sheet_tab($in['day']),'source_row'=>0,'shoot_day'=>$in['day'],'minutes'=>$in['start'],'package_label'=>booking_package_cell($in['price']),'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'deposit_label'=>'']+booking_default_staff($a)+['note'=>$in['note'],'received_label'=>'','status'=>'active'];
   freeze_existing_booking_day($a,$in['day']);$cols=array_keys($row);
   $a->run('INSERT INTO {{shoot_bookings}} ('.implode(',',$cols).',created_at,updated_at) VALUES('.implode(',',array_fill(0,count($cols)+2,'?')).')',[...array_values($row),now_ms(),now_ms()]);
   relink_booking($a,$row);booking_enqueue($a,$row['id'],'create',$row['source_tab'],['makeup'=>$in['makeup'],'special'=>$in['special'],'note'=>$in['sheet_note']]);
@@ -546,7 +552,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
    'note'=>$in['plain']!==$was['note']||$in['price']!==$was['package']&&in_array(BOOKING_TEAM_PRICE,[$in['price'],$was['package']],true)||$in['team']&&$in['hold']!==$was['hold'],
    'surcharge'=>$money['surcharge']!==($old['surcharge_label']??''),'tip'=>$money['tip']!==($old['tip_label']??'')]));
   if(!$changed)return [200,['ok'=>true,'changed'=>[]]];
-  $row=['shoot_day'=>$in['day'],'minutes'=>$in['start'],'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'package_label'=>in_array('package_label',$changed,true)?($in['price']===null?'':(string)$in['price']):$old['package_label'],'note'=>array_intersect($changed,['makeup','special','note'])?$in['note']:$old['note'],'surcharge_label'=>$money['surcharge'],'tip_label'=>$money['tip']];
+  $row=['shoot_day'=>$in['day'],'minutes'=>$in['start'],'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'package_label'=>in_array('package_label',$changed,true)?booking_package_cell($in['price']):$old['package_label'],'note'=>array_intersect($changed,['makeup','special','note'])?$in['note']:$old['note'],'surcharge_label'=>$money['surcharge'],'tip_label'=>$money['tip']];
   // Chỉ kiểm tra khi đổi khung giờ (ngày, giờ, độ dài gói): sửa tên, Phụ thu, Tip… của lịch đang vướng thì không hỏi lại.
   $length=booking_length($row['package_label'],$row['note']);
   if(($row['shoot_day']!==$old['shoot_day']||$row['minutes']!==(int)$old['minutes']||$length!==booking_length($old['package_label'],$old['note']))&&$stop=booking_check_slot($a,$b,$row['shoot_day'],$row['minutes'],$row['minutes']+$length,$id))return $stop;
@@ -565,9 +571,9 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền sửa lịch.',403);
   $id=entry_uuid($b['id']??null);$old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);
   if(!$old||$old['status']==='deleted')fail('Không tìm thấy lịch.',404);if($old['status']!=='active')fail('Lịch đã hủy, không sửa được.',409);
-  $price=$b['package']??null;if(!is_int($price)||!isset(BOOKING_WEB_PACKAGES[$price])&&$price!==BOOKING_TEAM_PRICE)fail('Chọn gói khách chụp: 399, 699, Couple 999, 1499, 2999 hoặc Team 349.');
-  if(booking_package_price($old['package_label'])===$price)return [200,['ok'=>true,'changed'=>[]]];
-  $label=(string)$price;$a->run('UPDATE {{shoot_bookings}} SET package_label=?,sheet_fields_json=?,updated_at=? WHERE id=?',[$label,booking_patch_fields($old['sheet_fields_json'],['package_label'=>$label]),now_ms(),$id]);
+  $price=$b['package']??null;if(!booking_package_ok($price))fail('Chọn gói khách chụp: 399, 699, Couple 999, Body 999, 1499, 2999 hoặc Team 349.');
+  if(booking_package_code($old['package_label'])===$price)return [200,['ok'=>true,'changed'=>[]]];
+  $label=booking_package_cell($price);$a->run('UPDATE {{shoot_bookings}} SET package_label=?,sheet_fields_json=?,updated_at=? WHERE id=?',[$label,booking_patch_fields($old['sheet_fields_json'],['package_label'=>$label]),now_ms(),$id]);
   // Make up, Đặc biệt, Ghi chú không đổi: gửi lại đúng nội dung của việc ghi Sheet còn chờ (thêm/sửa lịch trước đó) để khi gộp việc không bị mất.
   $wait=$a->scalar("SELECT payload_json FROM {{booking_sheet_queue}} WHERE booking_id=? AND action IN ('create','update') AND status IN ('pending','failed') ORDER BY created_at DESC,id DESC LIMIT 1",[$id]);
   booking_enqueue_update($a,$id,$old['source_tab'],array_intersect_key(json_decode($wait?:'[]',true)?:[],['makeup'=>1,'special'=>1,'note'=>1])+['from_day'=>$old['shoot_day']],['package_label']);

@@ -43,7 +43,7 @@ register_shutdown_function(function(){
 if(PHP_VERSION_ID<80200)nhansu_api_error('Ứng dụng cần PHP từ 8.2. Kiểm tra phiên bản PHP của riêng ứng dụng; không đổi cấu hình WordPress để thử.',503);
 $private=getenv('APP_PRIVATE_DIR')?:dirname(__DIR__,2).'/nhansu-private';
 try {
- $libraries=array('rules.php','schema.php','bootstrap.php','api.php','workflows.php','telegram.php','transfer.php','people-finance.php','bookings.php','tasks.php','availability.php','studio-rules.php','meetings.php');
+ $libraries=array('rules.php','schema.php','bootstrap.php','api.php','workflows.php','telegram.php','transfer.php','people-finance.php','bookings.php','tasks.php','availability.php','studio-rules.php','meetings.php','update.php');
  foreach($libraries as $library) {
   if(!is_file($private.'/lib/'.$library)||!is_readable($private.'/lib/'.$library))nhansu_api_error('Thiếu hoặc không đọc được lib/'.$library.'. Giải nén lại gói PRIVATE bên trong nhansu-private, gộp thư mục lib và thay file trùng.',503);
  }
@@ -67,8 +67,8 @@ try {
   if(!$multipart){if(!str_starts_with($_SERVER['CONTENT_TYPE']??'','application/json'))fail('Cần gửi dữ liệu JSON.',415);$raw=file_get_contents('php://input',false,null,0,$limit+1);if(strlen($raw)>$limit)fail('Yêu cầu quá lớn.',413);$b=json_decode($raw,true,32,JSON_THROW_ON_ERROR);if(!is_array($b)||array_is_list($b)&&$b!==[])fail('Dữ liệu không hợp lệ.');}else{$b=$_POST;}
  }
  $dispatch=function()use($a,$path,$b,$method){$r=sheet_receiver($a,$path,$b,$method);if($r!==null)return $r;$r=auth_routes($a,$path,$b,$method);if($r!==null)return $r;$a->authenticate();if($method==='POST'&&!hash_equals($a->csrf,$_SERVER['HTTP_X_NHANSU_CSRF']??''))fail('Phiên thao tác đã cũ. Vui lòng tải lại trang.',403);
-  foreach(['booking_routes','task_routes','availability_routes','studio_rule_routes','meeting_routes','people_finance_routes','main_routes','workflow_routes','roster_routes','telegram_routes','transfer_routes'] as $handler){$r=$handler($a,$path,$b,$method);if($r!==null)return $r;}
+  foreach(['update_routes','booking_routes','task_routes','availability_routes','studio_rule_routes','meeting_routes','people_finance_routes','main_routes','workflow_routes','roster_routes','telegram_routes','transfer_routes'] as $handler){$r=$handler($a,$path,$b,$method);if($r!==null)return $r;}
   $r=location_routes($a,$path,$method);if($r!==null)return $r;$r=management_routes($a,$path,$b,$method);if($r!==null)return $r;fail('Không tìm thấy chức năng.',404);
  };
- $nhansuStage='request';$result=$method==='POST'?$a->tx($dispatch):$dispatch();json_response($result[1],$result[0]);
+ $nhansuStage='request';$result=$method==='POST'&&!str_starts_with($path,'/update/')?$a->tx($dispatch):$dispatch();json_response($result[1],$result[0]);
 }catch(HttpError $e){nhansu_api_error($e->getMessage(),$e->status);}catch(JsonException $e){nhansu_api_error('Dữ liệu JSON không hợp lệ.',400);}catch(PDOException $e){$ref=nhansu_api_reference(get_class($e),$e->getFile(),$e->getLine(),(string)$e->getCode());nhansu_api_error($e->getCode()==='23000'?'Dữ liệu bị trùng hoặc xung đột.':'Không lưu được dữ liệu. Kiểm tra PHP error log theo mã tham chiếu.',$e->getCode()==='23000'?409:500,$ref);}catch(Throwable $e){$ref=nhansu_api_reference(get_class($e),$e->getFile(),$e->getLine(),(string)$e->getCode());$message=$nhansuStage==='loading'?'Không tải được '.$nhansuLibrary.'. Hãy upload lại đầy đủ gói PRIVATE; kiểm tra kiemtra-capnhat.php.':'Ứng dụng gặp lỗi PHP. Mở kiemtra-capnhat.php và kiểm tra PHP error log theo mã tham chiếu.';nhansu_api_error($message,500,$ref);}

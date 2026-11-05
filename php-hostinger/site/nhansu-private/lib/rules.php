@@ -3,6 +3,8 @@ declare(strict_types=1);
 const SHIFTS = [['id'=>'day_first','name'=>'Ca 1','start'=>9,'end'=>14],['id'=>'day_second','name'=>'Ca 2','start'=>14,'end'=>19]];
 const PROFILE_FIELDS=['phone','department','job_title','start_date','birth_date','address','bank_name','bank_account','bank_holder','notes'];
 const CLIENT_VERSION='2026-10-20-photo2';
+// Số bản đang chạy cho Cập nhật một chạm; tools/build-release.py tự ghi theo số trên app.js.
+const APP_RELEASE='1.3.55';
 // Role Makeup (chủ dự án yêu cầu 02/11/2026): chỉ xem Lịch chụp trên web; mọi API khác bị chặn ở App::authenticate().
 const USER_ROLES=['admin','manager','employee','makeup'];
 const MAKEUP_ROUTES=['GET /me','POST /logout','POST /me/password','GET /bookings','GET /bookings/days','GET /bookings/summary'];
