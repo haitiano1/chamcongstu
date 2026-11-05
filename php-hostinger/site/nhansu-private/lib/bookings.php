@@ -32,6 +32,60 @@ function booked_shifts(App $a,string $month): array {
  $out=[];foreach($a->all("SELECT b.shoot_day,b.minutes FROM {{shoot_bookings}} b WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=? AND b.minutes>=540 AND b.minutes<1140",[$month.'-01',$month.'-31']) as $r)if($shift=booking_shift((int)$r['minutes']))$out[$r['shoot_day'].':'.$shift]=true;
  return $out;
 }
+// Ca cả studio không có khách theo lịch (đồng bộ từ Sheet) trong cả tháng, từ BOOKING_CREDIT_FROM; cách tính giống booked_shifts.
+// Chủ dự án yêu cầu 02/11/2026 (VD khách đầu tiên 15h thì Ca 1 là ca không khách) để cuối tháng thưởng trên phiếu lương.
+// past: ca đã hết giờ (14:00 / 19:00); upcoming: ca chưa hết giờ, hiện còn trống (Sheet còn có thể thêm khách).
+function studio_empty_shifts(App $a,string $month,?int $now=null): ?array {
+ $last=gmdate('Y-m-t',strtotime($month.'-01T00:00:00Z'));if($last<BOOKING_CREDIT_FROM)return null;
+ $now??=now_ms();$booked=booked_shifts($a,$month);$out=['past'=>[],'upcoming'=>[]];
+ for($d=max($month.'-01',BOOKING_CREDIT_FROM);$d<=$last;$d=gmdate('Y-m-d',strtotime($d.'T00:00:00Z')+86400))
+  foreach(SHIFTS as $s)if(!isset($booked[$d.':'.$s['id']]))$out[day_time($d,$s['end'])<=$now?'past':'upcoming'][]=$d.':'.$s['id'];
+ return $out;
+}
+// Tiền Tip (chủ dự án yêu cầu 02/11/2026): chụp xong ghi Tip ở Sửa lịch (hoặc cột Tip trên Sheet); tổng Tip của tháng chia đều cho
+// mọi Nhân viên đang làm (Huy, Cường, Tín → /3, chủ dự án chốt 02/11/2026, kể cả nhóm Trực Fanpage), tự điền vào khoản "Tiền khách Tips" trên phiếu lương / phiếu thưởng.
+// Mỗi lần số Tip của một lịch đổi thì ghi booking_tip_log (ai nhập, lúc nào, web hay Sheet) để xem nhật ký khi bấm vào khoản Tips.
+// Số tiền: 100000, 100.000, 100k; số dưới 1.000 coi là nghìn đồng như cách ghi trên Sheet (VD 50 = 50.000đ).
+function booking_tip_vnd(?string $label): int {
+ $v=preg_replace('/\s+/u','',(string)$label);if($v===''||!preg_match('/^(\d[\d.,]*)(k|đ|d|vnđ|vnd)?$/iuD',$v,$m))return 0;
+ $n=preg_match('/^\d+[.,]\d{1,2}$/D',$m[1])?(float)str_replace(',','.',$m[1]):(float)preg_replace('/[.,]/','',$m[1]);
+ if(strtolower($m[2]??'')==='k'||$n<1000)$n*=1000;return (int)round($n);
+}
+function booking_tip_log(App $a,array $row,string $oldLabel,string $label,string $source,?int $actor): void {
+ $old=booking_tip_vnd($oldLabel);$new=booking_tip_vnd($label);if($old===$new)return;
+ $a->run('INSERT INTO {{booking_tip_log}}(booking_id,shoot_day,minutes,customer_name,old_amount,amount,label,source,actor_id,time) VALUES(?,?,?,?,?,?,?,?,?,?)',[$row['id'],$row['shoot_day'],(int)$row['minutes'],$row['customer_name'],$old,$new,mb_substr($label,0,50),$source,$actor,now_ms()]);
+}
+// Tip của tháng: các lịch đang hoạt động có Tip; chia đều cho mọi Nhân viên đang làm, làm tròn tới đồng.
+function tip_month(App $a,string $month): array {
+ $items=[];$total=0;foreach($a->all("SELECT id,shoot_day,minutes,customer_name,package_label,tip_label FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? AND tip_label<>'' ORDER BY shoot_day,minutes,id",[$month.'-01',$month.'-31']) as $r){$v=booking_tip_vnd($r['tip_label']);if($v<=0)continue;$total+=$v;$items[]=$r+['amount'=>$v];}
+ $people=finance_people($a);$split=count($people);
+ return ['total'=>$total,'split'=>$split,'share'=>$split?(int)round($total/$split):0,'people'=>array_map(fn($p)=>['id'=>(int)$p['id'],'name'=>$p['name']],$people),'items'=>$items];
+}
+// Phần Tip tự chia của một nhân viên trong tháng; null = tháng trước khi áp dụng hoặc người không thuộc danh sách chia.
+function tip_share(App $a,string $month,int $user,?array $t=null): ?int {
+ if($month<PROGRESS_BONUS_FROM)return null;$t??=tip_month($a,$month);
+ foreach($t['people'] as $p)if($p['id']===$user)return $t['share'];return null;
+}
+// Ngoại cảnh (chủ dự án yêu cầu 02/11/2026): lịch có chữ "ngoại cảnh" (ô Đặc Biệt, Ghi chú, tên khách, gói hoặc ô khác trên Sheet)
+// mà Nhân viên nhóm Thợ chụp có chấm công trong giờ chụp (cùng cách tính có mặt như hoa hồng khách) thì +150.000đ mỗi lịch cho người đó.
+// Sheet không có cột Thợ nên xét theo chấm công của mọi Nhân viên nhóm Thợ chụp; tự điền khoản Ngoại cảnh, không sửa tay.
+const OUTDOOR_BONUS_VND=150000;
+function booking_is_outdoor(array $r): bool {
+ $text=implode(' ',[$r['customer_name']??'',$r['package_label']??'',$r['note']??'']);
+ foreach(json_decode((string)($r['sheet_fields_json']??''),true)?:[] as $f)if(is_array($f))$text.=' '.($f['value']??'');
+ return str_contains(booking_fold($text),'ngoai canh');
+}
+function outdoor_month(App $a,string $month,int $now): array {
+ $start=$month.'-01';$end=gmdate('Y-m-t',strtotime($start.'T00:00:00Z'));$today=local_day($now);$minute=intdiv($now-day_time($today),60000);$rows=[];
+ foreach($a->all("SELECT id,shoot_day,minutes,customer_name,package_label,note,sheet_fields_json FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? ORDER BY shoot_day,minutes,id",[$start,$end]) as $r)
+  if(booking_is_outdoor($r)&&!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute)))$rows[]=$r;
+ $profiles=payroll_profiles($a);$people=array_values(array_filter(array_map(fn($p)=>(int)$p['id'],finance_people($a)),fn($id)=>($profiles[$id]??'photo')==='photo'));$present=$rows?attendance_presence($a,$people,$start,$end,$now):[];$out=[];
+ foreach($people as $id)$out[$id]=['count'=>0,'amount'=>0,'days'=>[],'missed'=>[]];
+ foreach($rows as $r){$from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;$key=$r['shoot_day'].' '.booking_hm((int)$r['minutes']);
+  foreach($people as $id){$here=false;foreach($present[$id]??[] as [$in,$exit])if($in<$to&&$exit>$from){$here=true;break;}
+   if($here){$out[$id]['count']++;$out[$id]['amount']+=OUTDOOR_BONUS_VND;$out[$id]['days'][]=$key;}else $out[$id]['missed'][]=$key;}}
+ return $out;
+}
 function expected_shifts(App $a,int $id,string $day): array {$out=[];foreach(['day_first','day_second'] as $shift)if($e=expected_shift($a,$id,$day,$shift))$out[$shift]=$e;return $out;}
 function freeze_booking_shift(App $a,int $id,string $day,string $shift): void {
  if($a->one('SELECT user_id FROM {{booking_shift_snapshots}} WHERE user_id=? AND day=? AND shift=?',[$id,$day,$shift]))return;
@@ -133,16 +187,23 @@ function booking_input(array $b,?string $keepDay=null): array {
  return ['day'=>$day,'start'=>$start,'price'=>$price,'team'=>$team,'hold'=>$hold,'customer_name'=>$name,'customer_phone'=>$phone,'plain'=>$plain,'makeup'=>$makeup,'special'=>$special,'sheet_note'=>$sheetNote,
   'note'=>implode(' · ',array_filter([$special!==''?'Đặc biệt: '.$special:'',$makeup!==''?'Make up: '.$makeup:'',$sheetNote]))];
 }
-// Mỗi khung giờ 1 khách. Mọi POST đã khóa write_lock trong giao dịch nên hai người thêm/sửa cùng lúc không lọt trùng giờ.
-function booking_check_slot(App $a,string $day,int $start,int $end,?string $exclude=null): void {
+// Vướng lịch (chủ dự án yêu cầu 05/11/2026): không chặn hẳn. Lần đầu trả 409 kèm các lịch vướng để web hiện popup; bấm Vẫn đặt lịch thì gửi lại allow_overlap.
+// Mọi POST đã khóa write_lock trong giao dịch nên hai người thêm/sửa cùng lúc vẫn thấy lịch của nhau.
+function booking_check_slot(App $a,array $b,string $day,int $start,int $end,?string $exclude=null): ?array {
  if($start<420||$end>1320)fail('Giờ chụp cần trong khoảng 07:00–22:00.');
- foreach(booking_busy($a,$day) as $x)if($x['id']!==$exclude&&$start<$x['end']&&$x['start']<$end)fail('Khung '.booking_hm($start).'–'.booking_hm($end).' trùng lịch '.booking_hm($x['start']).'–'.booking_hm($x['end']).($x['customer_name']!==''?' của '.$x['customer_name']:'').'. Chọn giờ khác.',409);
+ if(($b['allow_overlap']??false)===true)return null;
+ $hit=array_values(array_filter(booking_busy($a,$day),fn($x)=>$x['id']!==$exclude&&$start<$x['end']&&$x['start']<$end));if(!$hit)return null;$x=$hit[0];
+ return [409,['error'=>'Khung '.booking_hm($start).'–'.booking_hm($end).' trùng lịch '.booking_hm($x['start']).'–'.booking_hm($x['end']).($x['customer_name']!==''?' của '.$x['customer_name']:'').'. Chọn giờ khác.','conflicts'=>$hit]];
 }
 function booking_hm(int $minutes): string {return sprintf('%02d:%02d',intdiv($minutes,60),$minutes%60);}
 function booking_sheet_tab(string $day): string {return 'Tháng '.(int)substr($day,5,2);}
 // Admin và Quản lý luôn được lên lịch chụp (thêm, sửa, hủy, chọn gói); Nhân viên cần Admin tick "Lên lịch chụp" trong hồ sơ (chủ dự án chốt 30/10/2026).
+function booking_team_editable(App $a,array $row): bool {
+ if(booking_permissions($a)['can_create'])return true;
+ return $a->user['role']==='employee'&&(bool)$a->one('SELECT 1 FROM {{booking_staff}} WHERE booking_id=? AND user_id=?',[$row['id'],$a->user['id']]);
+}
 function booking_permissions(App $a): array {
- $full=in_array($a->user['role'],['admin','manager'],true);$granted=(bool)$a->one('SELECT user_id FROM {{booking_creators}} WHERE user_id=?',[$a->user['id']]);
+ $full=in_array($a->user['role'],['admin','manager'],true);$granted=$a->user['role']==='employee'&&(bool)$a->one('SELECT user_id FROM {{booking_creators}} WHERE user_id=?',[$a->user['id']]);
  return ['can_create'=>$full||$granted,'can_grant'=>$a->user['role']==='admin'];
 }
 // Từ đầu tháng trước đến 6 tháng tới: Apps Script đọc đúng các tab trong khoảng này nên tên "Tháng N" không bị nhầm năm.
@@ -233,11 +294,30 @@ function import_bookings(App $a,array $b,string $sheet,?int $actor): array {
   freeze_existing_booking_day($a,$row['shoot_day']);if($old&&$old['shoot_day']!==$row['shoot_day'])freeze_existing_booking_day($a,$old['shoot_day']);
   if($old){$cols=array_values(array_diff(array_keys($row),['id']));$a->run('UPDATE {{shoot_bookings}} SET '.implode(',',array_map(fn($c)=>$c.'=?',$cols)).',updated_at=? WHERE id=?',[...array_map(fn($c)=>$row[$c],$cols),now_ms(),$row['id']]);$changed++;}
   else{$cols=array_keys($row);$a->run('INSERT INTO {{shoot_bookings}} ('.implode(',',$cols).',created_at,updated_at) VALUES('.implode(',',array_fill(0,count($cols)+2,'?')).')',[...array_values($row),now_ms(),now_ms()]);$created++;}
+  if(array_key_exists('tip_label',$row))booking_tip_log($a,$row,$old['tip_label']??'',$row['tip_label'],'sheet',$actor);
   relink_booking($a,$row);$a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$row['id'],$actor,$old?'updated':'created',$old?json_encode($old,JSON_THROW_ON_ERROR):null,json_encode($row,JSON_THROW_ON_ERROR),now_ms()]);
  }
  // Missing rows are deliberately NOT cancelled. Deletion/sorting/partial batches cannot erase history.
  $a->meta('sheet_sync_last',json_encode(['time'=>now_ms(),'sheet'=>$sheet,'tab'=>$tab,'received'=>count($rows),'created'=>$created,'updated'=>$changed],JSON_THROW_ON_ERROR));
  return ['received'=>count($rows),'created'=>$created,'updated'=>$changed];
+}
+// Không hiện lịch trùng (chủ dự án yêu cầu 02/11/2026): dòng bị xóa trên Sheet, hoặc cắt dán mất ô mã _AG_BOOKING_ID rồi được cấp mã mới,
+// trước đây vẫn để lại lịch cũ trên web nên hiện 2 thẻ. Script (bản 02/11/2026) gửi kèm mã mọi dòng của các tab vừa gửi đủ;
+// lịch của các tab đó không còn mã trên Sheet thì ẩn (status missing, không tính công / hoa hồng). Dòng có mã đó xuất hiện lại thì tự hiện lại.
+// Lịch đang chờ ghi xuống Sheet (thêm / sửa / hủy / xóa trên web chưa xong) không bị ẩn. Script cũ không gửi danh sách thì giữ như trước.
+function booking_hide_missing(App $a,string $sheet,mixed $live): int {
+ if(!is_array($live)||!is_array($live['tabs']??null)||!array_is_list($live['tabs'])||!is_array($live['ids']??null)||!array_is_list($live['ids'])||count($live['tabs'])>24||count($live['ids'])>40000)fail('Danh sách lịch trên Sheet không hợp lệ.');
+ $tabs=[];foreach($live['tabs'] as $t)$tabs[]=input_text($t,'Tên tab',1,150);if(!$tabs)return 0;
+ $ids=[];foreach($live['ids'] as $id){if(!is_string($id)||!preg_match('/^[a-f0-9-]{36}$/iD',$id))fail('Mã lịch trên Sheet không hợp lệ.');$ids[strtolower($id)]=true;}
+ $rows=$a->all("SELECT b.id,b.shoot_day,b.minutes,b.customer_name,b.status,b.source_tab FROM {{shoot_bookings}} b WHERE b.source_sheet=? AND b.source_tab IN (".implode(',',array_fill(0,count($tabs),'?')).") AND b.status IN ('active','cancelled') AND NOT EXISTS(SELECT 1 FROM {{booking_sheet_queue}} q WHERE q.booking_id=b.id AND q.status<>'done')",[$sheet,...$tabs]);
+ $hidden=0;
+ foreach($rows as $r){if(isset($ids[strtolower($r['id'])]))continue;
+  freeze_existing_booking_day($a,$r['shoot_day']);
+  if(!$a->run("UPDATE {{shoot_bookings}} SET status='missing',updated_at=? WHERE id=? AND status IN ('active','cancelled')",[now_ms(),$r['id']])->rowCount())continue;
+  $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$r['id'],null,'missing',json_encode(['status'=>$r['status']],JSON_THROW_ON_ERROR),json_encode(['status'=>'missing','tab'=>$r['source_tab'],'note'=>'Không còn dòng trên Sheet'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),now_ms()]);
+  $hidden++;}
+ if($hidden)$a->meta('sheet_sync_hidden',json_encode(['time'=>now_ms(),'count'=>$hidden],JSON_THROW_ON_ERROR));
+ return $hidden;
 }
 function sheet_receiver(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/sheet-sync/receive')return null;if($method!=='POST')fail('Chỉ nhận POST.',405);
@@ -248,13 +328,13 @@ function sheet_receiver(App $a,string $path,array $b,string $method): ?array {
  $sheet=$a->meta('sheet_sync_id');if(!$sheet||($b['sheet_id']??null)!==$sheet)fail('Sheet không khớp kết nối đã cấu hình.',403);
  if($a->one('SELECT nonce FROM {{sheet_sync_nonces}} WHERE nonce=?',[$nonce]))fail('Yêu cầu đã được nhận, không xử lý trùng.',409);
  $a->run('DELETE FROM {{sheet_sync_nonces}} WHERE created_at<?',[now_ms()-600000]);$a->run('INSERT INTO {{sheet_sync_nonces}} VALUES(?,?)',[$nonce,now_ms()]);
- if(($b['poll']??null)===true)return [200,booking_queue_poll($a)];
+ if(($b['poll']??null)===true){$hidden=array_key_exists('live',$b)?booking_hide_missing($a,$sheet,$b['live']):0;return [200,booking_queue_poll($a)+['hidden'=>$hidden]];}
  if(array_key_exists('ack',$b))return [200,booking_queue_ack($a,is_array($b['ack'])?$b['ack']:[],$sheet)];
  return [200,import_bookings($a,$b,$sheet,null)];
 }
 function attendance_issues(App $a,string $month,?int $person=null): array {
  valid_month($month);$first=$month.'-01';$last=date('Y-m-t',strtotime($first));$end=min($last,local_day(now_ms()));$now=now_ms();$issues=[];
- $people=$a->all("SELECT id,name,role FROM {{users}} WHERE archived=0".($person!==null?' AND id=?':''),$person!==null?[$person]:[]);
+ $people=$a->all("SELECT id,name,role FROM {{users}} WHERE archived=0 AND role='employee'".($person!==null?' AND id=?':''),$person!==null?[$person]:[]);
  foreach($people as $p){$events=$a->events($p['id']);$lates=late_checkins($a,(int)$p['id'],$month,$events);
   for($t=day_time($first);$t<=day_time($end);$t+=86400000){$day=local_day($t);
    foreach(['day_first','day_second'] as $shift){$e=expected_shift($a,$p['id'],$day,$shift);if(!$e||$e['source']==='default')continue;$expected=$e['expected_at'];$w=bounds($day,$shift);
@@ -333,7 +413,7 @@ function late_auto_log(App $a,array $l): ?string {
 // Ghi nhận các lượt đi muộn hôm nay, mỗi lượt một lần; từ lần 2 trong tháng tự ghi Event log (trạng thái Đã xác nhận nên trừ KPI ngay).
 function late_checkins_record(App $a,int $now): void {
  $day=local_day($now);$month=substr($day,0,7);
- foreach($a->all("SELECT DISTINCT e.user_id FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.type='in' AND e.shift IN ('day_first','day_second') AND u.archived=0",[$day]) as $u)
+ foreach($a->all("SELECT DISTINCT e.user_id FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.type='in' AND e.shift IN ('day_first','day_second') AND u.archived=0 AND u.role='employee'",[$day]) as $u)
   foreach(late_checkins($a,(int)$u['user_id'],$month) as $l){if($l['day']!==$day||$l['processed']||$l['excused'])continue;
    $a->tx(function()use($a,$l){
     if(!$a->run('INSERT IGNORE INTO {{late_checkins}}(user_id,day,shift,expected_at,checkin_at,late_minutes,ordinal,points,event_log_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',[$l['user_id'],$l['day'],$l['shift'],$l['expected_at'],$l['checkin_at'],$l['late_minutes'],$l['ordinal'],$l['points'],$l['event_log_id'],now_ms()])->rowCount())return;
@@ -383,7 +463,7 @@ function attendance_alert_tick(App $a,?int $clock=null,?Telegram $tg=null): void
  if(!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;
  $now=$clock??now_ms();$day=local_day($now);
  $managers=$a->all("SELECT u.id,l.chat_id FROM {{users}} u JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' ORDER BY u.id");if(!$managers)return;
- $by=[];foreach($a->all("SELECT e.id,e.user_id,e.type,e.time,e.shift,e.source,u.name FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.shift IN ('day_first','day_second') AND u.archived=0 ORDER BY e.user_id,e.time,e.id",[$day]) as $e)$by[(int)$e['user_id']][$e['shift']][]=$e;
+ $by=[];foreach($a->all("SELECT e.id,e.user_id,e.type,e.time,e.shift,e.source,u.name FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.shift IN ('day_first','day_second') AND u.archived=0 AND u.role='employee' ORDER BY e.user_id,e.time,e.id",[$day]) as $e)$by[(int)$e['user_id']][$e['shift']][]=$e;
  $sent=0;$label=late_day_label($day);
  foreach($by as $uid=>$shifts){$rows=null;
   foreach($shifts as $shift=>$list){$name=$list[0]['name'];$sname=$shift==='day_first'?'Ca 1':'Ca 2';
@@ -422,7 +502,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $a->requireManager();$key=input_text($b['source_key']??null,'Mã sự việc',5,150);$month=valid_month($b['month']??null);$issue=null;
   foreach(attendance_issues($a,$month) as $r)if($r['source_key']===$key){$issue=$r;break;}if(!$issue)fail('Sự cố không còn trong dữ liệu đối soát. Tải lại.',409);
   if($issue['event_log_id'])return [200,['id'=>$issue['event_log_id'],'already_saved'=>true]];
-  $note=input_text($b['description']??null,'Nội dung xác nhận',5,2000);$id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$issue['id'],'event_date'=>$issue['day'],'category'=>$issue['kind']==='late'?'late':'missing_punch','description'=>$note,'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null],'POST');
+  $note=input_text($b['description']??null,'Nội dung xác nhận',5,2000);$id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$issue['id'],'event_date'=>$issue['day'],'category'=>$issue['kind']==='late'?'late':'missing_punch','description'=>$note,'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null,'offense'=>null],'POST');
   $a->run('INSERT INTO {{attendance_issue_links}} VALUES(?,?)',[$key,$id]);return $result;
  }
  if($path==='/sheet-sync/status'&&$method==='GET'){$a->requireManager();$last=json_decode($a->meta('sheet_sync_last')??'null',true);$aliases=$a->all('SELECT m.*,u.name FROM {{booking_aliases}} m JOIN {{users}} u ON u.id=m.user_id ORDER BY m.alias_label');return [200,['sheet_id'=>$a->meta('sheet_sync_id')??'1JCyjUuLzCJy05yRvjWMKEGmwbvCEAiSjnyi1cNcuZow','configured'=>is_file($a->storage.'/sheet-sync-key'),'last_sync'=>$last,'aliases'=>$aliases,'people'=>finance_people($a),'can_configure'=>$a->user['role']==='admin','creators'=>$a->user['role']==='admin'?array_map('intval',array_column($a->all('SELECT user_id FROM {{booking_creators}}'),'user_id')):[]]];}
@@ -431,7 +511,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $key=bin2hex(random_bytes(32));$file=$a->storage.'/sheet-sync-key';if(file_put_contents($file,$key,LOCK_EX)===false)fail('Không lưu được khóa kết nối.',500);chmod($file,0600);$a->meta('sheet_sync_id',$sheet);$a->audit($a->user['id'],'configure_sheet_sync');return [200,['key'=>$key,'sheet_id'=>$sheet,'endpoint'=>$a->config['app_url'].'/api.php?route=%2Fsheet-sync%2Freceive']];
  }
  if($path==='/booking-aliases'&&$method==='POST'){
-  $a->requireManager();$label=input_text($b['alias']??null,'Tên trên Sheet',1,150);$key=alias_key($label);if(!is_int($b['user_id']??null))fail('Chọn nhân viên.');$a->target($b['user_id']);
+  $a->requireManager();$label=input_text($b['alias']??null,'Tên trên Sheet',1,150);$key=alias_key($label);if(!is_int($b['user_id']??null))fail('Chọn nhân viên.');if($a->target($b['user_id'])['role']!=='employee')fail('Chỉ ghép tên thợ với tài khoản Nhân viên.');
   foreach($a->all("SELECT DISTINCT shoot_day FROM {{shoot_bookings}} WHERE status='active'") as $d)freeze_existing_booking_day($a,$d['shoot_day']);
   $a->run('INSERT INTO {{booking_aliases}} VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE alias_label=VALUES(alias_label),user_id=VALUES(user_id),updated_by=VALUES(updated_by),updated_at=VALUES(updated_at)',[$key,$label,$b['user_id'],$a->user['id'],now_ms()]);
   foreach($a->all('SELECT * FROM {{shoot_bookings}}') as $row)relink_booking($a,$row);
@@ -443,7 +523,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  }
  if($path==='/bookings/create'&&$method==='POST'){
   if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền thêm lịch.',403);
-  $in=booking_input($b);booking_check_slot($a,$in['day'],$in['start'],$in['start']+($in['team']?$in['hold']:($in['price']!==null?BOOKING_WEB_PACKAGES[$in['price']]:60)));
+  $in=booking_input($b);if($stop=booking_check_slot($a,$b,$in['day'],$in['start'],$in['start']+($in['team']?$in['hold']:($in['price']!==null?BOOKING_WEB_PACKAGES[$in['price']]:60))))return $stop;
   $row=['id'=>uuid_v4(),'source_sheet'=>$a->meta('sheet_sync_id')?:'web','source_tab'=>booking_sheet_tab($in['day']),'source_row'=>0,'shoot_day'=>$in['day'],'minutes'=>$in['start'],'package_label'=>$in['price']===null?'':(string)$in['price'],'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'deposit_label'=>'']+booking_default_staff($a)+['note'=>$in['note'],'received_label'=>'','status'=>'active'];
   freeze_existing_booking_day($a,$in['day']);$cols=array_keys($row);
   $a->run('INSERT INTO {{shoot_bookings}} ('.implode(',',$cols).',created_at,updated_at) VALUES('.implode(',',array_fill(0,count($cols)+2,'?')).')',[...array_values($row),now_ms(),now_ms()]);
@@ -467,13 +547,15 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
    'surcharge'=>$money['surcharge']!==($old['surcharge_label']??''),'tip'=>$money['tip']!==($old['tip_label']??'')]));
   if(!$changed)return [200,['ok'=>true,'changed'=>[]]];
   $row=['shoot_day'=>$in['day'],'minutes'=>$in['start'],'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'package_label'=>in_array('package_label',$changed,true)?($in['price']===null?'':(string)$in['price']):$old['package_label'],'note'=>array_intersect($changed,['makeup','special','note'])?$in['note']:$old['note'],'surcharge_label'=>$money['surcharge'],'tip_label'=>$money['tip']];
-  // Chỉ sửa Phụ thu / Tip thì không kiểm tra trùng giờ (khách đã chụp xong).
-  if(array_diff($changed,['surcharge','tip']))booking_check_slot($a,$row['shoot_day'],$row['minutes'],$row['minutes']+booking_length($row['package_label'],$row['note']),$id);
+  // Chỉ kiểm tra khi đổi khung giờ (ngày, giờ, độ dài gói): sửa tên, Phụ thu, Tip… của lịch đang vướng thì không hỏi lại.
+  $length=booking_length($row['package_label'],$row['note']);
+  if(($row['shoot_day']!==$old['shoot_day']||$row['minutes']!==(int)$old['minutes']||$length!==booking_length($old['package_label'],$old['note']))&&$stop=booking_check_slot($a,$b,$row['shoot_day'],$row['minutes'],$row['minutes']+$length,$id))return $stop;
   $set=['day'=>implode('/',array_slice(array_reverse(explode('-',$in['day'])),0,2)),'time'=>booking_hm($in['start']),'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'package_label'=>$row['package_label'],'makeup'=>$in['makeup'],'special'=>$in['special'],'note'=>$in['sheet_note'],'surcharge'=>$money['surcharge'],'tip'=>$money['tip']];
   if($old['sheet_fields_json']!==null)$row['sheet_fields_json']=booking_patch_fields($old['sheet_fields_json'],array_intersect_key($set,array_flip($changed)));
   freeze_existing_booking_day($a,$old['shoot_day']);if($row['shoot_day']!==$old['shoot_day'])freeze_existing_booking_day($a,$row['shoot_day']);
   $a->run('UPDATE {{shoot_bookings}} SET '.implode(',',array_map(fn($c)=>$c.'=?',array_keys($row))).',updated_at=? WHERE id=?',[...array_values($row),now_ms(),$id]);
   booking_enqueue_update($a,$id,$old['source_tab'],['makeup'=>$in['makeup'],'special'=>$in['special'],'note'=>$in['sheet_note'],'from_day'=>$old['shoot_day']],$changed);
+  if(in_array('tip',$changed,true))booking_tip_log($a,['id'=>$id]+$row,$old['tip_label']??'',$money['tip'],'web',(int)$a->user['id']);
   $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$id,$a->user['id'],'updated_web',json_encode($old,JSON_THROW_ON_ERROR),json_encode($row+['changed'=>$changed],JSON_THROW_ON_ERROR),now_ms()]);
   return [200,['ok'=>true,'changed'=>$changed,'tab'=>$old['source_tab'],'sheet_connected'=>is_file($a->storage.'/sheet-sync-key')]];
  }
@@ -529,20 +611,42 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
   $days=$a->all("SELECT b.shoot_day day,COUNT(*) count FROM {{shoot_bookings}} b WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?".($person!==null?' AND EXISTS(SELECT 1 FROM {{booking_staff}} own WHERE own.booking_id=b.id AND own.user_id=?)':'').' GROUP BY b.shoot_day ORDER BY b.shoot_day',[$start,$end,...($person!==null?[$person]:[])]);
   return [200,['days'=>$days,'start'=>$start,'end'=>$end]];
  }
+ // Thống kê Lịch chụp theo tháng đang xem (chủ dự án yêu cầu 03/11/2026): Tổng lịch tháng, Lịch hôm nay, Lịch sắp tới,
+ // Số khách đã chụp (lịch đã qua giờ chụp; Team đã nhập số khách thì tính theo số nhập, cùng cách đếm với phiếu lương), Đã hủy.
  if($path==='/bookings/summary'&&$method==='GET'){
   $today=local_day(now_ms());$minute=(int)date('G')*60+(int)date('i');$person=booking_view_person($a);
-  $where=" WHERE b.status!='deleted'".($person!==null?' AND EXISTS(SELECT 1 FROM {{booking_staff}} own WHERE own.booking_id=b.id AND own.user_id=?)':'');
-  $summary=$a->one("SELECT COALESCE(SUM(b.status='active'),0) active,COALESCE(SUM(b.status='active' AND b.shoot_day=?),0) today,COALESCE(SUM(b.status='active' AND (b.shoot_day>? OR (b.shoot_day=? AND b.minutes>=?))),0) upcoming,COALESCE(SUM(b.status='active' AND NOT EXISTS(SELECT 1 FROM {{booking_staff}} assigned WHERE assigned.booking_id=b.id)),0) unassigned,COALESCE(SUM(b.status='cancelled'),0) cancelled FROM {{shoot_bookings}} b".$where,[$today,$today,$today,$minute,...($person!==null?[$person]:[])]);
-  foreach($summary as &$value)$value=(int)$value;unset($value);return [200,$summary+['day'=>$today,'scope'=>$person!==null?'my_bookings':'all_synced_bookings']];
+  $month=valid_month($_GET['month']??substr($today,0,7));$start=$month.'-01';$end=date('Y-m-t',strtotime($start));
+  $rows=$a->all("SELECT b.id,b.status,b.shoot_day,b.minutes,b.package_label,NOT EXISTS(SELECT 1 FROM {{booking_staff}} assigned WHERE assigned.booking_id=b.id) unassigned FROM {{shoot_bookings}} b WHERE b.status IN ('active','cancelled') AND b.shoot_day>=? AND b.shoot_day<=?".($person!==null?' AND EXISTS(SELECT 1 FROM {{booking_staff}} own WHERE own.booking_id=b.id AND own.user_id=?)':''),[$start,$end,...($person!==null?[$person]:[])]);
+  $active=array_values(array_filter($rows,fn($r)=>$r['status']==='active'));$shot=array_values(array_filter($active,fn($r)=>$r['shoot_day']<$today||($r['shoot_day']===$today&&(int)$r['minutes']<=$minute)));
+  $items=booking_customer_items($a,$shot);
+  return [200,['month'=>$month,'active'=>count($active),'today'=>count(array_filter($active,fn($r)=>$r['shoot_day']===$today)),'upcoming'=>count($active)-count($shot),'shot'=>array_sum(array_column($items,'customers')),'cancelled'=>count($rows)-count($active),'unassigned'=>count(array_filter($active,fn($r)=>(bool)$r['unassigned'])),'day'=>$today,'scope'=>$person!==null?'my_bookings':'all_synced_bookings']];
+ }
+ // Lịch Team: chụp xong thợ (người được gán vào lịch), Admin, Quản lý, người được cấp Lên lịch chụp nhập số khách theo từng gói.
+ if($path==='/bookings/team'&&$method==='POST'){
+  $id=entry_uuid($b['id']??null);$old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);
+  if(!$old||$old['status']==='deleted'||$old['status']==='missing')fail('Không tìm thấy lịch.',404);if($old['status']!=='active')fail('Lịch đã hủy.',409);
+  if(!booking_team_editable($a,$old))fail('Chỉ thợ của lịch này, Quản lý hoặc Admin được nhập số khách.',403);
+  if(booking_package_price($old['package_label'])!==BOOKING_TEAM_PRICE)fail('Chỉ lịch Team mới nhập số khách theo gói.');
+  $now=now_ms();if($old['shoot_day']>local_day($now)||($old['shoot_day']===local_day($now)&&(int)$old['minutes']>intdiv($now-day_time($old['shoot_day']),60000)))fail('Chụp xong mới nhập số khách.');
+  if($a->closure(substr($old['shoot_day'],0,7)))fail('Tháng này đã chốt lương, không sửa số khách được.',409);
+  $in=$b['counts']??null;if(!is_array($in))fail('Nhập số khách theo gói.');$counts=[];
+  foreach($in as $price=>$n){$price=(int)$price;if(!isset(BOOKING_PACKAGE_UNITS[$price]))fail('Gói không hợp lệ.');if(!is_int($n)||$n<0||$n>200)fail('Số khách mỗi gói từ 0 đến 200.');if($n)$counts[$price]=$n;}
+  ksort($counts);$before=booking_team_counts($a,[$id])[$id]??[];if($before===$counts)return [200,['ok'=>true,'changed'=>false,'counts'=>$counts]];
+  $a->tx(function()use($a,$id,$counts,$before,$now){
+   $a->run('DELETE FROM {{booking_team_counts}} WHERE booking_id=?',[$id]);
+   foreach($counts as $price=>$n)$a->run('INSERT INTO {{booking_team_counts}}(booking_id,price,count,updated_by,updated_at) VALUES(?,?,?,?,?)',[$id,$price,$n,$a->user['id'],$now]);
+   $a->run('INSERT INTO {{booking_audit}}(booking_id,actor_id,action,before_json,after_json,time) VALUES(?,?,?,?,?,?)',[$id,$a->user['id'],'team_count',json_encode($before,JSON_THROW_ON_ERROR),json_encode($counts,JSON_THROW_ON_ERROR),$now]);
+  });
+  return [200,['ok'=>true,'changed'=>true,'counts'=>$counts,'customers'=>array_sum($counts)]];
  }
  if($path==='/bookings'&&$method==='GET'){
-  [$start,$end]=finance_range();$where="b.status!='deleted' AND b.shoot_day>=? AND b.shoot_day<=?";$params=[$start,$end];
+  [$start,$end]=finance_range();$where="b.status IN ('active','cancelled') AND b.shoot_day>=? AND b.shoot_day<=?";$params=[$start,$end];
   $person=booking_view_person($a);if($person!==null){$where.=' AND EXISTS(SELECT 1 FROM {{booking_staff}} s WHERE s.booking_id=b.id AND s.user_id=?)';$params[]=$person;}
   $page=finance_page();$total=(int)$a->scalar('SELECT COUNT(*) FROM {{shoot_bookings}} b WHERE '.$where,$params);
   // Mọi role xem đủ thông tin Sheet trong popup; chỉ Quản lý/Admin được xóa lịch.
   $rows=$a->all('SELECT b.* FROM {{shoot_bookings}} b WHERE '.$where.' ORDER BY b.shoot_day,b.minutes,b.id LIMIT 100 OFFSET '.(($page-1)*100),$params);
-  $states=booking_sheet_states($a,array_column($rows,'id'));$perms=booking_permissions($a);
-  foreach($rows as &$row){if($perms['can_create']&&$row['status']==='active')$row['edit']=booking_form($row);$row['makeup']=booking_makeup_label($row);$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['sheet_state']=$states[$row['id']]??null;$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
+  $states=booking_sheet_states($a,array_column($rows,'id'));$perms=booking_permissions($a);$teams=booking_team_counts($a,array_column($rows,'id'));$nowMs=now_ms();$todayDay=local_day($nowMs);$nowMin=intdiv($nowMs-day_time($todayDay),60000);
+  foreach($rows as &$row){if($perms['can_create']&&$row['status']==='active')$row['edit']=booking_form($row);$row['makeup']=booking_makeup_label($row);$row['sheet_fields']=json_decode($row['sheet_fields_json']??'null',true);unset($row['sheet_fields_json']);$row['sheet_state']=$states[$row['id']]??null;$row['staff']=$a->all('SELECT s.user_id,s.staff_role,u.name FROM {{booking_staff}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.booking_id=?',[$row['id']]);if(booking_package_price($row['package_label'])===BOOKING_TEAM_PRICE){$row['team_counts']=(object)($teams[$row['id']]??[]);$row['team_edit']=$row['status']==='active'&&($row['shoot_day']<$todayDay||($row['shoot_day']===$todayDay&&(int)$row['minutes']<=$nowMin))&&($perms['can_create']||($a->user['role']==='employee'&&in_array((int)$a->user['id'],array_map(fn($s)=>(int)$s['user_id'],$row['staff']),true)));}$row['shift']=booking_shift($row['minutes'])??($row['minutes']>=1140?'ot':'outside');}
   // Lịch của tôi: kèm ca đã Đăng ký ca và ca nghỉ gấp của chính mình trong tháng để hiện trên từng ngày (chủ dự án yêu cầu 31/10/2026; chỉ để xem).
   $mine=$person!==null&&$page===1?['registered'=>$a->all('SELECT day,shift FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$person,$start,$end]),'urgent_cancels'=>$a->all('SELECT day,shift FROM {{shift_cancellations}} WHERE user_id=? AND day>=? AND day<=?',[$person,$start,$end])]:[];
   return [200,['rows'=>$rows,'total'=>$total,'page'=>$page,'start'=>$start,'end'=>$end,'permissions'=>$perms,'default_staff'=>booking_default_staff($a)]+$mine];

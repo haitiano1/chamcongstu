@@ -20,7 +20,7 @@ try{$a->tx(function()use($a){
  availability_telegram_tick($a,$at('2026-11-07','09:05'),$tg);
  verify(count($to('c1'))===1&&str_contains($to('c1')[0]['text'],'(09/11 – 15/11)')&&str_contains($to('c1')[0]['text'],'Đã chọn 3/10 ca'),'Nhắc nhân viên chưa chốt, đúng tuần tới và số ca: '.json_encode($to('c1'),JSON_UNESCAPED_UNICODE));
  verify(($to('c1')[0]['reply_markup']['inline_keyboard'][0][0]['url']??'')==='https://example.test/nhansu/#availability','Nút mở thẳng Đăng ký ca');
- verify(!$to('c2'),'Người đã chốt không bị nhắc');verify(count($to('cm'))===1,'Quản lý chưa chốt cũng được nhắc như popup');verify(!$to('ca'),'Thứ 7 không gửi danh sách cho Admin');
+ verify(!$to('c2'),'Người đã chốt không bị nhắc');verify(!$to('cm'),'Quản lý không phải đăng ký ca, không bị nhắc (chỉ Nhân viên)');verify(!$to('ca'),'Thứ 7 không gửi danh sách cho Admin');
  $count=count($sent);availability_telegram_tick($a,$at('2026-11-07','09:40'),$tg);verify(count($sent)===$count,'Cùng khung 9h không gửi lặp');
  availability_telegram_tick($a,$at('2026-11-07','12:30'),$tg);availability_telegram_tick($a,$at('2026-11-07','19:59'),$tg);verify(count($sent)===$count,'Ngoài khung 9h–12h, 20h–23h không gửi');
  availability_telegram_tick($a,$at('2026-11-06','09:05'),$tg);verify(count($sent)===$count,'Thứ 6 không nhắc');
@@ -38,6 +38,10 @@ try{$a->tx(function()use($a){
  verify(avail_shift_lines($a,(int)$e1['id'],$week)==="T2 09/11: Ca 1, Ca 2\nT3 10/11: Ca 2",'Liệt kê ca theo ngày: '.avail_shift_lines($a,(int)$e1['id'],$week));
  $sent=[];$a->user=$m;avail_notify_managers($a,'x',$tg);verify(array_column($sent,'chat_id')===['ca'],'Báo Admin, không gửi lại cho chính người gửi');
  verify(($sent[0]['reply_markup']['inline_keyboard'][0][0]['url']??'')==='https://example.test/nhansu/#availability','Tin báo quản lý mở Đăng ký ca');
+ // Đăng ký ca chỉ dành cho Nhân viên (chủ dự án yêu cầu 02/11/2026): Quản lý gọi API bị chặn, danh sách quản lý xem không có Quản lý.
+ $a->user=$m;try{availability_routes($a,'/availability/commit',['week'=>$week],'POST');verify(false,'Quản lý chốt ca phải bị chặn');}catch(HttpError $x){verify($x->status===403,'Quản lý không đăng ký ca');}
+ $_GET=['week'=>$week];$r=availability_routes($a,'/availability',[],'GET')[1];verify(!in_array((int)$m['id'],array_map('intval',array_column($r['people'],'id')),true)&&in_array((int)$e1['id'],array_map('intval',array_column($r['people'],'id')),true),'Danh sách Đăng ký ca chỉ có Nhân viên');
+ verify(availability_routes($a,'/availability/summary',[],'GET')[1]['needs_registration']===false,'Quản lý không bị popup nhắc đăng ký ca');
  // Chốt qua API vẫn chạy khi Telegram chưa cấu hình.
  $a->config['telegram_token']='';$a->user=$e3;for($i=0;$i<5;$i++)foreach(['day_first','day_second'] as $s)$a->run('INSERT INTO {{shift_availability}} VALUES(?,?,?,?)',[$e3['id'],date('Y-m-d',strtotime($week.'T00:00:00Z')+$i*86400),$s,now_ms()]);
  verify(availability_routes($a,'/availability/commit',['week'=>$week],'POST')[1]['ok']===true&&$a->one('SELECT 1 FROM {{availability_weeks}} WHERE user_id=? AND week_start=?',[$e3['id'],$week]),'Chốt tuần thành công');
@@ -49,4 +53,4 @@ try{$a->tx(function()use($a){
  $_GET=['month'=>'2026-11'];$r=booking_routes($a,'/bookings',[],'GET')[1];verify(!isset($r['registered']),'Toàn studio không kèm ca đăng ký');
  throw new RuntimeException('ROLLBACK');
 });}catch(RuntimeException $e){if($e->getMessage()!=='ROLLBACK')throw $e;}
-echo "PASS $n availability checks: Telegram reminders, manager list, commit notice, My calendar shifts\n";
+echo "PASS $n availability checks: Telegram reminders (employees only), manager list, commit notice, My calendar shifts\n";

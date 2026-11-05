@@ -48,8 +48,9 @@ try{$a->tx(function()use($a){
  $as($e2);denied(fn()=>$route("/tasks/declines/$d5/withdraw"),403,'Người khác không rút được');$as($e);$route("/tasks/declines/$d5/withdraw");verify($state($d5)==='withdrawn','Người gửi rút được yêu cầu');
  $d6=$route("/tasks/$t4/decline",['reason'=>'Em bận chụp khách lần nữa'])[1]['id'];$route("/tasks/$t4/done",['note'=>'','photos'=>[]]);verify($state($d6)==='withdrawn','Báo xong trong lúc chờ thì yêu cầu tự rút');
  denied(fn()=>$route("/tasks/$t4/decline",['reason'=>'Đã xong rồi mới xin']),409,'Đã báo xong thì không xin từ chối');
- // Quản lý nhận việc: không tự duyệt, Admin duyệt được.
- $t5=$task([(int)$m['id']]);$as($m);$d7=$route("/tasks/$t5/decline",['reason'=>'Việc này của bộ phận khác'])[1]['id'];
+ // Chỉ giao việc cho Nhân viên (chủ dự án yêu cầu 02/11/2026). Việc cũ đã giao cho Quản lý: không tự duyệt, Admin duyệt được.
+ denied(fn()=>$task([(int)$m['id']]),400,'Không giao việc cho Quản lý');
+ $t5=$task([(int)$e2['id']]);$a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'','skipped')",[$t5,$m['id']]);$as($m);$d7=$route("/tasks/$t5/decline",['reason'=>'Việc này của bộ phận khác'])[1]['id'];
  denied(fn()=>$route("/tasks/declines/$d7/approve"),403,'Quản lý không tự duyệt yêu cầu của mình');$as($admin);$route("/tasks/declines/$d7/approve");verify($state($d7)==='approved','Admin duyệt yêu cầu của Quản lý');
  // Việc bị hủy thì không duyệt nữa và không còn trong danh sách chờ.
  $t6=$task([(int)$e['id']]);$as($e);$d8=$route("/tasks/$t6/decline",['reason'=>'Em xin không làm việc này'])[1]['id'];$as($admin);$v=(int)$a->scalar('SELECT version FROM {{tasks}} WHERE id=?',[$t6]);$route("/tasks/$t6/cancel",['version'=>$v,'reason'=>'Không cần nữa']);

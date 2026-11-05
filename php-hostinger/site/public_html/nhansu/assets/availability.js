@@ -1,4 +1,4 @@
-import {loadRules,ruleLogDialog} from './rule-picker.js?v=20261028-kpi2';
+import {loadRules,ruleLogDialog} from './rule-picker.js?v=20261102-kpi3';
 // Đăng ký ca theo tuần: tick ca chắc chắn đi làm, tối thiểu 10 ca (lấy từ máy chủ) rồi chốt; bỏ ca đã chốt là nghỉ gấp.
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stamp=v=>v?new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',dateStyle:'short',timeStyle:'short'}).format(v):'—';
@@ -13,7 +13,7 @@ function dialog(title,body,cls=''){const d=document.createElement('dialog');d.cl
 
 export function availabilityPage(user){return `<section class="finance-page avail-page" data-page="availability" hidden><div class="finance-heading"><div><span class="eyebrow">ANH GẤU STUDIO · ĐĂNG KÝ CA</span><h1>Đăng ký ca</h1><p>Tick những ca bạn chắc chắn đi làm trong tuần, tối thiểu 10 ca, rồi bấm Chốt. Ca đã chọn hiện ở Lịch chụp → Lịch của tôi.</p></div></div>
 <div class="card avail-week-bar"><button class="secondary" type="button" id="avail-prev" aria-label="Tuần trước">‹</button><div><strong id="avail-week-title">Tuần</strong><small id="avail-week-range"></small></div><button class="secondary" type="button" id="avail-next" aria-label="Tuần sau">›</button></div>
-${user.role!=='admin'?`<section class="card avail-mine"><div class="avail-status"><div><span id="avail-badge" class="avail-badge"></span><p id="avail-count" class="avail-count"></p></div><div class="avail-progress"><i id="avail-progress"></i></div></div><p class="hint" id="avail-hint"></p><div id="avail-grid" class="avail-grid" aria-live="polite"></div><button class="primary" type="button" id="avail-commit">Chốt đăng ký tuần</button></section>`:''}
+${user.role==='employee'?`<section class="card avail-mine"><div class="avail-status"><div><span id="avail-badge" class="avail-badge"></span><p id="avail-count" class="avail-count"></p></div><div class="avail-progress"><i id="avail-progress"></i></div></div><p class="hint" id="avail-hint"></p><div id="avail-grid" class="avail-grid" aria-live="polite"></div><button class="primary" type="button" id="avail-commit">Chốt đăng ký tuần</button></section>`:''}
 ${user.role!=='employee'?`<section class="card avail-team"><div class="section-head"><h2>Đăng ký của nhân viên</h2></div><div id="avail-cancels"></div><div id="avail-team-list"></div></section>`:''}
 </section>`;}
 

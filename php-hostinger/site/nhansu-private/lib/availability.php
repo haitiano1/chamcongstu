@@ -22,7 +22,7 @@ function avail_days_ahead(string $day,int $now): int {return intdiv(strtotime($d
 // Ca đã đăng ký hiện trong Lịch làm việc (chỉ để xem; đối soát chấm công vẫn theo lịch khách).
 function avail_roster(App $a,string $start,string $end,?int $user,array $existing): array {
  $have=[];foreach($existing as $e)$have[$e['user_id'].'_'.$e['day'].'_'.$e['shift']]=true;
- $out=[];foreach($a->all("SELECT s.user_id,s.day,s.shift,u.name,u.role,u.status,u.archived,u.employee_code FROM {{shift_availability}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.day>=? AND s.day<=? AND u.archived=0 AND u.status!='inactive'".($user?' AND s.user_id=?':'').' ORDER BY s.day,s.shift,u.name',$user?[$start,$end,$user]:[$start,$end]) as $r){$k=$r['user_id'].'_'.$r['day'].'_'.$r['shift'];if(isset($have[$k]))continue;$out[]=$r+['id'=>'reg_'.$k,'source'=>'registered','from_registration'=>true];}
+ $out=[];foreach($a->all("SELECT s.user_id,s.day,s.shift,u.name,u.role,u.status,u.archived,u.employee_code FROM {{shift_availability}} s JOIN {{users}} u ON u.id=s.user_id WHERE s.day>=? AND s.day<=? AND u.archived=0 AND u.status!='inactive' AND u.role='employee'".($user?' AND s.user_id=?':'').' ORDER BY s.day,s.shift,u.name',$user?[$start,$end,$user]:[$start,$end]) as $r){$k=$r['user_id'].'_'.$r['day'].'_'.$r['shift'];if(isset($have[$k]))continue;$out[]=$r+['id'=>'reg_'.$k,'source'=>'registered','from_registration'=>true];}
  return $out;
 }
 function avail_shift_start(string $day,string $shift): int {return bounds($day,$shift)['start'];}
@@ -31,7 +31,7 @@ function avail_audit(App $a,int $user,string $day,string $shift,string $action,s
 }
 // Điểm đề xuất: lần nghỉ gấp đầu trong tháng 100, từ lần thứ hai 300.
 function avail_cancel_rows(App $a,string $from,string $to,?int $user=null): array {
- $rows=$a->all("SELECT c.id,c.user_id,c.day,c.shift,c.cancelled_at,c.reason,u.name,u.employee_code,(SELECT r.id FROM {{attendance_issue_links}} l JOIN {{event_log}} r ON r.id=l.event_log_id WHERE l.source_key=CONCAT('cancel_',c.id)) event_log_id FROM {{shift_cancellations}} c JOIN {{users}} u ON u.id=c.user_id WHERE c.day>=? AND c.day<=?".($user?' AND c.user_id=?':'').' ORDER BY c.cancelled_at',$user?[$from,$to,$user]:[$from,$to]);
+ $rows=$a->all("SELECT c.id,c.user_id,c.day,c.shift,c.cancelled_at,c.reason,u.name,u.employee_code,(SELECT r.id FROM {{attendance_issue_links}} l JOIN {{event_log}} r ON r.id=l.event_log_id WHERE l.source_key=CONCAT('cancel_',c.id)) event_log_id FROM {{shift_cancellations}} c JOIN {{users}} u ON u.id=c.user_id WHERE c.day>=? AND c.day<=? AND u.role='employee'".($user?' AND c.user_id=?':'').' ORDER BY c.cancelled_at',$user?[$from,$to,$user]:[$from,$to]);
  foreach($rows as &$r){$prior=(int)$a->scalar('SELECT COUNT(*) FROM {{shift_cancellations}} WHERE user_id=? AND cancelled_at<? AND cancelled_at>=?',[$r['user_id'],$r['cancelled_at'],day_time(substr(local_day($r['cancelled_at']),0,7).'-01')]);$r['ordinal']=$prior+1;$r['suggested_deduction']=$prior?300:100;}unset($r);
  return $rows;
 }
@@ -62,7 +62,7 @@ function availability_telegram_tick(App $a,?int $clock=null,?Telegram $tg=null):
  $now=$clock??now_ms();$day=local_day($now);$dow=(int)date('N',strtotime($day.'T00:00:00Z'));if($dow<6)return;
  $hour=intdiv($now-day_time($day),3600000);$slot=null;foreach(AVAIL_REMIND_HOURS as $h)if($hour>=$h&&$hour<$h+3)$slot=$h;if($slot===null)return;
  $next=date('Y-m-d',strtotime(avail_this_week($now).'T00:00:00Z')+7*86400);$days=avail_days($next);$label=avail_week_label($next);$pending=[];
- foreach($a->all("SELECT u.id,u.name,l.chat_id FROM {{users}} u LEFT JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role!='admin' AND u.archived=0 AND u.status!='inactive' ORDER BY u.name") as $p){
+ foreach($a->all("SELECT u.id,u.name,l.chat_id FROM {{users}} u LEFT JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role='employee' AND u.archived=0 AND u.status!='inactive' ORDER BY u.name") as $p){
   if(avail_committed($a,(int)$p['id'],$next,$now)['committed'])continue;
   $p['count']=(int)$a->scalar('SELECT COUNT(*) FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$p['id'],$days[0],$days[6]]);$pending[]=$p;
  }
@@ -80,7 +80,7 @@ function availability_routes(App $a,string $path,array $b,string $method): ?arra
  if($path==='/availability/summary'&&$method==='GET'){
   $next=date('Y-m-d',strtotime($thisWeek.'T00:00:00Z')+7*86400);$state=avail_committed($a,$me,$next,$now);
   $count=(int)$a->scalar('SELECT COUNT(*) FROM {{shift_availability}} WHERE user_id=? AND day>=? AND day<=?',[$me,$next,avail_days($next)[6]]);
-  return [200,['next_week'=>$next,'next_committed'=>$state['committed'],'next_count'=>$count,'min'=>AVAIL_MIN_SHIFTS,'needs_registration'=>$a->user['role']!=='admin']];
+  return [200,['next_week'=>$next,'next_committed'=>$state['committed'],'next_count'=>$count,'min'=>AVAIL_MIN_SHIFTS,'needs_registration'=>$a->user['role']==='employee']];
  }
  if($path==='/availability'&&$method==='GET'){
   $week=avail_week($_GET['week']??$thisWeek);$days=avail_days($week);
@@ -88,13 +88,14 @@ function availability_routes(App $a,string $path,array $b,string $method): ?arra
   $myCancels=$a->all('SELECT day,shift,cancelled_at,reason FROM {{shift_cancellations}} WHERE user_id=? AND day>=? AND day<=? ORDER BY cancelled_at',[$me,$days[0],$days[6]]);
   $out=['week_start'=>$week,'days'=>$days,'this_week'=>$thisWeek,'now'=>$now,'min'=>AVAIL_MIN_SHIFTS,'urgent_days'=>AVAIL_URGENT_DAYS,'mine'=>['shifts'=>$mine,'cancels'=>$myCancels]+avail_committed($a,$me,$week,$now),'can_manage'=>$manager];
   if($manager){
-   $people=$a->all("SELECT id,name,employee_code,role FROM {{users}} WHERE archived=0 AND status!='inactive' AND role!='admin' ORDER BY name");
+   $people=$a->all("SELECT id,name,employee_code,role FROM {{users}} WHERE archived=0 AND status!='inactive' AND role='employee' ORDER BY name");
    $all=$a->all('SELECT user_id,day,shift FROM {{shift_availability}} WHERE day>=? AND day<=?',[$days[0],$days[6]]);$cancels=avail_cancel_rows($a,$days[0],$days[6]);
    foreach($people as &$p){$p['shifts']=array_values(array_filter($all,fn($s)=>$s['user_id']===$p['id']));$p['active']=count($p['shifts']);$p['cancels']=array_values(array_filter($cancels,fn($c)=>$c['user_id']===$p['id']));$p+=avail_committed($a,$p['id'],$week,$now);}unset($p);
    $out['people']=$people;$out['cancels']=$cancels;$out['can_record_log']=log_permissions($a)['can_manage'];
   }
   return [200,$out];
  }
+ if(in_array($path,['/availability/toggle','/availability/commit'],true)&&$method==='POST'&&$a->user['role']!=='employee')fail('Đăng ký ca chỉ dành cho tài khoản Nhân viên.',403);
  if($path==='/availability/toggle'&&$method==='POST'){
   $day=valid_day($b['day']??null);$shift=$b['shift']??'';if(!in_array($shift,AVAIL_SHIFTS,true))fail('Ca không hợp lệ.');$on=$b['on']??null;if(!is_bool($on))fail('Thiếu trạng thái chọn ca.');
   $week=avail_week_of($day);if($week<$thisWeek||$week>date('Y-m-d',strtotime($thisWeek.'T00:00:00Z')+28*86400))fail('Chỉ đăng ký được tuần này và 4 tuần tới.');
@@ -138,7 +139,7 @@ function availability_routes(App $a,string $path,array $b,string $method): ?arra
   $cid=$b['id']??null;if(!is_int($cid))fail('Dữ liệu không hợp lệ.');$c=$a->one('SELECT user_id,day FROM {{shift_cancellations}} WHERE id=?',[$cid]);if(!$c)fail('Không còn lượt nghỉ gấp này. Tải lại.',409);
   $user=$c['user_id'];$key='cancel_'.$cid;$row=null;foreach(avail_cancel_rows($a,$c['day'],$c['day'],$user) as $r)if($r['id']===$cid)$row=$r;
   if(!$row)fail('Không còn lượt nghỉ gấp này. Tải lại.',409);if($row['event_log_id'])return [200,['id'=>$row['event_log_id'],'already_saved'=>true]];
-  $id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$user,'event_date'=>local_day($row['cancelled_at']),'category'=>'absence','description'=>input_text($b['description']??null,'Nội dung ghi nhận',5,2000),'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null],'POST');
+  $id=uuid_v4();$result=log_routes($a,'/event-log',['id'=>$id,'user_id'=>$user,'event_date'=>local_day($row['cancelled_at']),'category'=>'absence','description'=>input_text($b['description']??null,'Nội dung ghi nhận',5,2000),'deduction'=>$b['deduction']??0,'rule_id'=>$b['rule_id']??null,'offense'=>null],'POST');
   $a->run('INSERT INTO {{attendance_issue_links}} VALUES(?,?)',[$key,$id]);return $result;
  }
  fail('Không tìm thấy chức năng Đăng ký ca.',404);

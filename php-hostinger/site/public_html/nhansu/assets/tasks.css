@@ -22,6 +22,8 @@
 
 .task-chip.daily{background:#eef4ff;color:#1f5fbf}
 .daily-today{margin-top:16px}.daily-today h2{font-size:16px;margin:0 0 4px}.daily-today ul{list-style:none;margin:10px 0;padding:0}.daily-today li{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid #eef1f6;font-size:14px}.daily-today li:first-child{border-top:0}.daily-today li b{width:24px;height:24px;border-radius:50%;display:inline-grid;place-items:center;background:#fff4e5;color:#b45309;flex:none;font-size:13px}.daily-today li.done b{background:#e7f6ec;color:#15803d}.daily-today li.done span{color:#64748b;text-decoration:line-through}.daily-today button{width:100%;min-height:44px}
+.daily-today li span{min-width:0}.daily-due{display:block;margin-top:2px;font-size:12px;font-weight:600;color:#b42318}
+.task-due-hint{display:block;margin-top:6px;font-size:12px;font-weight:500;color:#6d7b91;line-height:1.45}
 
 .task-proof-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;width:100%}.task-proof-grid:empty{display:none}.task-proof-grid figure{margin:0;display:grid;gap:2px}.task-proof-grid img{width:100%;aspect-ratio:1;object-fit:cover;max-height:none;border-radius:8px}.task-proof-grid figcaption{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#6d7b91}.task-proof-grid figcaption .text-button{min-height:32px;padding:0 4px}
 .task-photo-list{display:grid;gap:10px}
@@ -90,3 +92,100 @@
 .task-followup-empty{background:#fff6e5;color:#92400e;border-radius:9px;padding:8px 10px;font-weight:600}
 .task-due-form select{min-height:42px;width:100%;box-sizing:border-box}
 .text-button.danger{color:#b42318}
+/* Xóa việc đã giao (02/11/2026) */
+.task-delete-button{color:#b42318!important;font-size:13px}
+/* Danh sách Việc / Nhắc nhở chia theo ngày + phân trang (03/11/2026) */
+.task-list{gap:18px;margin-top:12px}
+.task-kind-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.task-tabs.task-kinds button{padding:6px 11px}
+.task-tab-count{display:inline-block;min-width:18px;height:18px;line-height:18px;margin-left:4px;padding:0 5px;border-radius:9px;background:#d92d20;color:#fff;font-size:10px;font-weight:700;text-align:center;vertical-align:1px}
+.task-day{display:grid;gap:8px}
+.task-day-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 2px 6px;border-bottom:1px solid #e9eef5}
+.task-day-head h3{margin:0;font-size:14px;font-weight:700;color:#14233a;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.task-day-head h3 em{font-style:normal;font-size:11px;font-weight:700;color:#fff;background:#185fc4;border-radius:999px;padding:2px 8px}
+.task-day-head h3 em.past{background:#64748b}
+.task-day-head span{font-size:12px;color:#6d7b91;white-space:nowrap}.task-day-head b{color:#b45309;font-weight:600}
+.task-day-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.task-card{padding:11px 13px;border-left-width:3px;border-radius:12px;box-shadow:0 1px 2px #0f172a0a}
+.task-card.late{border-left-color:#d92d20}
+.task-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.task-card .task-meta{gap:5px}
+.task-card .task-kind,.task-card .task-state,.task-card .task-chip,.task-card .task-due{font-size:11px;padding:3px 8px}
+.task-chip.who{background:#f5f3ff;color:#5b21b6}
+.task-due.late{background:#fff0f0;color:#b42318;font-weight:600}
+.task-card h3{margin:7px 0 2px;font-size:15px;line-height:1.35}
+.task-card .task-body{font-size:13px;line-height:1.5}
+.task-card .task-progress{margin-top:7px;font-size:11.5px}.task-card .task-bar{height:5px;max-width:140px}
+.task-card .task-foot{margin-top:8px;gap:8px}.task-card .task-foot small{font-size:11.5px}
+.task-delete-icon{flex:none;width:30px;height:30px;margin:-4px -6px 0 0;border:0;border-radius:50%;background:transparent;font-size:14px;line-height:1;display:grid;place-items:center;opacity:.55;cursor:pointer}
+.task-delete-icon:hover,.task-delete-icon:focus-visible{opacity:1;background:#fff0f0}
+.task-bundle details{border:1px solid #dbe6f7;border-radius:12px;background:#f6f9ff;overflow:hidden}
+.task-bundle summary{list-style:none;display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;min-height:44px}
+.task-bundle summary::-webkit-details-marker{display:none}
+.task-bundle summary::after{content:'';width:8px;height:8px;border-right:2px solid #64748b;border-bottom:2px solid #64748b;transform:rotate(45deg);margin:0 4px 4px 2px;transition:transform .15s}
+.task-bundle details[open] summary::after{transform:rotate(-135deg);margin-bottom:-2px}
+.task-bundle-icon{width:30px;height:30px;border-radius:50%;background:#e3edff;display:grid;place-items:center;font-size:14px;flex:none}
+.task-bundle-name{flex:1;min-width:0;font-size:14px;font-weight:700;color:#1f4e8c;display:grid}.task-bundle-name small{font-size:12px;font-weight:500;color:#6d7b91}
+.task-bundle-done{font-size:12px;font-weight:700;color:#b45309;background:#fff4e5;border-radius:999px;padding:3px 9px;white-space:nowrap}.task-bundle-done.ok{color:#15803d;background:#e7f6ec}
+.task-bundle .task-day-list{padding:0 8px 8px}
+.task-pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:16px}
+.task-pager[hidden]{display:none}
+.task-pager button{width:auto;margin:0;min-height:40px;padding:0 16px}
+.task-pager span{display:grid;justify-items:center;font-size:13px;color:#334155}.task-pager small{font-size:11px;color:#6d7b91}
+@media(max-width:800px){.task-kind-row .task-tabs{flex:1}.task-card{padding:11px 12px}.task-card .task-foot{flex-direction:row;align-items:center;flex-wrap:wrap}.task-card .task-foot .task-actions{flex:1 1 100%}.task-pager{gap:8px}.task-pager button{flex:1}}
+.task-pager span{white-space:nowrap}.task-pager b{font-weight:700}
+.task-card.compact{padding:9px 11px;border-left-width:3px;box-shadow:none}
+.task-card.compact h3{margin:5px 0 0;font-size:14px}
+.task-card.compact .task-state.new{background:#fff4e5;color:#b45309}
+.task-bundle details{margin:0}
+/* Việc được giao | Hỗ trợ (03/11/2026) */
+.task-switch{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:#e9eef6;border-radius:12px}
+.task-switch button{border:0;background:none;border-radius:9px;min-height:44px;padding:8px 10px;font-size:14px;font-weight:600;color:#52627a;display:flex;align-items:center;justify-content:center;gap:4px;width:auto;margin:0}
+.task-switch button.active{background:#fff;color:#185fc4;box-shadow:0 1px 3px #0f172a1a}
+.task-switch .task-tab-count[hidden]{display:none}
+.task-main[hidden],.support-board[hidden]{display:none!important}
+.support-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}.support-head h2{margin:0 0 4px;font-size:18px}.support-head .hint{margin:0}.support-head .primary{width:auto;margin:0;flex:none}
+.support-card{all:unset;box-sizing:border-box;display:grid;gap:6px;width:100%;cursor:pointer;background:#fff;border:1px solid #e3e9f2;border-left:3px solid #d08a12;border-radius:12px;padding:11px 13px;box-shadow:0 1px 2px #0f172a0a;overflow-wrap:anywhere}
+.support-card:focus-visible{outline:2px solid #185fc4;outline-offset:2px}
+.support-card.approved{border-left-color:#2f6fd0}.support-card.done{border-left-color:#2f9e5b}.support-card.rejected,.support-card.withdrawn{border-left-color:#9aa8bb;opacity:.8}
+.support-card.unread{background:#f7fbff;box-shadow:0 2px 10px #185fc412}
+.support-card .task-meta{display:flex;flex-wrap:wrap;gap:5px}.support-card .task-chip,.support-card .task-state{font-size:11px;padding:3px 8px}
+.support-title{font-size:15px;font-weight:600;color:#162b45;line-height:1.35}
+.support-card .task-body{font-size:13px;line-height:1.5;color:#52627a;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.support-foot{font-size:11.5px;color:#64748b}
+.support-status{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;background:#f1f5f9;color:#475569}
+.support-status.pending{background:#fff4e5;color:#b45309}.support-status.approved{background:#eaf2ff;color:#1859b6}.support-status.done{background:#e7f6ec;color:#15803d}.support-status.rejected{background:#fff0f0;color:#b42318}
+.support-form{display:grid;gap:12px}
+.support-cats{display:grid!important;grid-template-columns:1fr 1fr;gap:8px}.support-cats legend{grid-column:1/-1}
+.support-cats .booking-chip span{width:100%;justify-content:center;font-size:13px;min-height:42px;text-align:center}
+.support-photos{display:grid;gap:8px;justify-items:start}
+.support-photo-pick{display:inline-flex!important;align-items:center;gap:6px;cursor:pointer;border:1px solid #c9daf5;background:#f3f8ff;color:#1f5fbf;border-radius:10px;padding:10px 14px;font-size:14px;font-weight:600;margin:0!important}
+.support-photo-pick[hidden]{display:none!important}
+.support-detail{display:grid;gap:12px}.support-detail .task-meta{display:flex;flex-wrap:wrap;gap:6px}.support-detail h4{margin:6px 0 0}
+.support-photo-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.support-photo-list img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:9px;display:block}
+.support-timeline{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.support-msg{max-width:88%;padding:8px 11px;border-radius:12px;background:#f1f5f9;justify-self:start}.support-msg.manager{background:#eaf2ff;justify-self:end}.support-msg small{display:block;font-size:11px;color:#64748b}.support-msg p{margin:3px 0 0;white-space:pre-wrap;line-height:1.5;font-size:14px}
+.support-event{font-size:12.5px;color:#475569;text-align:center;padding:4px 8px}.support-event p{margin:4px auto 0;max-width:90%;background:#f8fafc;border-radius:8px;padding:6px 9px;white-space:pre-wrap;text-align:left}
+.support-event.rejected b{color:#b42318}.support-event.done b{color:#15803d}.support-event.approved b{color:#1859b6}
+.support-empty{font-size:13px;color:#64748b}
+.support-reply{display:flex;gap:8px;align-items:flex-end}.support-reply textarea{flex:1;margin:0!important;min-height:44px}.support-reply .primary{width:auto;margin:0;min-height:44px;padding:0 16px}
+.support-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.support-actions[hidden]{display:none}.support-actions .primary,.support-actions .secondary{width:auto;margin:0;min-height:44px;padding:0 14px}
+.support-status-form{display:grid;gap:8px}.support-status-form[hidden]{display:none}
+.support-withdraw{justify-self:start}
+.support-cta{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #f3d9a4;background:#fffaf0}.support-cta h2{margin:0 0 4px;font-size:16px}.support-cta p{margin:0;font-size:13px;color:#52627a;line-height:1.5}.support-cta .secondary{width:auto;flex:none;margin:0}
+@media(max-width:800px){.support-head{flex-direction:column;align-items:stretch}.support-head .primary{width:100%;min-height:48px}.support-cta{flex-direction:column;align-items:stretch}.support-cta .secondary{width:100%;min-height:46px}.task-switch button{font-size:13px}}
+/* Task cần duyệt (03/11/2026) */
+.task-review-pick{display:flex!important;gap:10px;align-items:flex-start;border:1px solid #d6e4f7;background:#f5f9ff;border-radius:10px;padding:10px 12px;margin:0!important;cursor:pointer}
+.task-review-pick[hidden]{display:none!important}
+.task-review-pick input{width:20px!important;height:20px;margin:2px 0 0!important;flex:none}
+.task-review-pick span{display:grid;gap:3px}.task-review-pick strong{font-size:14px;color:#14233a}.task-review-pick small{font-size:12px;color:#5b6b82;line-height:1.45}
+.task-chip.review{background:#eef6ff;color:#1f5fbf;font-weight:600}
+.task-state.review{background:#fff4e5;color:#b45309;font-weight:600}
+.task-reviewing{color:#b45309;font-weight:700}
+.task-review-box{border-color:#c9daf5;background:#f3f8ff}.task-review-box h3{color:#1f4e8c}.task-review-box>.hint{margin:-4px 0 4px;font-size:13px}
+.task-review-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px;margin:8px 0}
+.task-review-photos button{all:unset;cursor:pointer;display:block;border-radius:8px;overflow:hidden;aspect-ratio:1;background:#e9eef5}
+.task-review-photos button:focus-visible{outline:2px solid #185fc4}
+.task-review-photos img{width:100%;height:100%;object-fit:cover;display:block}
+.task-review-line{font-size:12.5px!important;margin:6px 0 0!important}.task-review-line.approved{color:#15803d!important}.task-review-line.rejected{color:#b42318!important}
+.task-recipients .task-actions{margin-top:8px}.task-recipients .task-actions .primary{width:auto;margin:0;min-height:40px;padding:0 14px}

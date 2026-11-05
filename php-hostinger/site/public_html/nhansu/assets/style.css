@@ -59,8 +59,8 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 .payroll-admin td{vertical-align:top}.payroll-admin small{letter-spacing:0;font-size:11px}.payroll-admin td>small{display:block}.payroll-admin .pay-cell{display:grid;gap:3px}.payroll-admin .pay-cell small{margin:0}
 .payroll-admin .pay-row{cursor:pointer}.payroll-admin .pay-row:hover td{background:#f8fbff}.payroll-admin .pay-row.open td{background:#f2f7fe;border-bottom-color:transparent}
 .pay-name{display:inline-flex;align-items:center;gap:8px;border:0;background:none;padding:0;font:inherit;font-weight:600;font-size:13px;color:#14233a;cursor:pointer;text-align:left}.pay-name i{font-style:normal;font-size:10px;color:#2472e0;transition:transform .15s}.pay-row.open .pay-name i{transform:rotate(90deg)}.pay-name:focus-visible{outline:2px solid #2472e0;outline-offset:3px;border-radius:4px}.payroll-admin .pay-open-hint{color:#2472e0;margin-top:4px}
-.pay-slip>td{background:#f2f7fe;padding:0 14px 18px!important;cursor:default}
-.slip{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;max-width:1080px}.slip-col{display:grid;gap:14px;align-content:start}.slip section,.slip-sum{background:#fff;border:1px solid #e3eaf4;border-radius:12px;padding:10px 16px}.slip-sum{grid-column:1/-1}
+.pay-slip>td{background:#f2f7fe;padding:0 14px 18px!important;cursor:default;white-space:normal}
+.slip{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;max-width:1080px}.slip-col{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-content:start;min-width:0}.slip section{min-width:0}.slip section,.slip-sum{background:#fff;border:1px solid #e3eaf4;border-radius:12px;padding:10px 16px}.slip-sum{grid-column:1/-1}
 .slip h4{margin:4px 0 4px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#6d7b91}
 .slip-line{display:grid;grid-template-columns:minmax(130px,1fr) auto minmax(110px,auto);align-items:center;gap:12px;min-height:40px;padding:5px 0;border-bottom:1px dashed #e6ecf4;font-size:13px;color:#263955}.slip-line:last-child{border-bottom:0}
 .slip-line small{margin:0;font-size:12px;color:#7c8ca2;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}.slip-line b{font-weight:600;text-align:right;white-space:nowrap;color:#14233a}
@@ -68,7 +68,7 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 .slip-line.final{border-top:2px solid #14233a;margin-top:2px;padding-top:10px;font-size:15px;font-weight:700}.slip-line.final b{font-size:19px;color:#0f6b3d}
 .pay-input{width:130px;text-align:right;padding:7px 10px;border:1px solid #cfdbea;border-radius:8px;font:inherit;font-weight:600;color:#14233a;background:#fff}.pay-input::placeholder{color:#b4c0cf}.pay-input:focus{outline:2px solid #2472e0;outline-offset:0;border-color:#2472e0}.pay-input:disabled{background:#f4f6f9;color:#8290a3}.slip-line small .pay-input{width:110px}
 .slip-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:12px 0 4px;border-top:1px solid #e6ecf4;margin-top:6px}.slip-actions .primary{margin:0;width:auto;padding:11px 22px}.slip-actions small{margin:0;font-size:11px;color:#7c8ca2}
-@media(max-width:1100px){.slip{grid-template-columns:1fr}.pay-totals{grid-template-columns:1fr 1fr}}
+.pay-totals.five{grid-template-columns:repeat(5,minmax(0,1fr))}.pay-totals strong.out{color:#b42318}@media(max-width:1100px){.slip{grid-template-columns:1fr}.pay-totals,.pay-totals.five{grid-template-columns:1fr 1fr}.pay-totals.five>div:last-child{grid-column:1/-1}}
 /* Mời liên kết Telegram ở đầu trang Chấm công (31/10/2026). */
 .tg-icon{width:20px;height:20px;flex:none;vertical-align:-5px;margin-right:8px}
 .tg-invite{display:flex;align-items:center;gap:12px;background:linear-gradient(135deg,#e8f5fd,#f4faff);border:1px solid #b9dff5;border-radius:16px;padding:14px 16px;margin:0 0 14px}
@@ -86,3 +86,48 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 @media(max-width:640px){.tg-invite{flex-wrap:wrap;padding:14px}.tg-invite-text{flex-basis:calc(100% - 56px)}.tg-invite-actions{flex-direction:row;align-items:center;width:100%;gap:8px}.tg-invite-go{flex:1}}
 .resume-button{width:100%;min-height:48px;margin-top:10px;border-color:#9fc3a8;background:#f2fbf4;color:#1f6b3a;font-weight:700}.resume-hint{font-size:12px;color:#5b6b7f;margin:6px 0 0;line-height:1.5}
 .early-out-list{text-align:left;margin:10px 0;padding-left:20px;line-height:1.7}
+/* Ô giờ 24h (assets/time24.js, chủ dự án yêu cầu 02/11/2026): 2 ô chọn Giờ : Phút thay ô giờ của trình duyệt (máy để 12 giờ hiện SA/CH). */
+.time24{display:flex;align-items:center;gap:8px;width:100%;margin-top:4px}
+.time24 select{flex:1 1 0;min-width:0;width:auto;min-height:44px;padding:6px 8px;font-size:17px;font-variant-numeric:tabular-nums;text-align:center;text-align-last:center}
+.time24 b{flex:none;font-size:20px;font-weight:700;color:#33445c}
+/* Chọn ca bằng 3 nút rõ ràng (chủ dự án yêu cầu 02/11/2026: bỏ ô thả xuống, mặc định không chọn gì) */
+.shift-pick-title{margin:4px 0 8px!important;text-align:left;font-size:14px;font-weight:700;color:#33445c}
+.shift-pick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px}
+.shift-option{display:grid;gap:3px;align-content:center;justify-items:center;min-height:78px;padding:10px 6px;border:2px solid #d5dfec;border-radius:14px;background:#fff;color:#14233a;font:inherit;cursor:pointer;text-align:center;line-height:1.25;box-shadow:none}
+.shift-option:hover{border-color:#9db7dc;background:#f7faff}
+.shift-option b{font-size:17px;font-weight:800}
+.shift-option small{font-size:12px;color:#6d7b91;font-variant-numeric:tabular-nums}
+.shift-option em{font-style:normal;font-size:11px;font-weight:700;color:#17663a;background:#e8f6ee;border-radius:10px;padding:1px 8px;margin-top:2px}
+.shift-option.selected{border-color:#1d64d8;background:#eaf2ff;box-shadow:0 0 0 3px rgba(29,100,216,.18)}
+.shift-option.selected b{color:#1d4f9c}.shift-option.selected small{color:#3b5b8f}
+.shift-option.full.selected{border-color:#c2410c;background:#fff4ec;box-shadow:0 0 0 3px rgba(194,65,12,.16)}.shift-option.full.selected b{color:#9a3412}
+.selected-shift-label.none{color:#b42318}
+@media(max-width:360px){.shift-option b{font-size:15px}.shift-option small{font-size:11px}}
+.bonus-panel{display:grid;gap:20px;margin-top:20px;min-width:0}.bonus-panel:empty{display:none}.bonus-panel>.card{margin:0;min-width:0}.bonus-card .slip{max-width:none}.bonus-card>.hint,.bonus-entry-card>.hint{font-size:13px;line-height:1.6}
+.bonus-entries{list-style:none;margin:8px 0 0;padding:0}.bonus-entries li{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-bottom:1px dashed #e6ecf4}.bonus-entries li:last-child{border-bottom:0}.bonus-entry-day{font-weight:700;color:#2472e0;font-size:13px}.bonus-entries strong{display:block;font-size:14px;font-weight:600;color:#14233a}.bonus-entries small{display:block;color:#7c8ca2;font-size:12px;margin-top:2px;overflow-wrap:anywhere}.bonus-entries b{white-space:nowrap;font-size:14px}.bonus-entries b.plus{color:#0f6b3d}.bonus-entries b.minus{color:#b42318}
+.bonus-entry-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end;margin:14px 0}.bonus-entry-form label{display:block;margin:0;font-size:12px}.bonus-entry-form input:not([type=radio]),.bonus-entry-form select{width:100%;margin-top:6px;min-height:42px;box-sizing:border-box;font-size:14px}.bonus-entry-form .pay-input{width:100%;text-align:right}.bonus-entry-form[inert]{opacity:.5}
+.bonus-sign{grid-column:1/3;display:flex;gap:8px}.bonus-sign label{flex:1;display:flex;position:relative}.bonus-sign input{position:absolute;opacity:0;pointer-events:none}.bonus-sign span{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;min-height:42px;padding:0 8px;border:1px solid #cfdbea;border-radius:8px;font-weight:600;font-size:13px;color:#516780;cursor:pointer;background:#fff}.bonus-sign input:checked+span{border-color:#2472e0;background:#eaf3fc;color:#176ab0}.bonus-sign label:last-child input:checked+span{border-color:#b42318;background:#fff0f0;color:#b42318}.bonus-sign input:focus-visible+span{outline:2px solid #2472e0;outline-offset:2px}
+.bonus-note{grid-column:3/5}.bonus-error{grid-column:1/-1;margin:0;font-size:13px}.bonus-error:empty{display:none}.bonus-entry-form>button{grid-column:1/-1;justify-self:start;width:auto;min-height:46px;padding:11px 28px;margin:0}
+.bonus-entry-card h3{font-size:14px;margin:18px 0 6px;color:#33435a}.bonus-people{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.bonus-person{border:1px solid #e3eaf4;border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}.bonus-person strong{font-size:14px;font-weight:600;color:#14233a}.bonus-person span{font-weight:700;color:#0f6b3d;white-space:nowrap}.bonus-person small{grid-column:1/-1;color:#7c8ca2;font-size:12px}.bonus-history{margin-top:14px}.bonus-history summary{font-weight:600;cursor:pointer}
+@media(max-width:800px){.bonus-entry-form{grid-template-columns:1fr 1fr}.bonus-sign,.bonus-note{grid-column:1/-1}.bonus-entry-form>button{justify-self:stretch;width:100%}.bonus-entry-form input:not([type=radio]),.bonus-entry-form select{font-size:16px;min-height:46px}.bonus-card .section-head h2,.bonus-entry-card .section-head h2{font-size:17px}}
+/* Ca làm không có khách + Tiền khách Tips trên phiếu lương / phiếu thưởng (02/11/2026) */
+.slip-note{grid-column:1/-1;display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.55;color:#5d6f88;padding:0 0 4px;min-width:0;overflow-wrap:anywhere}
+.slip-note details summary{cursor:pointer;color:#2459a8;min-height:24px}
+.slip-note details span{display:block;margin-top:4px;color:#7c8ca2}
+.slip-link{border:0;background:none;padding:0;margin:0;font:inherit;color:#1f5fbf;text-align:left;text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer;min-height:32px}
+.slip-link::after{content:' ›';text-decoration:none}
+.tip-dialog{width:min(640px,calc(100% - 28px))}
+.tip-dialog h3{font-size:15px;margin:18px 0 4px}
+.tip-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 6px}
+.tip-summary>div{border:1px solid #e3e9f2;border-radius:12px;padding:12px 14px;background:#fafbfd;min-width:0}
+.tip-summary span,.tip-summary small{display:block;font-size:12px;color:#64748b}
+.tip-summary strong{display:block;font-size:20px;color:#0f6b3d;margin:4px 0}
+.tip-list{list-style:none;margin:6px 0 0;padding:0}
+.tip-list li{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 0;border-bottom:1px dashed #e6ecf4}
+.tip-list li:last-child{border-bottom:0}
+.tip-when b,.tip-who strong{display:block;font-size:14px;font-weight:600;color:#14233a}
+.tip-when small,.tip-who small{display:block;font-size:12px;color:#7c8ca2;margin-top:2px;overflow-wrap:anywhere}
+.tip-amount{font-weight:700;color:#0f6b3d;white-space:nowrap}
+.tip-dialog .bonus-entries li{grid-template-columns:92px minmax(0,1fr) auto}
+.tip-dialog .dialog-actions .secondary{min-height:44px}
+@media(max-width:800px){.tip-summary strong{font-size:18px}.tip-list li{grid-template-columns:84px minmax(0,1fr) auto;gap:8px}.tip-dialog .bonus-entries li{grid-template-columns:minmax(0,1fr) auto}.tip-dialog .bonus-entries .bonus-entry-day{grid-column:1/-1}.tip-dialog .dialog-actions .secondary{width:100%}}

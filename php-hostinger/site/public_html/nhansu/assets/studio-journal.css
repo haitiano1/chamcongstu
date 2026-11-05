@@ -71,7 +71,7 @@
 .booking-slot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:8px}.booking-slot-grid>.hint{grid-column:1/-1;margin:4px 0;font-size:12px}
 .booking-slot{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:52px;padding:6px 4px;border:1.5px solid #cfe3d8;border-radius:10px;background:#f3faf6;color:#1f6b4a;font:inherit}.booking-slot strong{font-size:14px;font-variant-numeric:tabular-nums}.booking-slot small{font-size:10px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .booking-slot.selected{border-color:#176db3;background:#176db3;color:#fff}.booking-slot.past{border-color:#e3e8ef;background:#f7f9fc;color:#8a99ac}.booking-slot.past.selected{background:#176db3;color:#fff}
-.booking-slot.busy,.booking-slot:disabled{opacity:1;cursor:not-allowed;border-color:#ecdcdc;background:repeating-linear-gradient(135deg,#fbf3f3 0 6px,#f6eaea 6px 12px);color:#a26a6a}.booking-slot.busy strong{text-decoration:line-through;text-decoration-thickness:1px}
+.booking-slot.busy{border-color:#ecdcdc;background:repeating-linear-gradient(135deg,#fbf3f3 0 6px,#f6eaea 6px 12px);color:#a26a6a}.booking-slot.busy.selected{border-color:#b4483a;background:#b4483a;color:#fff}
 .booking-slot-other{margin-top:10px}.booking-slot-other summary{font-size:12px;color:#367cad;cursor:pointer}.booking-slot-other[open]>summary{margin-bottom:4px}.booking-slot-other label{margin:6px 0 0!important}.booking-slot-other input{font-size:16px!important;min-height:44px}
 .booking-slot-state{margin:10px 0 0;font-size:12px;line-height:1.6;color:#64748b}.booking-slot-state.good{color:#15803d}.booking-slot-state.bad{color:#b4483a;font-weight:600}
 .booking-create-step>label{margin:10px 0 0!important;font-size:11px}.booking-create-step>label:first-of-type{margin-top:0!important}.booking-create-step input,.booking-create-step select,.booking-create-step textarea{font-size:16px!important}.booking-create-step input:not([type=radio]),.booking-create-step select{min-height:44px}
@@ -103,3 +103,28 @@
 /* Sửa lịch → Sau khi chụp: Phụ thu, Tip (chủ dự án yêu cầu 01/11/2026). */
 .booking-money{display:grid;grid-template-columns:1fr 1fr;gap:10px}.booking-money label{margin:0!important;font-size:11px}.booking-money input{width:100%;min-height:44px;font-size:16px}
 .booking-create-step .booking-money+.hint{margin:6px 0 0;font-size:12px}
+/* Giờ lẻ khác ở Thêm lịch: to, dễ bấm trên điện thoại (chủ dự án yêu cầu 02/11/2026) */
+.booking-slot-other summary{display:flex;align-items:center;gap:8px;min-height:50px;padding:10px 14px;border:1px dashed #8fb0d9;border-radius:12px;background:#f5f9ff;font-size:16px;font-weight:600;color:#1d4f9c;list-style:none}
+.booking-slot-other summary::-webkit-details-marker{display:none}
+.booking-slot-other summary::after{content:'▾';margin-left:auto;font-size:15px}
+.booking-slot-other[open]>summary{margin-bottom:10px;border-style:solid}
+.booking-slot-other[open]>summary::after{content:'▴'}
+.booking-slot-other label{font-size:15px;font-weight:600}
+.booking-slot-other .time24 select{min-height:58px;font-size:24px;font-weight:700;border-radius:12px}
+.booking-slot-other .time24 b{font-size:26px}
+/* Hai lịch cùng giờ trên Sheet: viền đỏ + nhãn Trùng giờ để sửa Sheet */
+.booking-card.dup{outline:2px solid #d92d20;outline-offset:-2px}
+.booking-card-dup{display:block;margin-top:3px;font-size:11px;font-weight:700;color:#b42318}
+.booking-slot-other label{color:#33445c}
+/* Lịch Team: số khách đã chụp theo gói (03/11/2026) */
+.booking-team-form,.booking-team-view{margin:14px 0 0;padding:12px;border:1px solid #cfe0f7;border-radius:10px;background:#f6f9ff;display:grid;gap:10px}
+.booking-team-head,.booking-team-view{font-size:13px}.booking-team-head>span,.booking-team-view>span{display:block;font-size:12px;font-weight:700;color:#1f4e8c}
+.booking-team-head small,.booking-team-view small{display:block;color:#5b6b82;line-height:1.45;margin-top:2px}.booking-team-view b{font-size:16px;color:#14233a}
+.booking-team-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.booking-team-row{display:flex;align-items:center;justify-content:space-between;gap:6px;background:#fff;border:1px solid #e1e8f2;border-radius:9px;padding:6px 6px 6px 10px;font-size:13px;font-weight:600;color:#14233a;margin:0}
+.booking-team-row small{display:block;font-size:11px;font-weight:500;color:#6d7b91}
+.booking-team-step{display:flex;align-items:center;gap:2px;flex:none}
+.booking-team-step button{width:32px;height:32px;min-height:32px;padding:0;margin:0;border:1px solid #d6dee9;border-radius:8px;background:#f8fafc;color:#1f5fbf;font-size:18px;line-height:1;display:grid;place-items:center}
+.booking-team-step input{width:40px!important;min-height:32px;height:32px;padding:0!important;margin:0!important;text-align:center;font-size:16px;font-weight:700;border:0!important;background:transparent;box-shadow:none}
+.booking-team-total{margin:0;font-size:13px;color:#334155}.booking-team-total b{color:#14233a}
+@media(max-width:420px){.booking-team-rows{grid-template-columns:1fr}}
