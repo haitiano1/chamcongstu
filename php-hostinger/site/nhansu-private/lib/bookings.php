@@ -187,10 +187,13 @@ function booking_input(array $b,?string $keepDay=null): array {
  return ['day'=>$day,'start'=>$start,'price'=>$price,'team'=>$team,'hold'=>$hold,'customer_name'=>$name,'customer_phone'=>$phone,'plain'=>$plain,'makeup'=>$makeup,'special'=>$special,'sheet_note'=>$sheetNote,
   'note'=>implode(' · ',array_filter([$special!==''?'Đặc biệt: '.$special:'',$makeup!==''?'Make up: '.$makeup:'',$sheetNote]))];
 }
-// Mỗi khung giờ 1 khách. Mọi POST đã khóa write_lock trong giao dịch nên hai người thêm/sửa cùng lúc không lọt trùng giờ.
-function booking_check_slot(App $a,string $day,int $start,int $end,?string $exclude=null): void {
+// Vướng lịch (chủ dự án yêu cầu 05/11/2026): không chặn hẳn. Lần đầu trả 409 kèm các lịch vướng để web hiện popup; bấm Vẫn đặt lịch thì gửi lại allow_overlap.
+// Mọi POST đã khóa write_lock trong giao dịch nên hai người thêm/sửa cùng lúc vẫn thấy lịch của nhau.
+function booking_check_slot(App $a,array $b,string $day,int $start,int $end,?string $exclude=null): ?array {
  if($start<420||$end>1320)fail('Giờ chụp cần trong khoảng 07:00–22:00.');
- foreach(booking_busy($a,$day) as $x)if($x['id']!==$exclude&&$start<$x['end']&&$x['start']<$end)fail('Khung '.booking_hm($start).'–'.booking_hm($end).' trùng lịch '.booking_hm($x['start']).'–'.booking_hm($x['end']).($x['customer_name']!==''?' của '.$x['customer_name']:'').'. Chọn giờ khác.',409);
+ if(($b['allow_overlap']??false)===true)return null;
+ $hit=array_values(array_filter(booking_busy($a,$day),fn($x)=>$x['id']!==$exclude&&$start<$x['end']&&$x['start']<$end));if(!$hit)return null;$x=$hit[0];
+ return [409,['error'=>'Khung '.booking_hm($start).'–'.booking_hm($end).' trùng lịch '.booking_hm($x['start']).'–'.booking_hm($x['end']).($x['customer_name']!==''?' của '.$x['customer_name']:'').'. Chọn giờ khác.','conflicts'=>$hit]];
 }
 function booking_hm(int $minutes): string {return sprintf('%02d:%02d',intdiv($minutes,60),$minutes%60);}
 function booking_sheet_tab(string $day): string {return 'Tháng '.(int)substr($day,5,2);}
@@ -520,7 +523,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  }
  if($path==='/bookings/create'&&$method==='POST'){
   if(!booking_permissions($a)['can_create'])fail('Bạn chưa được Admin cấp quyền thêm lịch.',403);
-  $in=booking_input($b);booking_check_slot($a,$in['day'],$in['start'],$in['start']+($in['team']?$in['hold']:($in['price']!==null?BOOKING_WEB_PACKAGES[$in['price']]:60)));
+  $in=booking_input($b);if($stop=booking_check_slot($a,$b,$in['day'],$in['start'],$in['start']+($in['team']?$in['hold']:($in['price']!==null?BOOKING_WEB_PACKAGES[$in['price']]:60))))return $stop;
   $row=['id'=>uuid_v4(),'source_sheet'=>$a->meta('sheet_sync_id')?:'web','source_tab'=>booking_sheet_tab($in['day']),'source_row'=>0,'shoot_day'=>$in['day'],'minutes'=>$in['start'],'package_label'=>$in['price']===null?'':(string)$in['price'],'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'deposit_label'=>'']+booking_default_staff($a)+['note'=>$in['note'],'received_label'=>'','status'=>'active'];
   freeze_existing_booking_day($a,$in['day']);$cols=array_keys($row);
   $a->run('INSERT INTO {{shoot_bookings}} ('.implode(',',$cols).',created_at,updated_at) VALUES('.implode(',',array_fill(0,count($cols)+2,'?')).')',[...array_values($row),now_ms(),now_ms()]);
@@ -544,8 +547,9 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
    'surcharge'=>$money['surcharge']!==($old['surcharge_label']??''),'tip'=>$money['tip']!==($old['tip_label']??'')]));
   if(!$changed)return [200,['ok'=>true,'changed'=>[]]];
   $row=['shoot_day'=>$in['day'],'minutes'=>$in['start'],'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'package_label'=>in_array('package_label',$changed,true)?($in['price']===null?'':(string)$in['price']):$old['package_label'],'note'=>array_intersect($changed,['makeup','special','note'])?$in['note']:$old['note'],'surcharge_label'=>$money['surcharge'],'tip_label'=>$money['tip']];
-  // Chỉ sửa Phụ thu / Tip thì không kiểm tra trùng giờ (khách đã chụp xong).
-  if(array_diff($changed,['surcharge','tip']))booking_check_slot($a,$row['shoot_day'],$row['minutes'],$row['minutes']+booking_length($row['package_label'],$row['note']),$id);
+  // Chỉ kiểm tra khi đổi khung giờ (ngày, giờ, độ dài gói): sửa tên, Phụ thu, Tip… của lịch đang vướng thì không hỏi lại.
+  $length=booking_length($row['package_label'],$row['note']);
+  if(($row['shoot_day']!==$old['shoot_day']||$row['minutes']!==(int)$old['minutes']||$length!==booking_length($old['package_label'],$old['note']))&&$stop=booking_check_slot($a,$b,$row['shoot_day'],$row['minutes'],$row['minutes']+$length,$id))return $stop;
   $set=['day'=>implode('/',array_slice(array_reverse(explode('-',$in['day'])),0,2)),'time'=>booking_hm($in['start']),'customer_name'=>$in['customer_name'],'customer_phone'=>$in['customer_phone'],'package_label'=>$row['package_label'],'makeup'=>$in['makeup'],'special'=>$in['special'],'note'=>$in['sheet_note'],'surcharge'=>$money['surcharge'],'tip'=>$money['tip']];
   if($old['sheet_fields_json']!==null)$row['sheet_fields_json']=booking_patch_fields($old['sheet_fields_json'],array_intersect_key($set,array_flip($changed)));
   freeze_existing_booking_day($a,$old['shoot_day']);if($row['shoot_day']!==$old['shoot_day'])freeze_existing_booking_day($a,$row['shoot_day']);

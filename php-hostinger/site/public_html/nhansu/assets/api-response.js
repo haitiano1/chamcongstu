@@ -6,6 +6,6 @@ export async function readApiResponse(response){
  let data;
  try{data=JSON.parse(raw);}catch{throw new Error(`Máy chủ chưa trả dữ liệu JSON hợp lệ (${suffix}). Kiểm tra kiemtra-capnhat.php; nếu hiện trang WordPress hoặc thông báo chặn, kiểm tra đường dẫn /nhansu trên hosting.`);}
  if(!data||typeof data!=='object'||Array.isArray(data))throw new Error(`Phản hồi máy chủ không đúng định dạng (${suffix}). Hãy tải lại trang sau khi cập nhật đủ mã nguồn.`);
- if(!response.ok){const message=typeof data.error==='string'&&data.error?data.error:`Máy chủ gặp lỗi (${suffix}).`;throw new Error(message+(data.reference?` Mã tham chiếu: ${data.reference}.`:''));}
+ if(!response.ok){const message=typeof data.error==='string'&&data.error?data.error:`Máy chủ gặp lỗi (${suffix}).`;throw Object.assign(new Error(message+(data.reference?` Mã tham chiếu: ${data.reference}.`:'')),{conflicts:data.conflicts});}
  return data;
 }

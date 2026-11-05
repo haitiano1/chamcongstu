@@ -74,6 +74,12 @@ console.log('4. Lịch web đã có trên Sheet (lần trước chưa kịp báo
 st.queue=[q(1,'2026-11-05','11:00')];st.acks=[];const before=s11.rows().length;ok(run(ctx)===null,'chạy không lỗi');
 ok(s11.rows().length===before&&st.acks[0].ok&&st.acks[0].row===4,'không thêm dòng, báo dòng 4');
 
+console.log('4b. Lịch web vướng giờ (bấm Vẫn đặt lịch trên web): vẫn chèn dòng, nằm ngay sau lịch cùng giờ');
+{const rows=s11.rows().length;st.queue=[q(7,'2026-11-05','11:00')];st.acks=[];ok(run(ctx)===null,'chạy không lỗi');
+ok(s11.rows().length===rows+1&&st.acks[0].ok&&st.acks[0].row===5&&s11.rows()[4][1]==='11:00'&&s11.rows()[4][2]==='Web7','chèn dòng 5 ngay sau lịch 11:00 đang có');
+st.queue=[];ok(run(ctx)===null,'lần chạy sau');ok(s11.cell(4,2).bg==='#f4c7c3'&&s11.cell(5,2).bg==='#f4c7c3','2 lịch tô đỏ như trùng giờ');
+st.queue=[Object.assign(q(7,'2026-11-05','11:00'),{action:'delete'})];st.acks=[];ok(run(ctx)===null&&s11.rows().length===rows&&st.acks[0].ok,'xóa lịch thử');ok(run(ctx)===null&&s11.cell(4,2).bg==='#ffffff','hết trùng thì trả màu cũ');}
+
 console.log('5. Trùng giờ: tô đỏ ô giờ, sửa xong trả màu cũ');
 s11.cell(4,2).bg='#fff2cc';s11.getRange(4,2).setValue('08:30');// Web1 11:00 → 08:30, chồng 08:00 gói 1499 (đến 10:00) và 09:00
 ok(run(ctx)===null,'chạy không lỗi');
