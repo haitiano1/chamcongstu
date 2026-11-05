@@ -23,3 +23,4 @@ exports/
 php-hostinger/site/nhansu-private/lib/legacy-event-log.pdf
 php-hostinger/site/nhansu-private/lib/legacy-event-log.json
 .claude/settings.local.json
+*.pem

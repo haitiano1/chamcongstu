@@ -16,7 +16,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
 FONT = 'Arial'
-PACKAGES = ['399', '699', 'Couple 999', '1499', '2999', 'Team 349']
+PACKAGES = ['399', '699', 'Couple 999', 'Body 999', '1499', '2999', 'Team 349']
 MAKEUP = ['Nam', 'Nữ', 'Làm Tóc']
 SPECIAL = ['Ô TÔ', 'Ngoại Cảnh', 'Nhóm tại Stu', 'Sản Phẩm']
 # (tiêu đề, độ rộng, định dạng số, căn giữa, ghi chú ở ô tiêu đề)
@@ -27,7 +27,7 @@ COLUMNS = [
     ('Time', 8, 'hh:mm', True, 'Giờ bắt đầu, dạng 10:00 hoặc 11:30.'),
     ('Tên khách', 30, '@', False, 'Tên khách, ghi luôn tiền cọc. VD: Chị Lan cọc 200k'),
     ('SĐT', 14, '@', True, 'Số điện thoại, giữ số 0 đầu.'),
-    ('Gói', 12, '@', True, 'Để trống = 399/699, khách tới mới chọn (giữ 1 tiếng).\nCouple 999 / 1499 / 2999 = giữ 2 tiếng.\nTeam 349 = giữ theo "Giữ N tiếng" ở Ghi chú.'),
+    ('Gói', 12, '@', True, 'Để trống = 399/699, khách tới mới chọn (giữ 1 tiếng).\nCouple 999 / Body 999 / 1499 / 2999 = giữ 2 tiếng.\nTeam 349 = giữ theo "Giữ N tiếng" ở Ghi chú.'),
     ('Đặc Biệt', 13, '@', True, 'Không bắt buộc. Chọn 1: Ô TÔ / Ngoại Cảnh / Nhóm tại Stu / Sản Phẩm.'),
     ('Phụ thu', 10, '#,##0', True, 'Phụ thu (nếu có), VD 100000. Nhập ở Sửa lịch trên web (script tự ghi) hoặc gõ ở đây.'),
     ('Makeup', 12, '@', True, 'Không bắt buộc. Chọn 1: Nam / Nữ / Làm Tóc.'),
@@ -171,7 +171,7 @@ def build(path, example_json=None):
         ('Time', 'Có', 'HH:mm (VD 10:00, 11:30). Tiêu đề ghi Time hoặc Giờ đều được.', 'Giờ đã chọn'),
         ('Tên khách', 'Có', 'Tên + tiền cọc (VD Chị Lan cọc 200k).', 'Tên khách đã nhập'),
         ('SĐT', '', 'Giữ số 0 đầu.', 'SĐT'),
-        ('Gói', '', 'Để trống = 399/699 khách tới chọn (1 tiếng). Couple 999 / 1499 / 2999 = 2 tiếng. Team 349 = theo "Giữ N tiếng" ở Ghi chú.', 'Trống (399/699) hoặc gói đã chọn'),
+        ('Gói', '', 'Để trống = 399/699 khách tới chọn (1 tiếng). Couple 999 / Body 999 / 1499 / 2999 = 2 tiếng. Team 349 = theo "Giữ N tiếng" ở Ghi chú.', 'Trống (399/699) hoặc gói đã chọn'),
         ('Đặc Biệt', '', 'Chọn 1: Ô TÔ / Ngoại Cảnh / Nhóm tại Stu / Sản Phẩm, hoặc để trống.', 'Lựa chọn đã chọn (hoặc trống)'),
         ('Phụ thu', '', 'Số tiền phụ thu (VD 100000). Chụp xong nhập ở Sửa lịch trên web hoặc gõ ở đây.', 'Số nhập ở Sửa lịch'),
         ('Makeup', '', 'Chọn 1: Nam / Nữ / Làm Tóc, hoặc để trống.', 'Lựa chọn đã chọn (hoặc trống)'),

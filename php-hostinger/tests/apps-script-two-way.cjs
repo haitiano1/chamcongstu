@@ -197,4 +197,14 @@ ok(g8(ID(301)).slice(0,3).join('|')==='05/11|09:00|G1'&&g8(ID(301))[4]==='0901'&
 ok(g11.rows().slice(1).map(r=>r[11]).join()===[ID(301),ID(302),ID(303)].join(','),'không chuyển dòng');
 ok(st8.acks.length===3&&st8.acks.every(a=>a.ok&&a.tab==='Tháng 11'),'báo web 3 việc xong');
 st8.queue=[upd(14,ID(303),'2026-11-05','11:00',['package_label'],{customer_name:'G3',package_label:'399'})];st8.acks=[];ok(run(c8)===null&&g8(ID(303))[3]==='399','đổi Team 349 → 399: ghi "399"');
+console.log('15. Body 999 cùng giá Couple 999: không ghi nhầm Couple, dropdown chưa có thì tự thêm');
+const BD={type:'VALUE_IN_LIST',strict:true,values:['399','699','Couple 999','1499','2999','Team 349']},bk=v=>({v,fmt:'',dv:BD});
+const b9=new Book(),h11=b9.add('Tháng 11',[HU,['05/11','09:00','B1',bk(''),'','','',mk(''),'','',{...F},ID(311)],['','11:00','B2',bk(''),'','','',mk(''),'','',{...F},ID(312)],['','13:00','B3',bk('Couple 999'),'','','',mk(''),'','',{...F},ID(313)]]);
+const st9={posts:[],queue:[upd(21,ID(311),'2026-11-05','09:00',['package_label'],{customer_name:'B1',package_label:'Body 999'})],acks:[],tabs:{}},c9=load(gs,b9,server(st9),cfg),g9=id=>h11.rows().find(r=>r[11]===id);
+ok(run(c9)===null&&st9.acks[0]&&st9.acks[0].ok&&g9(ID(311))[3]==='Body 999','dropdown từ chối chữ lạ, chưa có Body 999: tự thêm lựa chọn rồi ghi "Body 999"');
+ok(h11.cell(4,4).dv.values.includes('Body 999')&&h11.cell(3,4).dv.values.includes('Body 999'),'cả cột của tab có thêm lựa chọn Body 999');
+ok(g9(ID(313))[3]==='Couple 999'&&BD.values.length===6,'lịch Couple giữ nguyên');
+st9.queue=[upd(22,ID(312),'2026-11-05','11:00',['package_label'],{customer_name:'B2',package_label:'999'}),upd(23,ID(313),'2026-11-05','13:00',['package_label'],{customer_name:'B3',package_label:'Body 999'})];st9.acks=[];
+ok(run(c9)===null&&g9(ID(312))[3]==='Couple 999'&&g9(ID(313))[3]==='Body 999'&&h11.cell(2,4).dv.values.filter(x=>x==='Body 999').length===1,'dropdown có cả 2: 999 → Couple 999, Body 999 → Body 999, không thêm trùng');
+ok(c9.agLength_('Body 999','')===120&&c9.agPrice_('Body')===999&&c9.agPackageKey_('Body 999k')!==c9.agPackageKey_('Couple 999'),'Body giữ 2 tiếng, chỉ ghi chữ Body vẫn nhận giá 999');
 console.log(`\n${pass} đạt, ${fail} lỗi`);process.exit(fail?1:0);

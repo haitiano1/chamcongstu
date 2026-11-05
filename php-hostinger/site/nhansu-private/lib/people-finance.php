@@ -39,11 +39,11 @@ function kpi_month_deductions(App $a,string $month): array {
 // - Hoa hồng lịch khách: mỗi khách đã chụp (thợ chính hoặc phụ) = mức của người đó × hệ số gói.
 const PROGRESS_BONUS_FROM='2026-11';
 const ATTENDANCE_BONUS_VND=500000;
-// Team 349 tính như 399 (mỗi dòng/người), Couple 999 ×2 (chủ dự án chốt 29/10/2026).
+// Team 349 tính như 399 (mỗi dòng/người), Couple 999 ×2 (chủ dự án chốt 29/10/2026). Body 999 cùng giá nên cũng ×2.
 const BOOKING_PACKAGE_UNITS=[349=>1,399=>1,699=>1,999=>2,1499=>4,2999=>8];
 const BOOKING_RATE_SEED=[['huy',17500],['cuong',15000]];
 function attendance_target(string $month): int {return substr($month,5,2)==='02'?26:28;}
-// "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699; chỉ ghi chữ "Couple" → 999, "Team" → 349.
+// "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699; chỉ ghi chữ "Couple" hoặc "Body" → 999, "Team" → 349.
 // Lịch Team (chủ dự án yêu cầu 03/11/2026): chụp xong thợ nhập số khách theo từng gói (team 10 người, mỗi người một gói),
 // bảng booking_team_counts, chỉ lưu trên web. Lịch Team đã nhập thì cả nhóm Team cùng ngày, cùng giờ tính theo số đã nhập
 // (các dòng Team khác cùng giờ trên Sheet không đếm thêm); chưa nhập thì mỗi dòng Team vẫn là 1 khách như trước.
@@ -63,7 +63,7 @@ function booking_customer_items(App $a,array $rows): array {
  return $out;
 }
 function booking_package_price(string $label): ?int {
- if(!preg_match('/\d{1,3}(?:[.,]\d{3})+|\d+/',$label,$m)){$text=mb_strtolower($label,'UTF-8');return str_contains($text,'couple')?999:(str_contains($text,'team')?349:null);}
+ if(!preg_match('/\d{1,3}(?:[.,]\d{3})+|\d+/',$label,$m)){$text=mb_strtolower($label,'UTF-8');return str_contains($text,'couple')||str_contains($text,'body')?999:(str_contains($text,'team')?349:null);}
  $n=(int)preg_replace('/\D/','',$m[0]);return $n>=10000?intdiv($n,1000):$n;
 }
 function booking_rates_seed(App $a): void {
