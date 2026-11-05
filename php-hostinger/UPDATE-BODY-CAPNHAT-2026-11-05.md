@@ -35,6 +35,6 @@ Không đổi database, cron.
 ## Từ bản sau
 
 1. GitHub Desktop → Push origin.
-2. App → Studio → Cập nhật phần mềm → bấm **Cập nhật lên vX.Y.Z**.
+2. App → Quản lý → Cập nhật phần mềm → bấm **Cập nhật lên vX.Y.Z** (riêng lần lên v1.3.56 nút còn ở Studio).
 
 Bản nào đổi Apps Script thì trang sẽ ghi rõ "Cần làm tay sau khi cập nhật".
