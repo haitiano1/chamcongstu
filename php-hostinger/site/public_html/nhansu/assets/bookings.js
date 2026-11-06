@@ -1,4 +1,4 @@
-import {loadRules,ruleLogDialog} from './rule-picker.js?v=20261102-kpi3';
+import {loadRules,ruleLogDialog} from './rule-picker.js?v=20261106-kpi4';
 import {time24,bindTime24,setTime24} from './time24.js?v=20261102-24h1';
 import {localDay} from './shifts.js';
 import {moneyLabel,keepLabel} from './money-input.js?v=20261103-tien1';

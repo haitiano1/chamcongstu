@@ -21,7 +21,7 @@ try{$a->tx(function()use($a){
  $as($admin);
  $r=$log(['user_id'=>(int)$e['id'],'offense'=>2]);verify((int)$r['points']===-100&&(int)$r['offense']===2,'Tick Lần 2 thì trừ 100 (Cảnh cáo)');
  $r=$log(['user_id'=>(int)$e['id'],'offense'=>3,'rule_id'=>$thuong]);verify((int)$r['points']===-300&&(int)$r['offense']===3&&$r['rule_code']==='KD-01','Luật thường tick Lần 3 thì trừ 300, không theo điểm luật');
- $r=$log(['user_id'=>(int)$e['id'],'offense'=>0,'rule_id'=>$thuong]);verify((int)$r['points']===0&&$r['offense']===null,'Chỉ ghi nhận: 0 điểm');
+ $r=$log(['user_id'=>(int)$e['id'],'offense'=>0,'rule_id'=>$thuong]);verify((int)$r['points']===0&&$r['offense']===null,'Nhắc nhở: 0 điểm');
  $r=$log(['user_id'=>(int)$e['id'],'offense'=>1,'rule_id'=>$nang]);verify((int)$r['points']===-300&&$r['offense']===null,'Luật nặng giữ điểm riêng −300 dù tick Lần 1');
  $r=$log(['user_id'=>(int)$e['id'],'offense'=>3,'rule_id'=>$canh]);verify((int)$r['points']===-100,'Luật 100 điểm là luật nặng, trừ đúng 100');
  verify(str_contains((string)$a->scalar("SELECT note FROM {{event_log_audit}} WHERE event_log_id=? AND action='created'",[$r['id']]),'Luật nặng KD-100'),'Lịch sử ghi rõ luật nặng');

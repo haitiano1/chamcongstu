@@ -105,9 +105,10 @@ const GUIDE_ITEMS=[
   'Mỗi thẻ: giờ - tên khách - gói - ca - make up, dòng dưới là thợ. Bấm vào thẻ để xem đủ thông tin khách.',
   'Lịch Team: chụp xong mở lịch, nhập số khách theo từng gói bằng nút − / + rồi bấm Lưu số khách (tính vào hoa hồng).',
   'Hoa hồng khách chỉ tính khi bạn có chấm công trong giờ chụp của khách đó.']],
- 'availability'=>['v'=>1,'page'=>'availability','title'=>'Đăng ký ca','steps'=>[
+ 'availability'=>['v'=>2,'page'=>'availability','title'=>'Đăng ký ca','steps'=>[
   'Bấm Lịch → Đăng ký ca. Thứ 7, Chủ nhật trang mở sẵn tuần tới.',
-  'Tick các ca chắc chắn đi làm, tối thiểu 10 ca một tuần, rồi bấm Chốt.',
+  'Thứ 7, Chủ nhật bắt buộc đi làm: 4 ca đã tự tính, không bỏ được.',
+  'Tick thêm các ca chắc chắn đi làm cho đủ tối thiểu 10 ca một tuần, rồi bấm Chốt.',
   'Thứ 7 và Chủ nhật lúc 9h, 20h bot nhắc nếu chưa chốt tuần tới.',
   'Bỏ ca đã chốt trong vòng 2 ngày là nghỉ gấp, Quản lý được báo.']],
  'tasks'=>['v'=>1,'page'=>'tasks','title'=>'Việc và Nhắc nhở','steps'=>[
@@ -124,9 +125,9 @@ const GUIDE_ITEMS=[
   'Bấm Bảng công. Phần trên: ngày đi làm, ca, OT, công, KPI còn lại, thanh chuyên cần (đủ 28 ngày / tháng được 500.000đ).',
   'Phiếu thưởng: từng khoản thưởng (chuyên cần, hoa hồng khách, Tips chia đều, ngoại cảnh, ăn uống…), KPI bị trừ và Thưởng thực nhận.',
   'Thấy sai: gửi Hỗ trợ loại Lương / thưởng để Quản lý kiểm tra.']],
- 'kpi'=>['v'=>1,'page'=>'rules','title'=>'KPI, Luật Studio và Event log','steps'=>[
+ 'kpi'=>['v'=>2,'page'=>'rules','title'=>'KPI, Luật Studio và Event log','steps'=>[
   'Mỗi tháng có 2.000 điểm KPI. 1 điểm bị trừ = 1.000đ, trừ vào Tổng thưởng.',
-  'Mỗi lỗi đếm riêng trong tháng: Lần 1 Nhắc nhở −20, Lần 2 Cảnh cáo −100, Lần 3 trở đi Kỷ luật −300. Luật nặng trừ đúng điểm của luật.',
+  'Có 4 mức: Nhắc nhở 0 KPI, Lỗi −20, Cảnh cáo −100, Kỷ luật −300. Mỗi lỗi đếm riêng trong tháng: Lần 1 Lỗi, Lần 2 Cảnh cáo, Lần 3 trở đi Kỷ luật. Luật nặng trừ đúng điểm của luật.',
   'Đọc kỹ Thêm → Luật Studio. Lỗi được ghi ở Thêm → Event log, ai cũng xem được.']],
  'advances'=>['v'=>1,'page'=>'advances','title'=>'Ứng lương','steps'=>[
   'Bấm Bảng công → Ứng lương → Gửi yêu cầu: chọn ngày muốn ứng, số tiền, ghi lý do.',

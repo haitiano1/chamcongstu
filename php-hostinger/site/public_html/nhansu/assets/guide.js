@@ -1,4 +1,4 @@
-import {GUIDE_MEDIA} from './guide-media.js?v=20261104-ung2';
+import {GUIDE_MEDIA} from './guide-media.js?v=20261106-kpi4';
 // Tìm hiểu web (chủ dự án yêu cầu 03/11/2026): checklist từng chức năng cho Nhân viên. Mỗi mục có hướng dẫn từng bước + ảnh động
 // (khung trình chiếu ảnh chụp app, vòng đỏ nhấp nháy chỗ cần bấm). Phải mở đọc đủ lâu mới tick được "đã được hướng dẫn và nắm rõ";
 // đã tick là bằng chứng, không bỏ được. Admin/Quản lý xem tiến độ từng người, nhắc qua Telegram, xuất CSV.
