@@ -105,9 +105,10 @@ const GUIDE_ITEMS=[
   'Mỗi thẻ: giờ - tên khách - gói - ca - make up, dòng dưới là thợ. Bấm vào thẻ để xem đủ thông tin khách.',
   'Lịch Team: chụp xong mở lịch, nhập số khách theo từng gói bằng nút − / + rồi bấm Lưu số khách (tính vào hoa hồng).',
   'Hoa hồng khách chỉ tính khi bạn có chấm công trong giờ chụp của khách đó.']],
- 'availability'=>['v'=>1,'page'=>'availability','title'=>'Đăng ký ca','steps'=>[
+ 'availability'=>['v'=>2,'page'=>'availability','title'=>'Đăng ký ca','steps'=>[
   'Bấm Lịch → Đăng ký ca. Thứ 7, Chủ nhật trang mở sẵn tuần tới.',
-  'Tick các ca chắc chắn đi làm, tối thiểu 10 ca một tuần, rồi bấm Chốt.',
+  'Thứ 7, Chủ nhật bắt buộc đi làm: 4 ca đã tự tính, không bỏ được.',
+  'Tick thêm các ca chắc chắn đi làm cho đủ tối thiểu 10 ca một tuần, rồi bấm Chốt.',
   'Thứ 7 và Chủ nhật lúc 9h, 20h bot nhắc nếu chưa chốt tuần tới.',
   'Bỏ ca đã chốt trong vòng 2 ngày là nghỉ gấp, Quản lý được báo.']],
  'tasks'=>['v'=>1,'page'=>'tasks','title'=>'Việc và Nhắc nhở','steps'=>[

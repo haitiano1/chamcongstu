@@ -112,6 +112,7 @@ body.login-screen{background:#edf2f9}.login-page{margin:0;max-width:none;min-hei
 @media(max-width:800px){.bonus-entry-form{grid-template-columns:1fr 1fr}.bonus-sign,.bonus-note{grid-column:1/-1}.bonus-entry-form>button{justify-self:stretch;width:100%}.bonus-entry-form input:not([type=radio]),.bonus-entry-form select{font-size:16px;min-height:46px}.bonus-card .section-head h2,.bonus-entry-card .section-head h2{font-size:17px}}
 /* Ca làm không có khách + Tiền khách Tips trên phiếu lương / phiếu thưởng (02/11/2026) */
 .slip-note{grid-column:1/-1;display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.55;color:#5d6f88;padding:0 0 4px;min-width:0;overflow-wrap:anywhere}
+.slip-credit{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}.slip-credit button{flex:none;width:auto;min-height:36px;margin:0;padding:4px 10px;font-size:12px}
 .slip-note details summary{cursor:pointer;color:#2459a8;min-height:24px}
 .slip-note details span{display:block;margin-top:4px;color:#7c8ca2}
 .slip-link{border:0;background:none;padding:0;margin:0;font:inherit;color:#1f5fbf;text-align:left;text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer;min-height:32px}

@@ -228,6 +228,20 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
   });
   return [201,['ok'=>true,'total'=>$total]];
  }
+ // Bổ sung công (chủ dự án yêu cầu 06/11/2026): ca không khách của một nhân viên được tính công như ca có khách, VD khách cuối 13:30 chụp lấn sang Ca 2.
+ if($path==='/payroll/shift-credit'&&$method==='POST'){
+  $a->requireManager();$day=valid_day($b['day']??null);$shift=$b['shift']??'';$user=$b['user_id']??null;$on=$b['on']??null;
+  if(!in_array($shift,['day_first','day_second'],true)||!is_int($user)||!is_bool($on))fail('Dữ liệu không hợp lệ.');
+  if($a->closure(substr($day,0,7)))fail('Tháng này đã chốt lương. Admin cần mở lại trước khi bổ sung công.',409);
+  $row=array_values(array_filter($a->summaries(substr($day,0,7)),fn($p)=>(int)$p['id']===$user))[0]??null;if(!$row)fail('Nhân viên không tồn tại hoặc đã nghỉ.');
+  $label=$day.':'.$shift;
+  if($on){
+   if(!in_array($label,$row['unbookedDays'],true))fail('Ca này không còn là ca không khách. Tải lại.',409);
+   $note=trim((string)($b['note']??''));if(mb_strlen($note)>300)fail('Ghi chú tối đa 300 ký tự.');
+   $a->run('INSERT INTO {{shift_credits}}(user_id,day,shift,note,created_by,created_at) VALUES(?,?,?,?,?,?)',[$user,$day,$shift,$note,$a->user['id'],now_ms()]);
+  }elseif(!$a->run('DELETE FROM {{shift_credits}} WHERE user_id=? AND day=? AND shift=?',[$user,$day,$shift])->rowCount())fail('Ca này không còn được bổ sung công. Tải lại.',409);
+  $a->audit($user,'shift_credit:'.($on?'add':'remove').':'.$label);return [200,['ok'=>true]];
+ }
  if($path!=='/payroll/bonuses'||$method!=='POST')return null;
  $a->requireManager();$month=valid_month($b['month']??'');
  if($a->closure($month))fail('Tháng này đã chốt lương. Admin cần mở lại trước khi sửa thưởng.',409);
@@ -251,6 +265,11 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
    $a->audit($b['user_id'],'bonus:'.$month.':'.$kind.':'.$old.'>'.$amount);}
  });
  return [200,['ok'=>true]];
+}
+// Ca không khách được Admin/Quản lý bổ sung công trong tháng, theo từng nhân viên.
+function shift_credits(App $a,string $month): array {
+ $out=[];foreach($a->all('SELECT c.user_id,c.day,c.shift,c.note,c.created_at,u.name by_name FROM {{shift_credits}} c LEFT JOIN {{users}} u ON u.id=c.created_by WHERE c.day>=? AND c.day<=? ORDER BY c.day,c.shift',[$month.'-01',$month.'-31']) as $r)$out[(int)$r['user_id']][]=['key'=>$r['day'].':'.$r['shift'],'note'=>$r['note'],'by'=>$r['by_name']??'','at'=>(int)$r['created_at']];
+ return $out;
 }
 // Gắn KPI vào từng dòng bảng lương. $money=false: tháng đã chốt từ trước khi có KPI, chỉ thêm điểm, giữ nguyên tiền đã chốt.
 function payroll_apply(App $a,string $month,array $rows,bool $money=true): array {
