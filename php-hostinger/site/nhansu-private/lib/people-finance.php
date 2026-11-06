@@ -2,10 +2,10 @@
 declare(strict_types=1);
 
 const LOG_CATEGORIES=['missing_punch','late','early_out','absence','customer','task','other'];
-// Điểm KPI theo số lần mắc cùng một lỗi trong tháng (chủ dự án chốt 02/11/2026): lần 1 Nhắc nhở 20, lần 2 Cảnh cáo 100, lần 3 trở đi Kỷ luật 300.
+// Điểm KPI theo số lần mắc cùng một lỗi trong tháng (chủ dự án chốt 02/11/2026): lần 1 Lỗi 20, lần 2 Cảnh cáo 100, lần 3 trở đi Kỷ luật 300; Nhắc nhở 0 điểm (offense 0) do người ghi chọn, chủ dự án đổi tên 06/11/2026.
 // Luật nặng có điểm riêng từ LOG_FIXED_POINTS trở lên luôn trừ đúng điểm đó. Đi muộn DM-01 do hệ thống tự tính (late_points).
 const LOG_TIER_POINTS=[1=>20,2=>100,3=>300];
-const LOG_TIER_NAMES=[1=>'Nhắc nhở',2=>'Cảnh cáo',3=>'Kỷ luật'];
+const LOG_TIER_NAMES=[1=>'Lỗi',2=>'Cảnh cáo',3=>'Kỷ luật'];
 const LOG_FIXED_POINTS=100;
 function input_text(mixed $value,string $label,int $min=0,int $max=1000): string {
  if(!is_string($value)||!preg_match('//u',$value))fail($label.' không hợp lệ.');
@@ -414,7 +414,7 @@ function log_permissions(App $a): array {
  return ['can_record'=>$full||$delegated,'can_manage'=>$full||$delegated,'can_delete'=>$full,'can_grant'=>$a->user['role']==='admin','delegated'=>$delegated];
 }
 // Điểm KPI khi ghi Event log: [điểm trừ, lần mắc lỗi trong tháng hoặc null]. Luật nặng: điểm cố định của luật.
-// offense 1/2/3 → 20/100/300, 0 = chỉ ghi nhận. Không gửi offense mà chọn luật thường (Telegram /log, giao diện cũ) thì tự đếm số lần trong tháng;
+// offense 1/2/3 → 20/100/300, 0 = Nhắc nhở, không trừ điểm. Không gửi offense mà chọn luật thường (Telegram /log, giao diện cũ) thì tự đếm số lần trong tháng;
 // hộp ghi nhanh (nghỉ gấp, đối soát chấm công) gửi offense=null kèm deduction để giữ đúng điểm đã chọn.
 function log_points(App $a,?array $rule,array $b,?int $subject,string $day,?string $except=null): array {
  if($rule&&(int)$rule['points']>=LOG_FIXED_POINTS)return [(int)$rule['points'],null];

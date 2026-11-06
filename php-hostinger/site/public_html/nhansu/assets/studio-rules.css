@@ -41,11 +41,12 @@
 /* Khung mức trừ KPI theo số lần mắc lỗi (chủ dự án yêu cầu 02/11/2026) */
 .rule-tiers{margin:0 0 16px;border:2px solid #e8590c;border-radius:16px;background:#fff8f1;padding:14px 16px 12px;box-shadow:0 3px 0 #fde2cf}
 .rule-tiers h2{margin:0 0 10px;font-size:16px;line-height:1.4;color:#9a3412}
-.rule-tier-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.rule-tier-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .rule-tier-list li{display:grid;gap:2px;justify-items:center;align-content:start;text-align:center;background:#fff;border:1px solid #f3d3bd;border-top:5px solid;border-radius:12px;padding:10px 6px}
 .rule-tier-list span{font-size:12px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:#52627a}
 .rule-tier-list b{font-size:16px;color:#14233a}
 .rule-tier-list strong{font-size:22px;line-height:1.2}.rule-tier-list small{font-size:12px;font-weight:600}
+.rule-tier-list .tier-0{border-top-color:#1d64d8}.rule-tier-list .tier-0 strong{color:#1d4f9c}
 .rule-tier-list .tier-1{border-top-color:#f59f00}.rule-tier-list .tier-1 strong{color:#9a5b00}
 .rule-tier-list .tier-2{border-top-color:#e8590c}.rule-tier-list .tier-2 strong{color:#c2410c}
 .rule-tier-list .tier-3{border-top-color:#c92a2a}.rule-tier-list .tier-3 strong{color:#b42318}
@@ -67,7 +68,7 @@
 .log-tier .log-tier-option:has(input:disabled){opacity:.45;cursor:not-allowed}
 .log-tier-fixed{margin:0;padding:10px 12px;border-radius:10px;background:#ffebe9;color:#b42318;font-weight:600;font-size:14px;line-height:1.5}
 .log-tier-hint{display:block;margin-top:8px;font-size:13px;color:#1d4f9c;font-weight:600;line-height:1.45}.log-tier-hint:empty{display:none}
-@media(max-width:800px){.log-tier .log-tier-options{grid-template-columns:1fr 1fr}.rule-tiers{padding:12px}.rule-tier-list{gap:6px}.rule-tier-list li{padding:8px 4px}.rule-tier-list span{font-size:11px;letter-spacing:0}.rule-tier-list b{font-size:14px}.rule-tier-list strong{font-size:19px}.rule-tier-list small{display:block;font-size:11px}}
+@media(max-width:800px){.log-tier .log-tier-options{grid-template-columns:1fr 1fr}.rule-tiers{padding:12px}.rule-tier-list{grid-template-columns:1fr 1fr;gap:6px}.rule-tier-list li{padding:8px 4px}.rule-tier-list span{font-size:11px;letter-spacing:0}.rule-tier-list b{font-size:14px}.rule-tier-list strong{font-size:19px}.rule-tier-list small{display:block;font-size:11px}}
 .rule-pick-hint.ladder{color:#52627a;font-weight:500}
 /* Tìm hiểu web (03/11/2026) */
 .guide-page .card{margin:0}

@@ -26,7 +26,7 @@ try{$a->tx(function()use($a){
  // Luật thường (dưới 100 điểm): lần 1 −20, lần 2 −100, lần 3 trở đi −300, đếm riêng từng người trong tháng.
  $mk=function(string $code,int $points)use($a,$admin){$id=uuid_v4();$a->run("INSERT INTO {{studio_rules}}(id,code,name,category,content,points,status,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,'active',?,?,?,?)",[$id,$code,'Luật thử '.$code,'Thử','',$points,$admin['id'],now_ms(),$admin['id'],now_ms()]);return $id;};
  $mk('TL-01',20);$mk('TL-02',0);$mk('TL-NANG',300);
- $r=$send('Zuy | Quên checklist khách 1 | TL-01');$l=$log($zuy,'Quên checklist khách 1');verify((int)$l['points']===-20&&(int)$l['offense']===1&&str_contains($r,'Lần 1 trong tháng (Nhắc nhở)'),'Luật thường lần 1: −20 Nhắc nhở · '.$r);
+ $r=$send('Zuy | Quên checklist khách 1 | TL-01');$l=$log($zuy,'Quên checklist khách 1');verify((int)$l['points']===-20&&(int)$l['offense']===1&&str_contains($r,'Lần 1 trong tháng (Lỗi)'),'Luật thường lần 1: −20 Lỗi · '.$r);
  $r=$send('Zuy | Quên checklist khách 2 | TL-01');$l=$log($zuy,'Quên checklist khách 2');verify((int)$l['points']===-100&&(int)$l['offense']===2&&str_contains($r,'Cảnh cáo'),'Lần 2: −100 Cảnh cáo');
  $r=$send('Zuy, Xoan | Quên checklist khách 3 | TL-01');verify((int)$log($zuy,'Quên checklist khách 3')['points']===-300&&(int)$log($zuy,'Quên checklist khách 3')['offense']===3&&(int)$log($xoan,'Quên checklist khách 3')['points']===-20&&str_contains($r,'Trần Văn Zuy: Lần 3')&&str_contains($r,'Lê Văn Xoan: Lần 1'),'Đếm riêng từng người: Zuy lần 3 −300, Xoan lần 1 −20 · '.$r);
  $send('Zuy | Quên checklist khách 4 | TL-01');verify((int)$log($zuy,'Quên checklist khách 4')['points']===-300&&(int)$log($zuy,'Quên checklist khách 4')['offense']===3,'Lần 4 vẫn Kỷ luật −300');

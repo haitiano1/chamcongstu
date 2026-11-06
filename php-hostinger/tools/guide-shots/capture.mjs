@@ -54,7 +54,7 @@ const S=[
  ['advances',0,nav('advances')+'scrollTo(0,0);',2500,['#advance-create'],'center'],
  ['advances',0,click('#advance-create'),900,['dialog[open] form'],'start'],
  ['advances',1,'window.__close();',300,['[data-page="advances"] *','Quy định ứng lương'],'center'],
- ['kpi',1,nav('rules')+'scrollTo(0,0);',2500,['[data-page="rules"] *','Mức trừ KPI'],'start'],
+ ['kpi',1,nav('rules')+'scrollTo(0,0);',2500,['.rule-tiers'],'center'],
  ['kpi',2,nav('eventlog')+'scrollTo(0,0);',2500,['[data-page="eventlog"] h1,[data-page="eventlog"] h2'],'center'],
  ['meetings',1,nav('meetings')+'scrollTo(0,0);',2500,['[data-page="meetings"] *','Họp đầu tuần','article,li,.card,button'],'center'],
  ['meetings',1,click('[data-page="meetings"] *','Họp đầu tuần'),1500,['button','Đã đọc và xác nhận'],'center'],

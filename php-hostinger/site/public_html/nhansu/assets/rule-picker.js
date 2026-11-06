@@ -1,8 +1,8 @@
 // Chọn luật Studio khi ghi Event log. Điểm KPI (chủ dự án chốt 02/11/2026): luật thường tính theo số lần mắc lỗi đó trong tháng
-// (Lần 1 Nhắc nhở −20, Lần 2 Cảnh cáo −100, Lần 3 trở đi Kỷ luật −300); luật nặng có điểm riêng từ 100 trở lên luôn trừ đúng điểm đó.
+// (Lần 1 Lỗi −20, Lần 2 Cảnh cáo −100, Lần 3 trở đi Kỷ luật −300; Nhắc nhở 0 KPI do người ghi chọn, chủ dự án đổi tên 06/11/2026); luật nặng có điểm riêng từ 100 trở lên luôn trừ đúng điểm đó.
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const FIXED_MIN=100;
-export const TIERS=[[1,'Nhắc nhở',20],[2,'Cảnh cáo',100],[3,'Kỷ luật',300]];
+export const TIERS=[[1,'Lỗi',20],[2,'Cảnh cáo',100],[3,'Kỷ luật',300]];
 export const tierName=n=>TIERS[n-1]?.[1]||'';
 export const fixedRule=r=>!!r&&Number(r.points)>=FIXED_MIN;
 let cache=null;
@@ -13,9 +13,9 @@ export function ruleField(rules){
  const groups=[...new Set(rules.map(r=>r.category))];
  return `<label class="rule-pick">Áp luật Studio (không bắt buộc)<select name="rule_id"><option value="">— Không chọn luật —</option>${groups.map(g=>`<optgroup label="${esc(g)}">${rules.filter(r=>r.category===g).map(r=>`<option value="${r.id}">${esc(r.code)} · ${esc(r.name)} (${fixedRule(r)?'lỗi nặng −'+r.points:'theo số lần'})</option>`).join('')}</optgroup>`).join('')}</select><small class="rule-pick-hint" hidden></small></label>`;
 }
-// Ô "Lần mắc lỗi này trong tháng": 0 = chỉ ghi nhận, 1/2/3 = Nhắc nhở / Cảnh cáo / Kỷ luật.
+// Ô "Lần mắc lỗi này trong tháng": 0 = Nhắc nhở (không trừ điểm), 1/2/3 = Lỗi / Cảnh cáo / Kỷ luật.
 export function tierField(selected=0){
- return `<fieldset class="log-tier"><legend>Lần mắc lỗi này trong tháng</legend><div class="log-tier-options"><label class="log-tier-option tier-0"><input type="radio" name="offense" value="0" ${selected===0?'checked':''}><span><b>Chỉ ghi nhận</b><small>Không trừ điểm</small></span></label>${TIERS.map(([n,name,p])=>`<label class="log-tier-option tier-${n}"><input type="radio" name="offense" value="${n}" ${selected===n?'checked':''}><span><b>Lần ${n}${n===3?' trở đi':''}</b><small>${name} · −${p} KPI</small></span></label>`).join('')}</div><p class="log-tier-fixed" hidden></p><small class="log-tier-hint" role="status"></small></fieldset>`;
+ return `<fieldset class="log-tier"><legend>Lần mắc lỗi này trong tháng</legend><div class="log-tier-options"><label class="log-tier-option tier-0"><input type="radio" name="offense" value="0" ${selected===0?'checked':''}><span><b>Nhắc nhở</b><small>0 KPI</small></span></label>${TIERS.map(([n,name,p])=>`<label class="log-tier-option tier-${n}"><input type="radio" name="offense" value="${n}" ${selected===n?'checked':''}><span><b>${name}</b><small>−${p} KPI · Lần ${n}${n===3?' trở đi':''}</small></span></label>`).join('')}</div><p class="log-tier-fixed" hidden></p><small class="log-tier-hint" role="status"></small></fieldset>`;
 }
 // Lần đã lưu của log cũ: ưu tiên cột offense, không có thì suy từ điểm.
 export const tierOf=row=>row.offense?Number(row.offense):({20:1,100:2,300:3}[Math.abs(row.points)]??0);
