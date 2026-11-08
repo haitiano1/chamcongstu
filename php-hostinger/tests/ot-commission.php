@@ -37,5 +37,18 @@ try{$a->tx(function()use($a){
  workflow_routes($a,"/events/{$ids[1]}/delete",['note'=>'Sai giờ'],'POST');workflow_routes($a,"/events/{$ids[0]}/delete",[],'POST');
  $rows=array_column(payroll_apply($a,$month,$a->summaries($month)),null,'id');verify($rows[$tin]['ot_booking_customers']===3,'Đã xóa lượt chấm hộ OT');
  $self=(int)$a->scalar("SELECT id FROM {{events}} WHERE user_id=? AND source='self' LIMIT 1",[$tin]);try{workflow_routes($a,"/events/$self/delete",[],'POST');verify(false,'Phải chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'tự chấm'),'Không xóa lượt tự chấm');}
+ // Gợi ý chấm hộ OT: vào 19:00, ra = khách cuối chụp xong (03/11: 699 lúc 20:00, 1 tiếng → 21:00; Couple 19:00 2 tiếng → 21:00).
+ $_GET['day']=$day;$g=management_routes($a,'/attendance/ot-suggest',[],'GET')[1];verify($g['in']===day_time($day)+19*3600000&&$g['out']===day_time($day)+21*3600000&&$g['count']===3,'Gợi ý OT 19:00 → 21:00, 3 lịch còn chụp sau 19:00: '.json_encode($g));
+ // Sửa giờ (ca của Tín 07/11: 22:57 → 08:56 hôm sau). Sửa giờ ra trước thành 21:30 thì sai thứ tự; sửa vào 19:00 rồi ra 21:30 thì được.
+ $d3='2026-11-07';$a->run("UPDATE {{shoot_bookings}} SET status='cancelled' WHERE shoot_day=?",[$d3]);$book2=function($hm)use($a,$d3){$a->run("INSERT INTO {{shoot_bookings}}(id,source_sheet,source_tab,source_row,shoot_day,minutes,package_label,customer_name,customer_phone,main_alias,support_alias,note,status,created_at,updated_at) VALUES(?,'test','test',1,?,?,'699','Khach 0711','','','','','active',?,?)",[uuid_v4(),$d3,(int)substr($hm,0,2)*60+(int)substr($hm,3,2),now_ms(),now_ms()]);};$book2('20:00');
+ $a->run("INSERT INTO {{events}}(user_id,type,time,shift,work_date,source,reason) VALUES(?,'in',?,'ot',?,'manual','Chấm hộ')",[$tin,day_time($d3)+(22*60+57)*60000,$d3]);$ein=(int)$a->scalar('SELECT LAST_INSERT_ID()');
+ $a->run("INSERT INTO {{events}}(user_id,type,time,shift,work_date,source,reason) VALUES(?,'out',?,'ot',?,'self','')",[$tin,day_time($d3)+(32*60+56)*60000,$d3]);$eout=(int)$a->scalar('SELECT LAST_INSERT_ID()');
+ $ot7=fn()=>count(array_filter(array_column(payroll_apply($a,$month,$a->summaries($month)),null,'id')[$tin]['ot_booking_list'],fn($x)=>$x['day']===$d3));verify($ot7()===0,'22:57 → 08:56: không trùng khách 20:00');
+ $edit=fn($id,$t,$note='Chấm hộ nhầm giờ')=>workflow_routes($a,"/events/$id/time",['time'=>$t,'note'=>$note],'POST');
+ try{$edit($eout,day_time($d3)+(21*60+30)*60000);verify(false,'Phải chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'thứ tự')||str_contains($e->getMessage(),'không hợp lệ'),'Sửa giờ ra trước giờ vào thì chặn: '.$e->getMessage());}
+ try{$edit($ein,day_time($d3)+19*3600000,'ngắn');verify(false,'Phải chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'lý do'),'Bắt buộc lý do');}
+ $edit($ein,day_time($d3)+19*3600000);$edit($eout,day_time($d3)+(21*60+30)*60000);verify($ot7()===1,'Sửa vào 19:00, ra 21:30: khách 20:00 tính OT');
+ verify(str_contains($a->scalar('SELECT reason FROM {{events}} WHERE id=?',[$eout]),'Sửa giờ 08:56 08/11 → 21:30 07/11'),'Ghi giờ cũ → mới vào lý do');
+ $a->user=$a->one('SELECT * FROM {{users}} WHERE id=?',[$tin]);try{$edit($ein,day_time($d3)+19*3600000+60000);verify(false,'Phải chặn');}catch(HttpError $e){verify($e->status===403,'Nhân viên không sửa giờ');}
  throw new RuntimeException('ROLLBACK');});}catch(RuntimeException $e){if($e->getMessage()!=='ROLLBACK'){echo $e->getMessage(),"\n";exit(1);}}
 echo "OK $n kiểm tra\n";
