@@ -10,8 +10,10 @@ const manualKinds=p=>p.bonus_kinds?MANUAL.filter(([k])=>p.bonus_kinds.includes(k
 const fanpage=p=>p.bonus_profile==='fanpage';
 // Hoa hồng khách OT (chủ dự án yêu cầu 08/11/2026, từ 11/2026): lịch từ 19:00 có chấm OT trong giờ chụp, 1 lịch = 1 khách × mức × 2.
 const otList=p=>(p.ot_booking_list||[]).map(i=>`${i.day.slice(8,10)}/${i.day.slice(5,7)} ${esc(i.time)}${i.customer_name?' · '+esc(i.customer_name):''}`).join(' · ');
-function otLines(line,p){if(p.ot_booking_rate===undefined)return null;const n=p.ot_booking_customers??0,list=otList(p);
- return line('Khách chụp OT','Lịch từ 19:00, có chấm OT trong giờ chụp · 1 lịch = 1 khách',`${num(n)} khách`,'',list?`<div class="slip-note"><span>${list}</span></div>`:'')
+const vnTime=t=>new Date(t+7*3600000).toISOString(),otSpan=o=>{const a=vnTime(o.in),b=vnTime(o.out);return `${a.slice(8,10)}/${a.slice(5,7)} ${a.slice(11,16)}–${b.slice(11,16)}${a.slice(0,10)!==b.slice(0,10)?' (hôm sau)':''}`;};
+function otLines(line,p){if(p.ot_booking_rate===undefined)return null;const n=p.ot_booking_customers??0,list=otList(p),ses=p.ot_sessions||[];
+ const note=(list?`<span>Khách: ${list}</span>`:'')+(ses.length?`<span>Lượt OT: ${ses.map(otSpan).join(' · ')}</span>`:'')+(ses.length&&!n?'<span class="out">Không có lịch chụp nào trùng giờ các lượt OT trên. Chấm hộ sai giờ thì sửa lại giờ lượt OT.</span>':'');
+ return line('Khách chụp OT','Lịch có giờ chụp trùng lượt OT · 1 lịch = 1 khách',`${num(n)} khách`,'',note?`<div class="slip-note">${note}</div>`:'')
   +(p.ot_booking_rate?line('Hoa hồng khách OT',`${num(n)} × ${money(p.ot_booking_rate)} (${money(p.ot_booking_base??0)} × 2)`,money(p.ot_bonus??0),p.ot_bonus?'':'muted'):line('Hoa hồng khách OT','Chưa có mức hoa hồng trong hồ sơ','—','muted'));}
 const openSlips=new Set();
 // Ca làm không có khách (chủ dự án yêu cầu 02/11/2026, VD khách đầu tiên 15h thì Ca 1 không khách): số ca nhân viên chấm công

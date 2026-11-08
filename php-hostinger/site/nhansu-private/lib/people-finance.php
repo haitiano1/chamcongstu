@@ -42,10 +42,11 @@ const ATTENDANCE_BONUS_VND=500000;
 // Team 349 tính như 399 (mỗi dòng/người), Couple 999 ×2 (chủ dự án chốt 29/10/2026). Body 999 cùng giá nên cũng ×2.
 const BOOKING_PACKAGE_UNITS=[349=>1,399=>1,699=>1,999=>2,1499=>4,2999=>8];
 const BOOKING_RATE_SEED=[['huy',17500],['cuong',15000]];
-// Hoa hồng khách OT (chủ dự án yêu cầu 08/11/2026, từ tháng 11/2026 thay cho đơn giá × lượt OT): lịch bắt đầu từ 19:00 mà người đó
-// có chấm OT trong giờ chụp thì 1 lịch = 1 khách (không nhân hệ số gói) × mức hoa hồng × 2. Huy 17.500, Cường 15.000, Tín 10.000.
+// Hoa hồng khách OT (chủ dự án yêu cầu 08/11/2026, từ tháng 11/2026 thay cho đơn giá × lượt OT): lịch có giờ chụp trùng một lượt OT
+// của người đó (09/11/2026: không bắt lịch bắt đầu từ 19:00, khách 18:30 chụp lúc đã vào OT cũng tính) thì 1 lịch = 1 khách
+// (không nhân hệ số gói) × mức hoa hồng × 2. Huy 17.500, Cường 15.000, Tín 10.000.
 // Tín (Trực Fanpage) chỉ có hoa hồng khách OT, không có hoa hồng khách ca thường. Lịch OT không tính thêm vào hoa hồng thường.
-const BOOKING_OT_MINUTE=19*60;const BOOKING_OT_FACTOR=2;const BOOKING_RATE_SEED_OT=[['tin',10000]];
+const BOOKING_OT_FACTOR=2;const BOOKING_RATE_SEED_OT=[['tin',10000]];
 function attendance_target(string $month): int {return substr($month,5,2)==='02'?26:28;}
 // "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699; chỉ ghi chữ "Couple" hoặc "Body" → 999, "Team" → 349.
 // Lịch Team (chủ dự án yêu cầu 03/11/2026): chụp xong thợ nhập số khách theo từng gói (team 10 người, mỗi người một gói),
@@ -275,15 +276,17 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
  return [200,['ok'=>true]];
 }
 // Ca không khách được Admin/Quản lý bổ sung công trong tháng, theo từng nhân viên.
-// Khách OT của từng người có mức hoa hồng: lịch đang hoạt động, đã qua giờ chụp, bắt đầu từ 19:00, người đó có lượt OT trùng giờ chụp.
-// Xét theo chấm OT, không theo thợ trên lịch (Sheet không có cột Thợ, Tín không được gán lịch).
+// Khách OT của từng người có mức hoa hồng: lịch đang hoạt động, đã qua giờ chụp, giờ chụp trùng một lượt OT của người đó.
+// Xét theo chấm OT (tự chấm hoặc chấm hộ), không theo thợ trên lịch (Sheet không có cột Thợ, Tín không được gán lịch).
+// 'sessions' là các lượt OT trong tháng (giờ vào–ra) để phiếu lương đối chiếu khi không thấy khách.
 function booking_month_ot(App $a,array $rates,string $start,string $end,int $now): array {
- $out=[];foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'rate'=>$rate*BOOKING_OT_FACTOR,'list'=>[],'ids'=>[]];if(!$rates)return $out;
- $today=local_day($now);$minute=intdiv($now-day_time($today),60000);
- $rows=array_values(array_filter($a->all("SELECT id,shoot_day,minutes,package_label,note,customer_name FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? AND minutes>=? ORDER BY shoot_day,minutes",[$start,$end,BOOKING_OT_MINUTE]),fn($r)=>!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute))));
- if(!$rows)return $out;$present=attendance_presence($a,array_keys($rates),$start,$end,$now);
+ $out=[];foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'rate'=>$rate*BOOKING_OT_FACTOR,'list'=>[],'ids'=>[],'sessions'=>[]];if(!$rates)return $out;
+ $today=local_day($now);$minute=intdiv($now-day_time($today),60000);$present=attendance_presence($a,array_keys($rates),$start,$end,$now);
+ $lo=day_time($start);$hi=day_time($end)+86400000;$ots=[];foreach($present as $id=>$list)foreach($list as $s)if(($s[2]??null)==='ot'&&$s[1]>$lo&&$s[0]<$hi){$ots[$id][]=$s;$out[$id]['sessions'][]=['in'=>(int)$s[0],'out'=>(int)$s[1]];}
+ if(!$ots)return $out;
+ $rows=array_values(array_filter($a->all("SELECT id,shoot_day,minutes,package_label,note,customer_name FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? ORDER BY shoot_day,minutes",[$start,$end]),fn($r)=>!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute))));
  foreach($rows as $r){$from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;
-  foreach($rates as $id=>$rate){$here=false;foreach($present[$id]??[] as $s)if(($s[2]??null)==='ot'&&$s[0]<$to&&$s[1]>$from){$here=true;break;}if(!$here)continue;
+  foreach($ots as $id=>$list){$here=false;foreach($list as $s)if($s[0]<$to&&$s[1]>$from){$here=true;break;}if(!$here)continue;
    $out[$id]['customers']++;$out[$id]['ids'][$r['id']]=true;$out[$id]['list'][]=['day'=>$r['shoot_day'],'time'=>booking_hm((int)$r['minutes']),'customer_name'=>$r['customer_name'],'package_label'=>$r['package_label']];}}
  return $out;
 }
@@ -299,7 +302,7 @@ function payroll_apply(App $a,string $month,array $rows,bool $money=true): array
   if($progress&&$p['role']==='employee'){$p['attendance_target']=attendance_target($month);$p['attendance_bonus_vnd']=ATTENDANCE_BONUS_VND;$p['attendance_bonus']=$p['days']>=$p['attendance_target']?ATTENDANCE_BONUS_VND:0;}
   // Trực Fanpage không có hoa hồng khách chụp.
   if($profile!=='fanpage'&&($b=$bookings[$p['id']]??null)){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_unpriced_list']=$b['unpriced_list'];$p['booking_absent']=$b['absent'];$p['booking_commission']=$b['rate']*$b['units'];}
-  if($progress&&$p['role']==='employee'&&($o=$bookings[$p['id']]['ot']??null)){$p['ot_booking_customers']=$o['customers'];$p['ot_booking_rate']=$o['rate'];$p['ot_booking_base']=intdiv($o['rate'],BOOKING_OT_FACTOR);$p['ot_booking_list']=$o['list'];}
+  if($progress&&$p['role']==='employee'&&($o=$bookings[$p['id']]['ot']??null)){$p['ot_booking_customers']=$o['customers'];$p['ot_booking_rate']=$o['rate'];$p['ot_booking_base']=intdiv($o['rate'],BOOKING_OT_FACTOR);$p['ot_booking_list']=$o['list'];$p['ot_sessions']=$o['sessions'];}
   if(!$money)continue;$extra=$bonuses[$p['id']]??[];$items=$extra['items']??[];$p['ot_rate']=$items['ot_rate']??0;unset($items['ot_rate']);$photos=$items['retouch_count']??0;unset($items['retouch_count']);
   if($progress){$p['bonus_profile']=$profile;$p['bonus_kinds']=profile_kinds($profile);
    // Ca làm không có khách (chủ dự án chốt 02/11/2026): số ca × lương 1/2 ngày (lương cứng / số ngày của tháng / 2).
