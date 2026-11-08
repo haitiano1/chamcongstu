@@ -42,6 +42,10 @@ const ATTENDANCE_BONUS_VND=500000;
 // Team 349 tính như 399 (mỗi dòng/người), Couple 999 ×2 (chủ dự án chốt 29/10/2026). Body 999 cùng giá nên cũng ×2.
 const BOOKING_PACKAGE_UNITS=[349=>1,399=>1,699=>1,999=>2,1499=>4,2999=>8];
 const BOOKING_RATE_SEED=[['huy',17500],['cuong',15000]];
+// Hoa hồng khách OT (chủ dự án yêu cầu 08/11/2026, từ tháng 11/2026 thay cho đơn giá × lượt OT): lịch bắt đầu từ 19:00 mà người đó
+// có chấm OT trong giờ chụp thì 1 lịch = 1 khách (không nhân hệ số gói) × mức hoa hồng × 2. Huy 17.500, Cường 15.000, Tín 10.000.
+// Tín (Trực Fanpage) chỉ có hoa hồng khách OT, không có hoa hồng khách ca thường. Lịch OT không tính thêm vào hoa hồng thường.
+const BOOKING_OT_MINUTE=19*60;const BOOKING_OT_FACTOR=2;const BOOKING_RATE_SEED_OT=[['tin',10000]];
 function attendance_target(string $month): int {return substr($month,5,2)==='02'?26:28;}
 // "399", "1.499", "1499k", "1.499.000", "Gói 699 + ..." → 399 / 1499 / 699; chỉ ghi chữ "Couple" hoặc "Body" → 999, "Team" → 349.
 // Lịch Team (chủ dự án yêu cầu 03/11/2026): chụp xong thợ nhập số khách theo từng gói (team 10 người, mỗi người một gói),
@@ -67,10 +71,13 @@ function booking_package_price(string $label): ?int {
  $n=(int)preg_replace('/\D/','',$m[0]);return $n>=10000?intdiv($n,1000):$n;
 }
 function booking_rates_seed(App $a): void {
- if($a->meta('booking_rates_seeded'))return;$a->meta('booking_rates_seeded','1');
+ if(!$a->meta('booking_rate_ot_seeded')){$a->meta('booking_rate_ot_seeded','1');booking_rates_seed_list($a,BOOKING_RATE_SEED_OT);}
+ if($a->meta('booking_rates_seeded'))return;$a->meta('booking_rates_seeded','1');booking_rates_seed_list($a,BOOKING_RATE_SEED);
+}
+function booking_rates_seed_list(App $a,array $seed): void {
  $admin=$a->scalar("SELECT id FROM {{users}} WHERE role='admin' AND archived=0 ORDER BY id LIMIT 1");if(!$admin||!function_exists('task_fold'))return;
  $people=$a->all("SELECT id,name FROM {{users}} WHERE archived=0 AND status!='inactive'");
- foreach(BOOKING_RATE_SEED as [$key,$rate]){
+ foreach($seed as [$key,$rate]){
   // Chỉ gán khi tên gọi khớp đúng một người; trùng hoặc không có thì Admin tự nhập trong hồ sơ nhân viên.
   $hits=array_values(array_filter($people,fn($p)=>(explode(' ',task_fold($p['name']))[substr_count(task_fold($p['name']),' ')]??'')===$key));
   if(count($hits)===1)$a->run('INSERT IGNORE INTO {{booking_rates}} VALUES(?,?,?,?)',[$hits[0]['id'],$rate,$admin,now_ms()]);
@@ -89,8 +96,8 @@ function attendance_presence(App $a,array $users,string $from,string $to,int $no
  if(!$users)return [];$by=[];$out=[];
  foreach($a->all('SELECT id,user_id,type,time,shift,work_date FROM {{events}} WHERE user_id IN ('.implode(',',array_fill(0,count($users),'?')).') AND time>=? AND time<?',[...$users,day_time($from)-86400000,day_time($to)+2*86400000]) as $e)$by[(int)$e['user_id']][]=['id'=>(int)$e['id'],'time'=>(int)$e['time']]+$e;
  foreach($by as $id=>$events){$p=pairs($events);
-  foreach($p['pairs'] as $s)$out[$id][]=[(int)$s['entry']['time'],(int)$s['exit']['time']];
-  foreach($p['pending'] as $e){$w=$e['shift']==='ot'?null:bounds($e['work_date']??local_day($e['time']),$e['shift']??null);$out[$id][]=[$e['time'],$w?max($e['time'],$w['end']+1800000):($e['shift']==='ot'?$now:$e['time'])];}
+  foreach($p['pairs'] as $s)$out[$id][]=[(int)$s['entry']['time'],(int)$s['exit']['time'],$s['entry']['shift']??null];
+  foreach($p['pending'] as $e){$w=$e['shift']==='ot'?null:bounds($e['work_date']??local_day($e['time']),$e['shift']??null);$out[$id][]=[$e['time'],$w?max($e['time'],$w['end']+1800000):($e['shift']==='ot'?$now:$e['time']),$e['shift']??null];}
  }
  return $out;
 }
@@ -103,9 +110,10 @@ function booking_month_commissions(App $a,string $month,int $now): array {
  foreach($a->all("SELECT DISTINCT s.user_id,b.id,b.shoot_day,b.minutes,b.package_label,b.note,b.customer_name FROM {{shoot_bookings}} b JOIN {{booking_staff}} s ON s.booking_id=b.id WHERE b.status='active' AND b.shoot_day>=? AND b.shoot_day<=?",[$start,$end]) as $r)
   if(isset($rates[(int)$r['user_id']])&&!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute)))$rows[]=$r;
  $present=attendance_presence($a,array_values(array_unique(array_map(fn($r)=>(int)$r['user_id'],$rows))),$start,$end,$now);
- foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'units'=>0,'unpriced'=>0,'unpriced_list'=>[],'absent'=>0,'rate'=>$rate];
+ $ot=booking_month_ot($a,$rates,$start,$end,$now);
+ foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'units'=>0,'unpriced'=>0,'unpriced_list'=>[],'absent'=>0,'rate'=>$rate,'ot'=>$ot[$id]];
  $items=booking_customer_items($a,$rows);
- foreach($rows as $r){$id=(int)$r['user_id'];
+ foreach($rows as $r){$id=(int)$r['user_id'];if(isset($ot[$id]['ids'][$r['id']]))continue;
   $from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;
   $it=$items[$r['id']];if(!$it['customers'])continue;
   $here=false;foreach($present[$id]??[] as [$in,$exit])if($in<$to&&$exit>$from){$here=true;break;}
@@ -267,6 +275,18 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
  return [200,['ok'=>true]];
 }
 // Ca không khách được Admin/Quản lý bổ sung công trong tháng, theo từng nhân viên.
+// Khách OT của từng người có mức hoa hồng: lịch đang hoạt động, đã qua giờ chụp, bắt đầu từ 19:00, người đó có lượt OT trùng giờ chụp.
+// Xét theo chấm OT, không theo thợ trên lịch (Sheet không có cột Thợ, Tín không được gán lịch).
+function booking_month_ot(App $a,array $rates,string $start,string $end,int $now): array {
+ $out=[];foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'rate'=>$rate*BOOKING_OT_FACTOR,'list'=>[],'ids'=>[]];if(!$rates)return $out;
+ $today=local_day($now);$minute=intdiv($now-day_time($today),60000);
+ $rows=array_values(array_filter($a->all("SELECT id,shoot_day,minutes,package_label,note,customer_name FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? AND minutes>=? ORDER BY shoot_day,minutes",[$start,$end,BOOKING_OT_MINUTE]),fn($r)=>!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute))));
+ if(!$rows)return $out;$present=attendance_presence($a,array_keys($rates),$start,$end,$now);
+ foreach($rows as $r){$from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;
+  foreach($rates as $id=>$rate){$here=false;foreach($present[$id]??[] as $s)if(($s[2]??null)==='ot'&&$s[0]<$to&&$s[1]>$from){$here=true;break;}if(!$here)continue;
+   $out[$id]['customers']++;$out[$id]['ids'][$r['id']]=true;$out[$id]['list'][]=['day'=>$r['shoot_day'],'time'=>booking_hm((int)$r['minutes']),'customer_name'=>$r['customer_name'],'package_label'=>$r['package_label']];}}
+ return $out;
+}
 function shift_credits(App $a,string $month): array {
  $out=[];foreach($a->all('SELECT c.user_id,c.day,c.shift,c.note,c.created_at,u.name by_name FROM {{shift_credits}} c LEFT JOIN {{users}} u ON u.id=c.created_by WHERE c.day>=? AND c.day<=? ORDER BY c.day,c.shift',[$month.'-01',$month.'-31']) as $r)$out[(int)$r['user_id']][]=['key'=>$r['day'].':'.$r['shift'],'note'=>$r['note'],'by'=>$r['by_name']??'','at'=>(int)$r['created_at']];
  return $out;
@@ -279,6 +299,7 @@ function payroll_apply(App $a,string $month,array $rows,bool $money=true): array
   if($progress&&$p['role']==='employee'){$p['attendance_target']=attendance_target($month);$p['attendance_bonus_vnd']=ATTENDANCE_BONUS_VND;$p['attendance_bonus']=$p['days']>=$p['attendance_target']?ATTENDANCE_BONUS_VND:0;}
   // Trực Fanpage không có hoa hồng khách chụp.
   if($profile!=='fanpage'&&($b=$bookings[$p['id']]??null)){$p['booking_customers']=$b['customers'];$p['booking_units']=$b['units'];$p['booking_rate']=$b['rate'];$p['booking_unpriced']=$b['unpriced'];$p['booking_unpriced_list']=$b['unpriced_list'];$p['booking_absent']=$b['absent'];$p['booking_commission']=$b['rate']*$b['units'];}
+  if($progress&&$p['role']==='employee'&&($o=$bookings[$p['id']]['ot']??null)){$p['ot_booking_customers']=$o['customers'];$p['ot_booking_rate']=$o['rate'];$p['ot_booking_base']=intdiv($o['rate'],BOOKING_OT_FACTOR);$p['ot_booking_list']=$o['list'];}
   if(!$money)continue;$extra=$bonuses[$p['id']]??[];$items=$extra['items']??[];$p['ot_rate']=$items['ot_rate']??0;unset($items['ot_rate']);$photos=$items['retouch_count']??0;unset($items['retouch_count']);
   if($progress){$p['bonus_profile']=$profile;$p['bonus_kinds']=profile_kinds($profile);
    // Ca làm không có khách (chủ dự án chốt 02/11/2026): số ca × lương 1/2 ngày (lương cứng / số ngày của tháng / 2).
@@ -290,7 +311,8 @@ function payroll_apply(App $a,string $month,array $rows,bool $money=true): array
    else{unset($items['fanpage']);$items['no_customer']=$empty;$p['retouch_count']=$photos;$p['retouch_rate']=RETOUCH_PHOTO_VND;$items['retouch']=$photos*RETOUCH_PHOTO_VND;$p['meal_base']=MEAL_DEFAULT_VND;$p['meal_adjust']=$items['meal']??0;$items['meal']=max(0,MEAL_DEFAULT_VND+$p['meal_adjust']);
     if($share!==null)$items['tips']=$share;else unset($items['tips']);
     if($o=$outdoor[(int)$p['id']]??null){$items['outdoor']=$o['amount'];$p['outdoor_count']=$o['count'];$p['outdoor_days']=$o['days'];$p['outdoor_missed']=$o['missed'];$p['outdoor_rate']=OUTDOOR_BONUS_VND;}else unset($items['outdoor']);}}
-  $p['ot_bonus']=$p['otSessions']*$p['ot_rate'];$p['bonus_items']=$items;$p['bonus_updated_at']=$extra['at']??null;$p['bonus_updated_by']=$extra['by']??null;
+  // Từ 11/2026 thưởng OT = hoa hồng khách OT (cả nhóm Trực Fanpage); tháng trước giữ lượt OT × đơn giá nhập tay.
+  $p['ot_bonus']=$progress?($p['ot_booking_customers']??0)*($p['ot_booking_rate']??0):$p['otSessions']*$p['ot_rate'];if($progress)$p['ot_rate']=0;$p['bonus_items']=$items;$p['bonus_updated_at']=$extra['at']??null;$p['bonus_updated_by']=$extra['by']??null;
   $p['bonus_total']=(int)$p['commission']+($p['booking_commission']??0)+($p['attendance_bonus']??0)+$p['ot_bonus']+array_sum($items);$p['kpi_money']=$used*KPI_POINT_VND;$p['kpi_applied']=max(0,min($p['kpi_money'],$p['bonus_total']));
   $p['gross_salary']=(int)$p['base_salary']+$p['bonus_total'];$p['salary']=$p['gross_salary']-$p['kpi_applied'];}
  unset($p);return $rows;

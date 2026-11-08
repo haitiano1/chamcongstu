@@ -30,14 +30,14 @@ try{$a->tx(function()use($a){
  ] as [$d,$t,$pkg,$note])$rows[]=['id'=>uuid_v4(),'day'=>$d,'time'=>$t,'status'=>'active','main_alias'=>$alias,'support_alias'=>'','package_label'=>$pkg,'note'=>$note,'customer_name'=>'Presence fixture'];
  import_bookings($a,['tab'=>'presence-test','rows'=>$rows],'presence-test',null);
  $now=$at('2026-11-12','10:00');$r=booking_month_commissions($a,'2026-11',$now)[$id];
- verify($r['customers']===6,'Tính 6 khách có mặt (05/11 10:00, 16:30; 07/11 18:00 quên chấm ra; 08/11 vào muộn; 09/11 OT; 11/11 Team), được '.$r['customers']);
+ verify($r['customers']===5&&$r['ot']['customers']===1,'Tính 5 khách có mặt (05/11 10:00, 16:30; 07/11 18:00 quên chấm ra; 08/11 vào muộn; 11/11 Team) + 1 khách OT 09/11 19:30 (hoa hồng OT riêng, từ 08/11/2026), được '.$r['customers'].' + '.$r['ot']['customers']);
  verify($r['absent']===5,'Không tính 5 khách (05/11 18:00, 19:00 sau khi chấm ra 17:00; 06/11 không chấm công; 07/11 19:40 quá hạn 19:30; 10/11 chấm ra đúng 12:00), được '.$r['absent']);
- verify($r['units']===6&&$r['unpriced']===0,'Couple 999 không có mặt nên không cộng 2 suất');
+ verify($r['units']===5&&$r['unpriced']===0,'Couple 999 không có mặt nên không cộng 2 suất');
  // 05/11 không chấm ra 17:00 (quên) thì khách 18:00, 19:00 vẫn tính tới hạn 19:30.
  $a->run("DELETE FROM {{events}} WHERE user_id=? AND work_date='2026-11-05' AND type='out' AND shift='day_second'",[$id]);
- $r=booking_month_commissions($a,'2026-11',$now)[$id];verify($r['customers']===8&&$r['absent']===3&&$r['units']===9,'Quên chấm ra coi như có mặt tới 19:30');
+ $r=booking_month_commissions($a,'2026-11',$now)[$id];verify($r['customers']===7&&$r['absent']===3&&$r['units']===8,'Quên chấm ra coi như có mặt tới 19:30');
  // Khách chưa tới giờ chụp (20/11) chưa tính, cũng không đếm là vắng.
- $r=booking_month_commissions($a,'2026-11',$at('2026-11-30','23:00'))[$id];verify($r['customers']+$r['absent']===12,'Khách 20/11 tính khi đã qua giờ: '.json_encode($r));
+ $r=booking_month_commissions($a,'2026-11',$at('2026-11-30','23:00'))[$id];verify($r['customers']+$r['absent']+$r['ot']['customers']===12,'Khách 20/11 tính khi đã qua giờ: '.json_encode($r));
  verify($r['absent']===4,'20/11 không chấm công thì không tính');
  // Bảng công nhân viên thấy số khách không tính; từ 02/11/2026 thấy cả mức hoa hồng (Phiếu thưởng), vẫn không thấy lương.
  $row=visible_summary(['role'=>'employee'],['booking_absent'=>3,'booking_customers'=>8,'booking_commission'=>90000,'salary'=>1,'booking_rate'=>10000]);
