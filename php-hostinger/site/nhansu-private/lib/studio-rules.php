@@ -75,11 +75,12 @@ const GUIDE_ITEMS=[
   'Bấm "Mở Telegram, nhấn Start" → Telegram mở bot của studio → bấm Start. Quay lại app là khung xanh tự ẩn.',
   'Bot nhắc chấm vào ca, nhắc chấm ra, báo việc mới, kết quả duyệt, trả lời hỗ trợ và biên bản họp.',
   'Không liên kết thì không nhận được nhắc. Quên chấm công vẫn tính theo quy định.']],
- 'checkin'=>['v'=>1,'page'=>'attendance','title'=>'Chấm công vào ca','steps'=>[
+ 'checkin'=>['v'=>2,'page'=>'attendance','title'=>'Chấm công vào ca','steps'=>[
   'Vào trang Chấm công. Ca 1: 09:00–14:00, Ca 2: 14:00–19:00.',
   'Bấm đúng ca mình làm: Ca 1, Ca 2 hoặc Làm cả ngày. Chưa chọn ca thì nút chấm công bị khóa.',
   'Bấm nút Chấm công vào, cho phép camera và vị trí (GPS), chụp rõ mặt tại studio.',
   'Mốc đi muộn là khách đầu tiên của ca: tới sau giờ khách đầu tiên quá 30 phút là muộn. Trong tháng: lần 1 miễn, lần 2 trừ 20, lần 3 trừ 100, từ lần 4 trừ 300 điểm KPI.',
+  'Đóng điểm danh: quá 1 tiếng sau khách đầu tiên (VD khách 10:00, 11:01 mới tới) thì ca đó không tính công. Bấm Ghi có mặt (chụp ảnh, GPS như thường) để khách bạn chụp vẫn tính hoa hồng.',
   'Ca mà cả studio không có khách vẫn chấm công, không tính công nhưng được thưởng "Ca làm không có khách" (xem Phiếu thưởng).']],
  'fullday'=>['v'=>1,'page'=>'attendance','title'=>'Làm cả ngày','steps'=>[
   'Chỉ chọn Làm cả ngày khi chấm vào lần đầu trong ngày, trong giờ Ca 1 (09:00–14:00).',
@@ -92,14 +93,15 @@ const GUIDE_ITEMS=[
   'Về khi còn khách được giao: app cảnh báo, những khách đó không tính hoa hồng, Quản lý được báo.',
   'Đã chấm ra mà quay lại làm: bấm "Tôi đổi ý, làm tiếp" (trong giờ ca).',
   'Ca 2 phải xong hết Việc hằng ngày và việc có hạn hôm nay mới chấm ra được.']],
- 'ot'=>['v'=>1,'page'=>'attendance','title'=>'Làm thêm giờ (OT)','steps'=>[
+ 'ot'=>['v'=>2,'page'=>'attendance','title'=>'Làm thêm giờ (OT)','steps'=>[
   'OT bắt đầu từ 19:00, chấm vào / ra OT riêng ở trang Chấm công, có hộp xác nhận.',
-  'OT không tự cộng tiền theo giờ: thưởng OT = số lượt OT hoàn tất × đơn giá Quản lý đặt.',
+  'OT không tính theo giờ. Thưởng OT là hoa hồng khách OT: mỗi lịch chụp từ 19:00 mà bạn có chấm OT trong giờ chụp = 1 khách × 2 lần mức hoa hồng của bạn.',
   'Xem lại các lượt OT ở mục "Lịch sử OT của tôi" cuối trang Chấm công.']],
- 'supplement'=>['v'=>1,'page'=>'attendance','title'=>'Yêu cầu bổ sung công','steps'=>[
+ 'supplement'=>['v'=>2,'page'=>'attendance','title'=>'Yêu cầu bổ sung công','steps'=>[
   'Quên chấm công hoặc gặp sự cố: trang Chấm công → khung Yêu cầu bổ sung công → bấm Gửi yêu cầu.',
-  'Chọn ngày, ca, giờ vào / ra thực tế và ghi rõ lý do → gửi.',
-  'Quản lý duyệt mới được tính công. Xem trạng thái ở "Xem yêu cầu".']],
+  'Bấm Ca 1, Ca 2, OT hoặc Cả 2 ca. Quên chấm cả lượt thì chọn "Cả vào và ra", nhập giờ vào, giờ ra thực tế, ghi rõ lý do → gửi.',
+  'Quản lý duyệt mới được tính công. Xem trạng thái ở "Xem yêu cầu".',
+  'Gửi nhầm: khi yêu cầu còn Chờ xử lý, bấm 🗑 góc phải yêu cầu để xóa.']],
  'bookings'=>['v'=>1,'page'=>'bookings','title'=>'Lịch chụp','steps'=>[
   'Bấm Lịch → Lịch chụp. Xem Toàn studio hoặc Lịch của tôi; điện thoại mở sẵn ngày hôm nay, bấm ‹ › để đổi ngày.',
   'Mỗi thẻ: giờ - tên khách - gói - ca - make up, dòng dưới là thợ. Bấm vào thẻ để xem đủ thông tin khách.',

@@ -361,6 +361,17 @@ function attendance_issues(App $a,string $month,?int $person=null): array {
 // đi muộn. Đếm theo tháng: lần 1 miễn, lần 2 trừ 20, lần 3 trừ 100, từ lần 4 trừ 300 điểm KPI. Lần có Event log bị hủy/xóa không đếm.
 // Cron xử lý mỗi lượt một lần (bảng late_checkins): từ lần 2 tự ghi Event log trừ điểm; mọi lần đều báo Telegram cho người đi muộn và Admin/Quản lý.
 const LATE_GRACE_MS=1800000;
+// Đóng điểm danh (chủ dự án yêu cầu 08/11/2026): chấm vào lần đầu của ca quá 1 tiếng sau khách đầu tiên được giao (VD khách 10:00, 11:01 mới chấm)
+// thì không cho chấm công bình thường, ca đó không tính công. Nhân viên vẫn bấm "Ghi có mặt" (ảnh + GPS như thường, events.no_credit=1)
+// để có giờ có mặt cho hoa hồng khách; chấm ra như thường. Chỉ role Nhân viên; chấm hộ / duyệt bổ sung công không bị chặn.
+const CHECKIN_CLOSE_MS=3600000;
+function checkin_closed(App $a,array $user,string $shift,int $now): ?array {
+ if($user['role']!=='employee'||!in_array($shift,['day_first','day_second'],true))return null;$day=local_day($now);
+ if($a->one('SELECT id FROM {{events}} WHERE user_id=? AND work_date=? AND shift=? LIMIT 1',[$user['id'],$day,$shift]))return null;
+ $e=expected_shift($a,(int)$user['id'],$day,$shift);if(!$e||$now<=$e['expected_at']+CHECKIN_CLOSE_MS)return null;
+ return ['expected_at'=>(int)$e['expected_at'],'closed_at'=>(int)$e['expected_at']+CHECKIN_CLOSE_MS];
+}
+function checkin_closed_message(string $shift,array $c): string {return 'Đã đóng điểm danh '.($shift==='day_first'?'Ca 1':'Ca 2').': khách đầu tiên '.late_hm($c['expected_at']).', điểm danh đóng lúc '.late_hm($c['closed_at']).'. Ca này không tính công; bấm Ghi có mặt để vẫn tính hoa hồng khách bạn chụp.';}
 const LATE_RULE_CODE='DM-01';
 const LATE_AUTO_LABEL='Tự động ghi khi checkin muộn';
 function late_points(int $ordinal): int {return $ordinal<=1?0:($ordinal===2?20:($ordinal===3?100:300));}
