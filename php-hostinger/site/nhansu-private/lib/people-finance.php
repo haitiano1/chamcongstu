@@ -97,8 +97,8 @@ function attendance_presence(App $a,array $users,string $from,string $to,int $no
  if(!$users)return [];$by=[];$out=[];
  foreach($a->all('SELECT id,user_id,type,time,shift,work_date FROM {{events}} WHERE user_id IN ('.implode(',',array_fill(0,count($users),'?')).') AND time>=? AND time<?',[...$users,day_time($from)-86400000,day_time($to)+2*86400000]) as $e)$by[(int)$e['user_id']][]=['id'=>(int)$e['id'],'time'=>(int)$e['time']]+$e;
  foreach($by as $id=>$events){$p=pairs($events);
-  foreach($p['pairs'] as $s)$out[$id][]=[(int)$s['entry']['time'],(int)$s['exit']['time'],$s['entry']['shift']??null];
-  foreach($p['pending'] as $e){$w=$e['shift']==='ot'?null:bounds($e['work_date']??local_day($e['time']),$e['shift']??null);$out[$id][]=[$e['time'],$w?max($e['time'],$w['end']+1800000):($e['shift']==='ot'?$now:$e['time']),$e['shift']??null];}
+  foreach($p['pairs'] as $s)$out[$id][]=[(int)$s['entry']['time'],(int)$s['exit']['time'],$s['entry']['shift']??null,(int)$s['entry']['id'],(int)$s['exit']['id']];
+  foreach($p['pending'] as $e){$w=$e['shift']==='ot'?null:bounds($e['work_date']??local_day($e['time']),$e['shift']??null);$out[$id][]=[$e['time'],$w?max($e['time'],$w['end']+1800000):($e['shift']==='ot'?$now:$e['time']),$e['shift']??null,(int)$e['id'],null];}
  }
  return $out;
 }
@@ -282,7 +282,7 @@ function payroll_bonus_routes(App $a,string $path,array $b,string $method): ?arr
 function booking_month_ot(App $a,array $rates,string $start,string $end,int $now): array {
  $out=[];foreach($rates as $id=>$rate)$out[$id]=['customers'=>0,'rate'=>$rate*BOOKING_OT_FACTOR,'list'=>[],'ids'=>[],'sessions'=>[]];if(!$rates)return $out;
  $today=local_day($now);$minute=intdiv($now-day_time($today),60000);$present=attendance_presence($a,array_keys($rates),$start,$end,$now);
- $lo=day_time($start);$hi=day_time($end)+86400000;$ots=[];foreach($present as $id=>$list)foreach($list as $s)if(($s[2]??null)==='ot'&&$s[1]>$lo&&$s[0]<$hi){$ots[$id][]=$s;$out[$id]['sessions'][]=['in'=>(int)$s[0],'out'=>(int)$s[1]];}
+ $lo=day_time($start);$hi=day_time($end)+86400000;$ots=[];foreach($present as $id=>$list)foreach($list as $s)if(($s[2]??null)==='ot'&&$s[1]>$lo&&$s[0]<$hi){$ots[$id][]=$s;$out[$id]['sessions'][]=['in'=>(int)$s[0],'out'=>(int)$s[1],'in_id'=>$s[3]??null,'out_id'=>$s[4]??null];}
  if(!$ots)return $out;
  $rows=array_values(array_filter($a->all("SELECT id,shoot_day,minutes,package_label,note,customer_name FROM {{shoot_bookings}} WHERE status='active' AND shoot_day>=? AND shoot_day<=? ORDER BY shoot_day,minutes",[$start,$end]),fn($r)=>!($r['shoot_day']>$today||($r['shoot_day']===$today&&(int)$r['minutes']>$minute))));
  foreach($rows as $r){$from=day_time($r['shoot_day'])+(int)$r['minutes']*60000;$to=$from+booking_length($r['package_label'],$r['note'])*60000;
