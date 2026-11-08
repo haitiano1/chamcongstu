@@ -1,6 +1,6 @@
 <?php
 // Hoa hồng khách OT (chủ dự án yêu cầu 08/11/2026): lịch từ 19:00 có chấm OT trong giờ chụp, 1 lịch = 1 khách × mức × 2; Tín (Trực Fanpage) chỉ có khoản này.
-foreach(['bootstrap','telegram','bookings','people-finance','tasks','availability'] as $f)require_once __DIR__.'/../site/nhansu-private/lib/'.$f.'.php';
+foreach(['bootstrap','telegram','bookings','people-finance','tasks','availability','workflows','api'] as $f)require_once __DIR__.'/../site/nhansu-private/lib/'.$f.'.php';
 $a=new App('/var/nhansu-private');$n=0;function verify($v,$message){global $n;if(!$v)throw new RuntimeException('FAIL: '.$message);$n++;}
 try{$a->tx(function()use($a){
  $day='2026-11-03';$month='2026-11';$a->run("UPDATE {{shoot_bookings}} SET status='cancelled' WHERE shoot_day=?",[$day]);
@@ -20,5 +20,22 @@ try{$a->tx(function()use($a){
  $l=$rows[$late];verify($l['ot_booking_customers']===0&&$l['ot_bonus']===0&&$l['booking_absent']===2,'Không chấm OT: lịch OT không tính (khách ngoài giờ chấm công)');
  verify(count($h['ot_booking_list'])===2&&$h['ot_booking_list'][0]['time']==='19:00','Danh sách lịch OT');
  $staff=visible_summary(['role'=>'employee'],$t);verify(isset($staff['ot_booking_customers'],$staff['ot_bonus'])&&!isset($staff['salary']),'Nhân viên thấy khoản OT của mình');
+ // 09/11/2026: khách 18:30 chụp lúc đã vào OT 19:00 cũng tính khách OT (theo giờ chụp trùng lượt OT).
+ $book('18:30','699','Khach 18h30',[$huy,$late]);$rows=array_column(payroll_apply($a,$month,$a->summaries($month)),null,'id');
+ verify($rows[$huy]['ot_booking_customers']===3&&$rows[$huy]['booking_customers']===1,'Huy: khách 18:30 trùng lượt OT tính OT, không tính thường');
+ verify($rows[$tin]['ot_booking_customers']===3,'Tín vào OT 19:05: khách 18:30 (chụp tới 19:30) trùng lượt OT nên tính');
+ verify(count($rows[$huy]['ot_sessions'])===1&&$rows[$huy]['ot_sessions'][0]['out']>$rows[$huy]['ot_sessions'][0]['in'],'Phiếu lương có giờ lượt OT');
+ // Chấm hộ cả lượt OT (Tín quên chấm): ngày 05/11, 19:00 → 00:30 hôm sau, khách 20:00 hôm đó → 1 khách OT.
+ $d2='2026-11-05';$a->run("UPDATE {{shoot_bookings}} SET status='cancelled' WHERE shoot_day=?",[$d2]);$id2=uuid_v4();$a->run("INSERT INTO {{shoot_bookings}}(id,source_sheet,source_tab,source_row,shoot_day,minutes,package_label,customer_name,customer_phone,main_alias,support_alias,note,status,created_at,updated_at) VALUES(?,'test','test',1,?,1200,'699','Khach 20h','','','','','active',?,?)",[$id2,$d2,now_ms(),now_ms()]);
+ $t0=day_time($d2)+19*3600000;$post=fn($b)=>management_routes($a,'/attendance/manual-shift',$b+['user_id'=>$tin,'shift'=>'ot','reason'=>'Quên chấm OT, quản lý xác nhận'],'POST');
+ try{$post(['in_time'=>$t0,'out_time'=>(int)($t0+5.5*3600000)]);verify(false,'Thiếu xác nhận OT phải bị chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'Xác nhận'),'Chấm hộ OT cần xác nhận');}
+ $ids=$post(['in_time'=>$t0,'out_time'=>(int)($t0+5.5*3600000),'ot_confirmed'=>true])[1]['ids'];
+ $rows=array_column(payroll_apply($a,$month,$a->summaries($month)),null,'id');verify($rows[$tin]['ot_booking_customers']===4&&$rows[$tin]['otSessions']===2,'Chấm hộ cả lượt OT qua 0h: thêm 1 khách OT cho Tín');
+ try{$post(['in_time'=>$t0+3600000,'out_time'=>$t0+2*3600000,'ot_confirmed'=>true]);verify(false,'Trùng lượt OT phải chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'đã có lượt OT'),'Không chấm hộ OT trùng giờ');}
+ // Xóa lượt chấm hộ: xóa lượt vào khi còn lượt ra thì chặn; xóa ra rồi vào thì hết khách OT.
+ try{workflow_routes($a,"/events/{$ids[0]}/delete",[],'POST');verify(false,'Phải chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'sai thứ tự'),'Xóa lượt vào trước lượt ra thì chặn');}
+ workflow_routes($a,"/events/{$ids[1]}/delete",['note'=>'Sai giờ'],'POST');workflow_routes($a,"/events/{$ids[0]}/delete",[],'POST');
+ $rows=array_column(payroll_apply($a,$month,$a->summaries($month)),null,'id');verify($rows[$tin]['ot_booking_customers']===3,'Đã xóa lượt chấm hộ OT');
+ $self=(int)$a->scalar("SELECT id FROM {{events}} WHERE user_id=? AND source='self' LIMIT 1",[$tin]);try{workflow_routes($a,"/events/$self/delete",[],'POST');verify(false,'Phải chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'tự chấm'),'Không xóa lượt tự chấm');}
  throw new RuntimeException('ROLLBACK');});}catch(RuntimeException $e){if($e->getMessage()!=='ROLLBACK'){echo $e->getMessage(),"\n";exit(1);}}
 echo "OK $n kiểm tra\n";

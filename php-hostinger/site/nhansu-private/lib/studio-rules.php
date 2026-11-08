@@ -95,7 +95,7 @@ const GUIDE_ITEMS=[
   'Ca 2 phải xong hết Việc hằng ngày và việc có hạn hôm nay mới chấm ra được.']],
  'ot'=>['v'=>2,'page'=>'attendance','title'=>'Làm thêm giờ (OT)','steps'=>[
   'OT bắt đầu từ 19:00, chấm vào / ra OT riêng ở trang Chấm công, có hộp xác nhận.',
-  'OT không tính theo giờ. Thưởng OT là hoa hồng khách OT: mỗi lịch chụp từ 19:00 mà bạn có chấm OT trong giờ chụp = 1 khách × 2 lần mức hoa hồng của bạn.',
+  'OT không tính theo giờ. Thưởng OT là hoa hồng khách OT: mỗi lịch chụp có giờ chụp trùng lượt OT của bạn = 1 khách × 2 lần mức hoa hồng của bạn. Quên chấm OT thì báo Quản lý chấm hộ đúng ngày giờ.',
   'Xem lại các lượt OT ở mục "Lịch sử OT của tôi" cuối trang Chấm công.']],
  'supplement'=>['v'=>2,'page'=>'attendance','title'=>'Yêu cầu bổ sung công','steps'=>[
   'Quên chấm công hoặc gặp sự cố: trang Chấm công → khung Yêu cầu bổ sung công → bấm Gửi yêu cầu.',
