@@ -337,11 +337,14 @@ function task_due_today(App $a,int $user,?int $now=null): array {
  $day=local_day($now??now_ms());$tomorrow=day_time(gmdate('Y-m-d',strtotime($day.'T00:00:00Z')+86400));
  return $a->all("SELECT t.id,t.kind,t.title,t.due_at,t.require_photo FROM {{tasks}} t JOIN {{task_recipients}} r ON r.task_id=t.id AND r.user_id=? WHERE t.status='open' AND t.template_id IS NULL AND t.due_at IS NOT NULL AND t.due_at>=? AND t.due_at<? AND ((t.kind='task' AND r.done_at IS NULL) OR (t.kind<>'task' AND r.seen_at IS NULL)) AND NOT EXISTS(SELECT 1 FROM {{task_declines}} d WHERE d.task_id=t.id AND d.user_id=r.user_id AND d.status='pending') ORDER BY t.due_at,t.title",[$user,day_time(TASK_DUE_LOCK_FROM),$tomorrow]);
 }
+// Khóa chấm ra: Ca 2, hoặc kết thúc OT (chủ dự án yêu cầu 09/11/2026: vào OT thì Ca 2 tự chấm ra không khóa, khóa chuyển sang lúc kết thúc OT).
+// OT kết thúc sau nửa đêm thì không khóa nữa (việc hằng ngày của hôm trước không báo xong được).
 function daily_tasks_block_checkout(App $a,array $b): void {
- if(($b['type']??'')!=='out'||($b['shift']??'')!=='day_second')return;
+ $shift=$b['shift']??'';if(($b['type']??'')!=='out'||!in_array($shift,['day_second','ot'],true))return;
+ if($shift==='ot'){$open=array_values(array_filter(pairs($a->events($a->user['id']))['pending'],fn($e)=>$e['shift']==='ot'));if(!$open||$open[0]['work_date']!==local_day(now_ms()))return;}
  $left=array_column(array_filter(daily_tasks_today($a,$a->user['id']),fn($t)=>$t['done_at']===null),'title');
  foreach(task_due_today($a,$a->user['id']) as $t)$left[]=($t['kind']==='task'?'':'Nhắc nhở: ').$t['title'].' (hạn '.date('H:i d/m',intdiv((int)$t['due_at'],1000)).')';
- if($left)fail('Cần hoàn thành trước khi chấm ra ca 2: '.implode('; ',$left).'. Vào mục Việc để báo xong (Nhắc nhở: bấm Đã xem).',409);
+ if($left)fail('Cần hoàn thành trước khi chấm ra '.($shift==='ot'?'OT':'ca 2').': '.implode('; ',$left).'. Vào mục Việc để báo xong (Nhắc nhở: bấm Đã xem).',409);
 }
 function daily_template_routes(App $a,string $path,array $b,string $method): ?array {
  if($path!=='/tasks/templates'&&!str_starts_with($path,'/tasks/templates/'))return null;

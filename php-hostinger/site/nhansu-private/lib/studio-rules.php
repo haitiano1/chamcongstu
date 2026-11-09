@@ -87,14 +87,14 @@ const GUIDE_ITEMS=[
   'Bấm Làm cả ngày → tick "Hôm nay bạn làm cả ngày đúng không?" → chấm công vào.',
   'Đúng 14:00 app tự chấm ra Ca 1 và vào Ca 2. Cuối ngày chấm ra Ca 2 như thường.',
   'Chỉ làm 1 ca mà chọn Làm cả ngày sẽ bị phạt.']],
- 'checkout'=>['v'=>1,'page'=>'attendance','title'=>'Chấm ra và làm tiếp','steps'=>[
+ 'checkout'=>['v'=>2,'page'=>'attendance','title'=>'Chấm ra và làm tiếp','steps'=>[
   'Hết ca: ca đang làm hiện "Đang làm", app tự chọn ca đó → bấm Chấm công ra.',
   'Hạn chấm ra: Ca 1 trước 14:30, Ca 2 trước 19:30. Quá giờ phải gửi Yêu cầu bổ sung công.',
   'Về khi còn khách được giao: app cảnh báo, những khách đó không tính hoa hồng, Quản lý được báo.',
   'Đã chấm ra mà quay lại làm: bấm "Tôi đổi ý, làm tiếp" (trong giờ ca).',
-  'Ca 2 phải xong hết Việc hằng ngày và việc có hạn hôm nay mới chấm ra được.']],
- 'ot'=>['v'=>2,'page'=>'attendance','title'=>'Làm thêm giờ (OT)','steps'=>[
-  'OT bắt đầu từ 19:00, chấm vào / ra OT riêng ở trang Chấm công, có hộp xác nhận.',
+  'Ca 2 phải xong hết Việc hằng ngày và việc có hạn hôm nay mới chấm ra được. Ở lại làm OT thì khóa này chuyển sang lúc kết thúc OT.']],
+ 'ot'=>['v'=>3,'page'=>'attendance','title'=>'Làm thêm giờ (OT)','steps'=>[
+  'OT mở từ 18:50: bấm Chấm công OT, có hộp xác nhận. Ca 2 còn mở thì app tự chấm ra Ca 2 rồi vào OT luôn (chụp ảnh 1 lần). Kết thúc OT phải xong Việc hằng ngày.',
   'OT không tính theo giờ. Thưởng OT là hoa hồng khách OT: mỗi lịch chụp có giờ chụp trùng lượt OT của bạn = 1 khách × 2 lần mức hoa hồng của bạn. Quên chấm OT thì báo Quản lý chấm hộ đúng ngày giờ.',
   'Xem lại các lượt OT ở mục "Lịch sử OT của tôi" cuối trang Chấm công.']],
  'supplement'=>['v'=>2,'page'=>'attendance','title'=>'Yêu cầu bổ sung công','steps'=>[
