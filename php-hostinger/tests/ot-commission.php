@@ -31,7 +31,15 @@ try{$a->tx(function()use($a){
  try{$post(['in_time'=>$t0,'out_time'=>(int)($t0+5.5*3600000)]);verify(false,'Thiếu xác nhận OT phải bị chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'Xác nhận'),'Chấm hộ OT cần xác nhận');}
  $ids=$post(['in_time'=>$t0,'out_time'=>(int)($t0+5.5*3600000),'ot_confirmed'=>true])[1]['ids'];
  $rows=array_column(payroll_apply($a,$month,$a->summaries($month)),null,'id');verify($rows[$tin]['ot_booking_customers']===4&&$rows[$tin]['otSessions']===2,'Chấm hộ cả lượt OT qua 0h: thêm 1 khách OT cho Tín');
- try{$post(['in_time'=>$t0+3600000,'out_time'=>$t0+2*3600000,'ot_confirmed'=>true]);verify(false,'Trùng lượt OT phải chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'đã có lượt OT'),'Không chấm hộ OT trùng giờ');}
+ $r=$post(['in_time'=>$t0+3600000,'out_time'=>$t0+2*3600000,'ot_confirmed'=>true]);verify($r[1]['existing']===true&&!$r[1]['ids'],'OT ngày đó đã đủ vào/ra: báo đã tính công, không ghi thêm');
+ // 09/11/2026: chấm hộ mọi trường hợp. OT 04/11 khi đã có lượt công sau đó (05/11), ghi chú bỏ trống → vẫn ghi.
+ $t4=day_time('2026-11-04')+19*3600000;$r=management_routes($a,'/attendance/manual-shift',['user_id'=>$tin,'shift'=>'ot','in_time'=>$t4,'out_time'=>$t4+3600000,'ot_confirmed'=>true,'reason'=>''],'POST');verify(count($r[1]['ids'])===2,'Chấm hộ OT ngày cũ khi đã có lượt công mới hơn, không ghi chú');
+ verify($a->scalar("SELECT COUNT(*) FROM {{events}} WHERE user_id=? AND work_date='2026-11-04' AND source='manual'",[$tin])==2,'Ghi đủ vào + ra');
+ // Ca 1 04/11: nhân viên chấm vào 09:10 quên ra → chấm hộ chỉ thêm giờ ra; chấm lại lần nữa thì báo đã đủ.
+ $a->run("INSERT INTO {{events}}(user_id,type,time,shift,work_date,source,reason) VALUES(?,'in',?,'day_first','2026-11-04','self','')",[$huy,day_time('2026-11-04')+(9*60+10)*60000]);
+ $c1=fn()=>management_routes($a,'/attendance/manual-shift',['user_id'=>$huy,'shift'=>'day_first','in_time'=>day_time('2026-11-04')+9*3600000,'out_time'=>day_time('2026-11-04')+14*3600000],'POST')[1];
+ $r=$c1();verify(count($r['ids'])===1&&$r['closed_only'],'Ca đang mở: chỉ thêm giờ ra');$r=$c1();verify(!empty($r['existing']),'Ca đã đủ: báo đã tính công');
+ $s=$a->summaries($month);$hs=array_column($s,null,'id')[$huy];verify($hs['incomplete']===0,'Ca 1 04/11 không còn thiếu giờ ra');
  // Xóa lượt chấm hộ: xóa lượt vào khi còn lượt ra thì chặn; xóa ra rồi vào thì hết khách OT.
  try{workflow_routes($a,"/events/{$ids[0]}/delete",[],'POST');verify(false,'Phải chặn');}catch(HttpError $e){verify(str_contains($e->getMessage(),'sai thứ tự'),'Xóa lượt vào trước lượt ra thì chặn');}
  workflow_routes($a,"/events/{$ids[1]}/delete",['note'=>'Sai giờ'],'POST');workflow_routes($a,"/events/{$ids[0]}/delete",[],'POST');
