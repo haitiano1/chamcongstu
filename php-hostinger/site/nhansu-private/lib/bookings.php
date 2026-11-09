@@ -480,14 +480,14 @@ function attendance_alert_tick(App $a,?int $clock=null,?Telegram $tg=null): void
  if(!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;
  $now=$clock??now_ms();$day=local_day($now);
  $managers=$a->all("SELECT u.id,l.chat_id FROM {{users}} u JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' ORDER BY u.id");if(!$managers)return;
- $by=[];foreach($a->all("SELECT e.id,e.user_id,e.type,e.time,e.shift,e.source,u.name FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.shift IN ('day_first','day_second') AND u.archived=0 AND u.role='employee' ORDER BY e.user_id,e.time,e.id",[$day]) as $e)$by[(int)$e['user_id']][$e['shift']][]=$e;
+ $by=[];foreach($a->all("SELECT e.id,e.user_id,e.type,e.time,e.shift,e.source,e.reason,u.name FROM {{events}} e JOIN {{users}} u ON u.id=e.user_id WHERE e.work_date=? AND e.shift IN ('day_first','day_second') AND u.archived=0 AND u.role='employee' ORDER BY e.user_id,e.time,e.id",[$day]) as $e)$by[(int)$e['user_id']][$e['shift']][]=$e;
  $sent=0;$label=late_day_label($day);
  foreach($by as $uid=>$shifts){$rows=null;
   foreach($shifts as $shift=>$list){$name=$list[0]['name'];$sname=$shift==='day_first'?'Ca 1':'Ca 2';
    foreach($list as $i=>$e){if($e['source']!=='self'||(int)$e['time']<$now-3*3600000)continue;
     $before=array_slice($list,0,$i);$after=array_slice($list,$i+1);$kind=null;$text='';$prev=$before?$before[count($before)-1]:null;
     if($e['type']==='in'&&$prev&&$prev['type']==='out'){$kind='resume';$text="🔁 Anh Gấu Studio · Quay lại làm tiếp\n".$name.' đã chấm ra '.$sname.' lúc '.late_hm((int)$prev['time']).', nay chấm vào lại lúc '.late_hm((int)$e['time']).' · '.$label."\n".$sname.' vẫn tính 1 ca, không cộng thêm công; khách chụp trong lúc '.$name.' có mặt được tính hoa hồng.';}
-    elseif($e['type']==='out'&&!array_filter($after,fn($x)=>$x['type']==='in')){$rows??=day_bookings($a,$uid,$day);$left=remaining_bookings($a,$uid,$day,$shift,(int)$e['time'],$rows);
+    elseif($e['type']==='out'&&$e['reason']!==OT_SWITCH_REASON&&!array_filter($after,fn($x)=>$x['type']==='in')){$rows??=day_bookings($a,$uid,$day);$left=remaining_bookings($a,$uid,$day,$shift,(int)$e['time'],$rows);
      if($left){$kind='early';$text="🏃 Anh Gấu Studio · Về khi còn khách\n".$name.' chấm ra '.$sname.' lúc '.late_hm((int)$e['time']).' · '.$label."\nCòn ".count($left)." khách được giao sau giờ này:\n".implode("\n",array_map(fn($r)=>'• '.booking_line($r),$left))."\nCác khách này không tính hoa hồng cho ".$name.' nếu không quay lại làm tiếp. Kiểm tra người thay.';}}
     if(!$kind)continue;
     foreach($managers as $m){if((int)$m['id']===$uid)continue;if($sent>=25)return;$slot=$kind.'_'.$e['id'];

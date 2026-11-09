@@ -1,6 +1,8 @@
 export const SHIFTS=[{id:'day_first',name:'Ca 1',start:9,end:14},{id:'day_second',name:'Ca 2',start:14,end:19}];
 export const CHECKOUT_GRACE_MINUTES=30;
 export const OT_SHIFT={id:'ot',name:'OT',start:19};
+// Mở chấm OT từ 18:50 (chủ dự án yêu cầu 09/11/2026); Ca 2 còn mở thì cùng lượt vào OT tự chấm ra Ca 2 (close).
+export const OT_OPEN_MINUTES=18*60+50,OT_OPEN_LABEL='18:50';
 export const ATTENDANCE_OPTIONS=[...SHIFTS,OT_SHIFT];
 const LEGACY=[{id:'morning',start:9,end:12},{id:'midday',start:12,end:15},{id:'afternoon',start:15,end:18}];
 export const localDay=t=>new Date(t+7*3600000).toISOString().slice(0,10);
@@ -11,9 +13,9 @@ export function attendanceDecision(events,id,now=Date.now(),{allowLateCheckout=f
  const day=localDay(now),{pending}=completedPairs(events),openOT=pending.find(e=>e.shift==='ot');
  if(id==='ot'){
   if(openOT)return {type:'out',workDate:openOT.work_date};
-  const hour=new Date(now+7*3600000).getUTCHours();if(hour<19)throw new Error('Chỉ được bắt đầu OT từ 19:00. OT đang mở vẫn có thể kết thúc sau nửa đêm.');
-  if(pending.some(e=>e.shift!=='ot'&&e.work_date===day))throw new Error('Hãy chấm ra ca chính trước khi bắt đầu OT.');
-  return {type:'in',workDate:day};
+  const t=new Date(now+7*3600000);if(t.getUTCHours()*60+t.getUTCMinutes()<OT_OPEN_MINUTES)throw new Error(`Chỉ được bắt đầu OT từ ${OT_OPEN_LABEL}. OT đang mở vẫn có thể kết thúc sau nửa đêm.`);
+  const open=pending.filter(e=>e.shift!=='ot'&&e.work_date===day);if(open.some(e=>e.shift!=='day_second'))throw new Error('Hãy chấm ra ca chính trước khi bắt đầu OT.');
+  return {type:'in',workDate:day,close:open.map(e=>e.shift)};
  }
  if(openOT)throw new Error('Hãy kết thúc lượt OT đang mở trước khi chấm ca chính.');
  const window=bounds(day,id);if(!SHIFTS.some(s=>s.id===id)||!window)throw new Error('Ca làm không hợp lệ.');
