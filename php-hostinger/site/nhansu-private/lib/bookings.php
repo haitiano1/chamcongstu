@@ -203,6 +203,7 @@ function booking_check_slot(App $a,array $b,string $day,int $start,int $end,?str
 }
 function booking_hm(int $minutes): string {return sprintf('%02d:%02d',intdiv($minutes,60),$minutes%60);}
 function booking_sheet_tab(string $day): string {return 'Tháng '.(int)substr($day,5,2);}
+// Xóa lịch (chủ dự án yêu cầu 12/11/2026): Admin/Quản lý luôn được; Nhân viên cần Admin tick "Xóa lịch chụp" (booking_deleters).
 // Admin và Quản lý luôn được lên lịch chụp (thêm, sửa, hủy, chọn gói); Nhân viên cần Admin tick "Lên lịch chụp" trong hồ sơ (chủ dự án chốt 30/10/2026).
 function booking_team_editable(App $a,array $row): bool {
  if(booking_permissions($a)['can_create'])return true;
@@ -210,7 +211,8 @@ function booking_team_editable(App $a,array $row): bool {
 }
 function booking_permissions(App $a): array {
  $full=in_array($a->user['role'],['admin','manager'],true);$granted=$a->user['role']==='employee'&&(bool)$a->one('SELECT user_id FROM {{booking_creators}} WHERE user_id=?',[$a->user['id']]);
- return ['can_create'=>$full||$granted,'can_grant'=>$a->user['role']==='admin'];
+ $delete=$full||$a->user['role']==='employee'&&(bool)$a->one('SELECT user_id FROM {{booking_deleters}} WHERE user_id=?',[$a->user['id']]);
+ return ['can_create'=>$full||$granted,'can_delete'=>$delete,'can_grant'=>$a->user['role']==='admin'];
 }
 // Từ đầu tháng trước đến 6 tháng tới: Apps Script đọc đúng các tab trong khoảng này nên tên "Tháng N" không bị nhầm năm.
 function booking_web_range(): array {$today=local_day(now_ms());return ['min'=>date('Y-m-d',strtotime(substr($today,0,7).'-01T12:00:00Z -1 month')),'max'=>local_day(day_time($today)+183*86400000)];}
@@ -615,7 +617,7 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  if($path==='/bookings/import'&&$method==='POST'){$a->requireManager();$sheet=input_text($b['sheet_id']??'manual','Mã nguồn',1,80);return [200,import_bookings($a,$b,$sheet,$a->user['id'])];}
  if($path==='/bookings/delete'&&$method==='POST'){
   // Xóa mềm: ẩn khỏi lịch, thống kê, đối soát và nhắc Telegram; giữ dòng và nhật ký trước/sau trong database.
-  $a->requireManager();$id=entry_uuid($b['id']??null);$reason=input_text($b['reason']??'','Lý do xóa',0,300);
+  if(!booking_permissions($a)['can_delete'])fail('Bạn chưa được Admin cấp quyền xóa lịch.',403);$id=entry_uuid($b['id']??null);$reason=input_text($b['reason']??'','Lý do xóa',0,300);
   $old=$a->one('SELECT * FROM {{shoot_bookings}} WHERE id=?',[$id]);if(!$old)fail('Không tìm thấy lịch.',404);if($old['status']==='deleted')fail('Lịch này đã bị xóa.',409);
   freeze_existing_booking_day($a,$old['shoot_day']);$a->run("UPDATE {{shoot_bookings}} SET status='deleted',updated_at=? WHERE id=?",[now_ms(),$id]);
   // Xóa luôn dòng trên Google Sheet. Lịch web chưa kịp ghi xuống Sheet thì chỉ bỏ việc ghi.
