@@ -17,6 +17,19 @@ function workflow_routes(App $a,string $path,array $b,string $method): ?array {
   if($ev['source']!=='manual')fail('Chỉ xóa được lượt chấm hộ / bổ sung công. Lượt nhân viên tự chấm giữ nguyên.',403);$a->target($ev['user_id'],true);if($ev['user_id']===$a->user['id'])fail('Không tự xóa lượt chấm công của mình.',403);
   $note=trim((string)($b['note']??''));if(mb_strlen($note)>500)fail('Lý do tối đa 500 ký tự.');attendance_event_remove($a,$ev,'Xóa lượt sau trước.');
   $a->run("UPDATE {{attendance_requests}} SET status='deleted',deleted_by=?,deleted_at=?,delete_note=? WHERE event_id=? AND status='approved'",[$a->user['id'],now_ms(),'[Đã xóa lượt chấm công] '.$note,$ev['id']]);$a->audit($ev['user_id'],'delete_manual_event');return [200,['ok'=>true]];}
+ // Xóa ghi nhận cả một ca (chủ dự án yêu cầu 12/11/2026, Bảng chấm công tháng: nhân viên chọn nhầm Làm cả ngày mà chỉ làm Ca 2).
+ // Admin/Quản lý, mọi nguồn (tự chấm, tự chuyển ca, chấm hộ), không xóa của mình, tháng chưa chốt. Gỡ mọi lượt vào/ra của ca đó trong ngày
+ // (OT: các lượt OT tính cho ngày đó); xóa Ca 1 của ngày Làm cả ngày thì bỏ luôn dấu Làm cả ngày; mốc đi muộn của ca bị xóa cũng bỏ.
+ if($path==='/events/shift/delete'&&$method==='POST'){$a->requireManager();$uid=$b['user_id']??null;$day=valid_day($b['day']??'');$shift=$b['shift']??'';
+  if(!is_int($uid))fail('Nhân viên không hợp lệ.');if(!in_array($shift,['day_first','day_second','ot'],true))fail('Ca không hợp lệ.');$a->target($uid,true);if($uid===$a->user['id'])fail('Không tự xóa ca chấm công của mình.',403);
+  $note=trim((string)($b['note']??''));if(mb_strlen($note)>500)fail('Lý do tối đa 500 ký tự.');
+  $evs=$a->all('SELECT id,time,type,source FROM {{events}} WHERE user_id=? AND shift=? AND work_date=? ORDER BY time,id',[$uid,$shift,$day]);if(!$evs)fail('Ca này không còn lượt chấm công. Tải lại.',409);
+  foreach($evs as $e)$a->assertOpen((int)$e['time']);$ids=array_map(fn($e)=>(int)$e['id'],$evs);$in=implode(',',array_fill(0,count($ids),'?'));
+  $a->run('DELETE FROM {{events}} WHERE id IN ('.$in.')',$ids);
+  $a->run("UPDATE {{attendance_requests}} SET status='deleted',deleted_by=?,deleted_at=?,delete_note=? WHERE status='approved' AND event_id IN (".$in.')',[$a->user['id'],now_ms(),'[Đã xóa cả ca chấm công] '.$note,...$ids]);
+  if($shift==='day_first')$a->run('DELETE FROM {{full_days}} WHERE user_id=? AND work_date=?',[$uid,$day]);
+  $a->run('DELETE FROM {{late_checkins}} WHERE user_id=? AND day=? AND shift=?',[$uid,$day,$shift]);
+  $a->audit($uid,'delete_shift:'.$day.':'.$shift.':'.count($ids).($note!==''?':'.mb_substr($note,0,60):''));return [200,['ok'=>true,'removed'=>count($ids)]];}
  // Sửa giờ một lượt chấm công (chủ dự án 09/11/2026: lượt OT của Tín ghi 22:57 → 08:56 hôm sau, không trùng khách). Admin/Quản lý, mọi nguồn
  // (tự chấm giữ ảnh, GPS); bắt buộc lý do, ghi giờ cũ → mới vào lý do lượt. Ca 1/Ca 2 chỉ sửa trong cùng ngày; OT đổi được ngày. Các lượt cùng ca
  // (OT: mọi lượt OT) phải vẫn đúng thứ tự vào/ra.

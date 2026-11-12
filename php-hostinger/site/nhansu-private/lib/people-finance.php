@@ -461,7 +461,7 @@ function log_points_note(int $deduction,?int $offense,?array $rule): string {
 }
 // Cấp quyền trong hồ sơ nhân viên (chủ dự án yêu cầu 30/10/2026): Viết Event Log, Lên lịch chụp; thêm Sửa Biên bản họp (02/11/2026). Chỉ Admin tick;
 // Admin và Quản lý luôn có đủ các quyền nên không giữ dòng cấp quyền cho họ; Makeup không được cấp quyền nào.
-const USER_GRANTS=['event_log'=>['event_log_recorders','grant_event_log','revoke_event_log'],'bookings'=>['booking_creators','grant_booking_create','revoke_booking_create'],'meetings'=>['meeting_editors','grant_meeting_edit','revoke_meeting_edit'],'bonus'=>['payroll_bonus_editors','grant_bonus_entry','revoke_bonus_entry']];
+const USER_GRANTS=['event_log'=>['event_log_recorders','grant_event_log','revoke_event_log'],'bookings'=>['booking_creators','grant_booking_create','revoke_booking_create'],'meetings'=>['meeting_editors','grant_meeting_edit','revoke_meeting_edit'],'bonus'=>['payroll_bonus_editors','grant_bonus_entry','revoke_bonus_entry'],'booking_delete'=>['booking_deleters','grant_booking_delete','revoke_booking_delete']];
 function user_grants(App $a): array {$out=[];foreach(USER_GRANTS as $k=>[$table])$out[$k]=array_fill_keys(array_map('intval',array_column($a->all('SELECT user_id FROM {{'.$table.'}}'),'user_id')),true);return $out;}
 function save_user_grants(App $a,int $id,string $role,mixed $grants): void {
  if(!is_array($grants))fail('Cấp quyền không hợp lệ.');
