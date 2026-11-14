@@ -544,6 +544,7 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
   $description=input_text($b['description']??null,'Nội dung sự việc',5,2000);$existing=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$id]);
   if($existing){if($existing['created_by']===$a->user['id']&&$existing['user_id']===$subject&&$existing['event_date']===$day&&$existing['category']===$category&&$existing['points']===-$deduction&&$existing['description']===$description)return [200,['id'=>$id,'already_saved'=>true]];fail('Mã sự việc đã được sử dụng.',409);}
   $status=$manage?'confirmed':'pending';$a->run("INSERT INTO {{event_log}}(id,user_id,event_date,category,description,rule_id,rule_code,rule_name,points,offense,status,created_by,created_at,updated_by,updated_at,resolution) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'')",[$id,$subject,$day,$category,$description,$rule['id']??null,$rule['code']??'',$rule['name']??'',-$deduction,$offense,$status,$a->user['id'],now_ms(),$a->user['id'],now_ms()]);
+  if(function_exists('tg_notify_group')){if(tg_notify_group($b))tg_group_queue($a,'log',$id);if($subject!==null)tg_dm_queue($a,'logdm',$id);}
   finance_audit($a,'log',$id,'created','Ghi nhận bởi người được cấp quyền chỉnh sửa Event log.'.log_points_note($deduction,$offense,$rule));return [201,['id'=>$id,'status'=>$status]];
  }
  // Gợi ý ô Lần mắc lỗi khi chọn nhân viên + luật trên form ghi Event log: đã bị ghi luật này bao nhiêu lần trong tháng.
@@ -564,7 +565,7 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
   $byPerson=$a->all("SELECT r.user_id,u.name,COUNT(*) total,COALESCE(SUM(CASE WHEN r.status IN ('confirmed','resolved') THEN -r.points ELSE 0 END),0) deduction_points FROM {{event_log}} r LEFT JOIN {{users}} u ON u.id=r.user_id WHERE ".$where.' GROUP BY r.user_id,u.name ORDER BY u.name',$params);
   $people=finance_people($a,true);
   $recorders=$perms['can_grant']?array_column($a->all('SELECT user_id FROM {{event_log_recorders}}'),'user_id'):[];
-  return [200,['rows'=>$rows,'summary'=>$summary,'by_person'=>$byPerson,'people'=>$people,'recorders'=>$recorders,'change_requests'=>log_change_requests($a),'permissions'=>$perms+['can_approve'=>in_array($a->user['role'],['admin','manager'],true)],'page'=>$page,'per_page'=>$per,'total'=>(int)$summary['total'],'start'=>$start,'end'=>$end,'period'=>$period]];
+  return [200,['rows'=>$rows,'summary'=>$summary,'by_person'=>$byPerson,'people'=>$people,'recorders'=>$recorders,'change_requests'=>log_change_requests($a),'permissions'=>$perms+['can_approve'=>in_array($a->user['role'],['admin','manager'],true),'group_chat'=>function_exists('tg_group_chat')&&tg_group_chat($a)!==null],'page'=>$page,'per_page'=>$per,'total'=>(int)$summary['total'],'start'=>$start,'end'=>$end,'period'=>$period]];
  }
  if(preg_match('~^/event-log/([a-f0-9-]{36})/edit$~D',$path,$m)&&$method==='POST'){
   if(!$manage)fail('Chỉ Admin, Quản lý hoặc nhân viên được Admin cấp quyền mới được chỉnh sửa Event log.',403);
