@@ -544,6 +544,7 @@ function log_routes(App $a,string $path,array $b,string $method,bool $approved=f
   $description=input_text($b['description']??null,'Nội dung sự việc',5,2000);$existing=$a->one('SELECT * FROM {{event_log}} WHERE id=?',[$id]);
   if($existing){if($existing['created_by']===$a->user['id']&&$existing['user_id']===$subject&&$existing['event_date']===$day&&$existing['category']===$category&&$existing['points']===-$deduction&&$existing['description']===$description)return [200,['id'=>$id,'already_saved'=>true]];fail('Mã sự việc đã được sử dụng.',409);}
   $status=$manage?'confirmed':'pending';$a->run("INSERT INTO {{event_log}}(id,user_id,event_date,category,description,rule_id,rule_code,rule_name,points,offense,status,created_by,created_at,updated_by,updated_at,resolution) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'')",[$id,$subject,$day,$category,$description,$rule['id']??null,$rule['code']??'',$rule['name']??'',-$deduction,$offense,$status,$a->user['id'],now_ms(),$a->user['id'],now_ms()]);
+  if(function_exists('tg_group_queue'))tg_group_queue($a,'log',$id);
   finance_audit($a,'log',$id,'created','Ghi nhận bởi người được cấp quyền chỉnh sửa Event log.'.log_points_note($deduction,$offense,$rule));return [201,['id'=>$id,'status'=>$status]];
  }
  // Gợi ý ô Lần mắc lỗi khi chọn nhân viên + luật trên form ghi Event log: đã bị ghi luật này bao nhiêu lần trong tháng.

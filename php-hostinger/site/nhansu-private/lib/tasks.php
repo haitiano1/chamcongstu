@@ -65,6 +65,7 @@ function task_create(App $a,int $me,array $b,string $note=''): array {
   $id=task_uuid();$now=now_ms();
   $a->run("INSERT INTO {{tasks}}(id,kind,title,body,due_at,require_photo,require_review,audience,status,cancel_reason,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,'open','',?,?,?,?)",[$id,$kind,$title,$body,$due,$photo,$review,$audience,$me,$now,$me,$now]);
   foreach($ids as $uid)$a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'','pending')",[$id,$uid]);
+  if(function_exists('tg_group_queue'))tg_group_queue($a,'task',$id);
   task_audit($a,$id,'created',null,['kind'=>$kind,'title'=>$title,'body'=>$body,'due_at'=>$due,'require_photo'=>$photo,'require_review'=>$review,'audience'=>$audience,'recipients'=>$ids],$note,$me);
   return ['id'=>$id,'recipients'=>$ids,'kind'=>$kind,'title'=>$title,'due_at'=>$due,'require_photo'=>$photo,'require_review'=>$review,'audience'=>$audience];
 }
