@@ -1,5 +1,6 @@
 <?php
-// Box chat nhóm (chủ dự án yêu cầu 14/11/2026): Admin gõ /nhom trong nhóm; giao Task / Nhắc nhở và ghi Event log mới thì cron gửi vào nhóm.
+// Box chat nhóm (chủ dự án yêu cầu 14/11/2026): Admin gõ /nhom trong nhóm; trên web tick Thông báo trên box chat thì gửi vào nhóm,
+// không tick chỉ nhắn riêng; Event log nhắn riêng người liên quan; lệnh /task, /log trên Telegram luôn vào nhóm.
 // Giao dịch rồi hoàn tác, Telegram giả lập.
 foreach(['bootstrap','telegram','bookings','people-finance','workflows','studio-rules','tasks'] as $f)require_once __DIR__.'/../site/nhansu-private/lib/'.$f.'.php';
 $a=new App('/var/nhansu-private');$n=0;function verify($v,$message){global $n;if(!$v)throw new RuntimeException('FAIL: '.$message);$n++;}
@@ -15,7 +16,7 @@ try{$a->tx(function()use($a){
  $mid=1;$msg=function(string $text,string $from,string $type='supergroup',string $chat='-100555')use(&$mid){return ['message_id'=>$mid++,'chat'=>['id'=>$type==='private'?(int)$from:(int)$chat,'type'=>$type,'title'=>'AGS team'],'from'=>['id'=>(int)$from,'is_bot'=>false],'text'=>$text];};
  $last=function()use($tg){return end($tg->sent)['text']??'';};
  $outbox=fn()=>(int)$a->scalar('SELECT COUNT(*) FROM {{telegram_group_outbox}}');
- $task=fn(string $title,string $kind='task')=>task_create($a,$admin['id'],['kind'=>$kind,'title'=>$title,'body'=>'Chi tiết việc','audience'=>'people','user_ids'=>[$zuy],'require_photo'=>2,'due_at'=>$kind==='task'?now_ms()+86400000:null]);
+ $task=fn(string $title,string $kind='task',bool $group=true)=>task_create($a,$admin['id'],['kind'=>$kind,'title'=>$title,'body'=>'Chi tiết việc','audience'=>'people','user_ids'=>[$zuy],'require_photo'=>2,'due_at'=>$kind==='task'?now_ms()+86400000:null,'notify_group'=>$group]);
  $task('Chưa có nhóm nên không xếp');verify($outbox()===0,'Chưa chọn nhóm thì không xếp tin');
  $tg->update(['message'=>$msg('/nhom','999000111','private')]);verify(str_contains($last(),'gõ /nhom trong nhóm'),'Chat riêng gõ /nhom thì hướng dẫn');
  $tg->update(['message'=>$msg('/nhom','999000222')]);verify(str_contains($last(),'Chỉ Admin')&&!tg_group_chat($a),'Nhân viên không chọn được nhóm');
@@ -24,20 +25,26 @@ try{$a->tx(function()use($a){
  $tg->sent=[];
  $t=$task('Dọn phòng chụp 2');$task('Mai họp 8h30','notice');$gone=$task('Việc sẽ bị xóa');
  $a->run("UPDATE {{tasks}} SET status='deleted' WHERE id=?",[$gone['id']]);
+ $plain=$task('Không tick box chat','task',false);
  daily_tasks_ensure($a,local_day(now_ms()));
- verify($outbox()===3,'Task, Nhắc nhở mới được xếp; việc hằng ngày không xếp');
- $a->user=$admin;$lid=uuid_v4();log_routes($a,'/event-log',['id'=>$lid,'user_id'=>$zuy,'event_date'=>local_day(now_ms()),'category'=>'missing_punch','description'=>'Quên chấm ra ca 2','offense'=>1],'POST');
- $gid=uuid_v4();log_routes($a,'/event-log',['id'=>$gid,'user_id'=>null,'event_date'=>local_day(now_ms()),'category'=>'other','description'=>'Họp rút kinh nghiệm cả studio'],'POST');
- verify($outbox()===5,'Ghi Event log mới được xếp');
+ verify($outbox()===3,'Tick thì xếp; không tick và việc hằng ngày không xếp');
+ verify((int)$a->scalar("SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=? AND notify_state='pending'",[$plain['id']])===1,'Không tick vẫn nhắn riêng người nhận');
+ $bad=false;try{task_create($a,$admin['id'],['kind'=>'task','title'=>'Sai kiểu','audience'=>'all','notify_group'=>'on']);}catch(HttpError){$bad=true;}verify($bad,'notify_group phải là true/false');
+ $a->user=$admin;$lid=uuid_v4();log_routes($a,'/event-log',['id'=>$lid,'user_id'=>$zuy,'event_date'=>local_day(now_ms()),'category'=>'missing_punch','description'=>'Quên chấm ra ca 2','offense'=>1,'notify_group'=>true],'POST');
+ $gid=uuid_v4();log_routes($a,'/event-log',['id'=>$gid,'user_id'=>null,'event_date'=>local_day(now_ms()),'category'=>'other','description'=>'Họp rút kinh nghiệm cả studio','notify_group'=>true],'POST');
+ $pid=uuid_v4();log_routes($a,'/event-log',['id'=>$pid,'user_id'=>$zuy,'event_date'=>local_day(now_ms()),'category'=>'task','description'=>'Chưa dọn phòng chụp','offense'=>0],'POST');
+ verify($outbox()===7,'Log tick: nhóm + nhắn riêng; log chung: chỉ nhóm; log không tick: chỉ nhắn riêng');
  tg_group_tick($a,$tg);
+ $dm=array_values(array_filter($tg->sent,fn($x)=>$x['chat_id']==='999000222'));$tg->sent=array_values(array_filter($tg->sent,fn($x)=>$x['chat_id']!=='999000222'));
  $texts=array_column($tg->sent,'text');$chats=array_unique(array_column($tg->sent,'chat_id'));
  verify(count($texts)===4&&$chats===['-100555'],'Gửi 4 tin vào nhóm, bỏ việc đã xóa');
+ verify(count($dm)===2&&str_contains($dm[0]['text'],'📝 Bạn có Event log mới')&&str_contains($dm[0]['text'],'Trừ 20 điểm KPI')&&str_contains($dm[1]['text'],'Chưa dọn phòng chụp')&&str_contains($dm[1]['text'],'Nhắc nhở · không trừ điểm'),'Event log nhắn riêng người liên quan, có tick hay không');
  verify(str_contains($texts[0],'📌 Task mới')&&str_contains($texts[0],'Dọn phòng chụp 2')&&str_contains($texts[0],'Trần Văn Zuy')&&str_contains($texts[0],'Chi tiết việc')&&str_contains($texts[0],'⏰ Hạn')&&str_contains($texts[0],'Cần chụp 2 ảnh'),'Tin Task đủ nội dung');
  verify(str_contains($texts[1],'🔔 Nhắc nhở mới')&&str_contains($texts[1],'Mai họp 8h30'),'Tin Nhắc nhở');
  verify(str_contains($texts[2],'📝 Event log mới')&&str_contains($texts[2],'Quên chấm công')&&str_contains($texts[2],'Trừ 20 điểm KPI (20.000đ)')&&str_contains($texts[2],'Lần 1')&&str_contains($texts[2],'Quên chấm ra ca 2'),'Tin Event log hiện đủ điểm KPI');
  verify(str_contains($texts[3],'Nhật ký chung studio')&&str_contains($texts[3],'không trừ điểm'),'Nhật ký chung');
  verify(($tg->sent[0]['reply_markup']['inline_keyboard'][0][0]['url']??'')==='https://example.test/nhansu/#tasks'&&($tg->sent[2]['reply_markup']['inline_keyboard'][0][0]['url']??'')==='https://example.test/nhansu/#eventlog','Nút mở đúng trang');
- verify((int)$a->scalar("SELECT COUNT(*) FROM {{telegram_group_outbox}} WHERE state='sent'")===4&&(int)$a->scalar("SELECT COUNT(*) FROM {{telegram_group_outbox}} WHERE state='skipped'")===1,'Trạng thái hàng đợi');
+ verify((int)$a->scalar("SELECT COUNT(*) FROM {{telegram_group_outbox}} WHERE state='sent'")===6&&(int)$a->scalar("SELECT COUNT(*) FROM {{telegram_group_outbox}} WHERE state='skipped'")===1,'Trạng thái hàng đợi');
  verify((int)$a->scalar("SELECT COUNT(*) FROM {{task_recipients}} WHERE task_id=? AND notify_state='pending'",[$t['id']])===1,'Tin nhắn riêng cho người nhận vẫn xếp như cũ');
  $tg->sent=[];tg_group_tick($a,$tg);verify(!$tg->sent,'Không gửi lặp');
  $a->run("UPDATE {{telegram_group_outbox}} SET created_at=created_at-? WHERE 1",[0]);$task('Việc cũ');$a->run("UPDATE {{telegram_group_outbox}} SET created_at=? WHERE state='pending'",[now_ms()-TG_GROUP_MAX_AGE-1000]);tg_group_tick($a,$tg);verify(!$tg->sent,'Tin quá 1 ngày không gửi dồn');
@@ -48,6 +55,12 @@ try{$a->tx(function()use($a){
  $tg->update(['message'=>$msg('/nhom','999000111','group','-100444')]);verify(tg_group_chat($a)==='-100444','Bật lại');
  $tg->update(['message'=>['message_id'=>100,'chat'=>['id'=>-100444,'type'=>'group'],'from'=>['id'=>1,'is_bot'=>false],'left_chat_member'=>['id'=>777,'is_bot'=>true]]]);verify(!tg_group_chat($a),'Bot bị xóa khỏi nhóm thì ngừng');
  $tg->sent=[];$tg->update(['message'=>$msg('/task','999000111','supergroup','-100999')]);verify(str_contains($last(),'Cách giao việc'),'Lệnh /task trong nhóm vẫn chạy');
+ $tg->update(['message'=>$msg('/nhom','999000111','group','-100444')]);$a->run('DELETE FROM {{telegram_group_outbox}}');$tg->sent=[];
+ $tg->update(['message'=>$msg('/task Zuy | Kiểm tra đèn flash','999000111','private')]);$tg->update(['message'=>$msg('/log Zuy | Quên tắt điều hòa','999000111','private')]);
+ verify((int)$a->scalar("SELECT COUNT(*) FROM {{telegram_group_outbox}} WHERE kind IN ('task','log')")===2,'Lệnh /task, /log trên Telegram vẫn báo vào nhóm');
+ $tg->sent=[];tg_group_tick($a,$tg);verify(count(array_filter($tg->sent,fn($x)=>$x['chat_id']==='-100444'))===2&&count(array_filter($tg->sent,fn($x)=>$x['chat_id']==='999000222'))===1,'Gửi nhóm + nhắn riêng log');
+ tg_group_set($a,null);$a->run('DELETE FROM {{telegram_group_outbox}}');$tg->sent=[];$lid2=uuid_v4();log_routes($a,'/event-log',['id'=>$lid2,'user_id'=>$zuy,'event_date'=>local_day(now_ms()),'category'=>'other','description'=>'Chưa có nhóm vẫn nhắn riêng','notify_group'=>true],'POST');
+ tg_group_tick($a,$tg);verify(count($tg->sent)===1&&$tg->sent[0]['chat_id']==='999000222','Chưa có nhóm: log vẫn nhắn riêng, không lỗi');
  throw new Rollback();
 });}catch(Rollback){}
 echo "OK $n telegram-group\n";

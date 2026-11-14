@@ -65,7 +65,7 @@ function task_create(App $a,int $me,array $b,string $note=''): array {
   $id=task_uuid();$now=now_ms();
   $a->run("INSERT INTO {{tasks}}(id,kind,title,body,due_at,require_photo,require_review,audience,status,cancel_reason,created_by,created_at,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,'open','',?,?,?,?)",[$id,$kind,$title,$body,$due,$photo,$review,$audience,$me,$now,$me,$now]);
   foreach($ids as $uid)$a->run("INSERT INTO {{task_recipients}}(task_id,user_id,done_note,notify_state) VALUES(?,?,'','pending')",[$id,$uid]);
-  if(function_exists('tg_group_queue'))tg_group_queue($a,'task',$id);
+  if(function_exists('tg_notify_group')&&tg_notify_group($b))tg_group_queue($a,'task',$id);
   task_audit($a,$id,'created',null,['kind'=>$kind,'title'=>$title,'body'=>$body,'due_at'=>$due,'require_photo'=>$photo,'require_review'=>$review,'audience'=>$audience,'recipients'=>$ids],$note,$me);
   return ['id'=>$id,'recipients'=>$ids,'kind'=>$kind,'title'=>$title,'due_at'=>$due,'require_photo'=>$photo,'require_review'=>$review,'audience'=>$audience];
 }
@@ -114,7 +114,7 @@ function task_routes(App $a,string $path,array $b,string $method): ?array {
   // Danh sách việc chia theo ngày (chủ dự án yêu cầu 03/11/2026): Admin/Quản lý thấy tên người nhận trên từng thẻ.
   $names=[];if($manager&&$rows)foreach($a->all('SELECT r.task_id,u.name FROM {{task_recipients}} r JOIN {{users}} u ON u.id=r.user_id WHERE r.task_id IN ('.implode(',',array_fill(0,count($rows),'?')).') ORDER BY u.name',array_column($rows,'id')) as $x)$names[$x['task_id']][]=$x['name'];
   foreach($rows as &$r){$r['mine']=(bool)$r['mine'];$r['my_has_proof']=(bool)$r['my_has_proof'];if(!$manager)unset($r['seen'],$r['done']);else $r['recipients']=$names[$r['id']]??[];}unset($r);
-  return [200,['rows'=>$rows,'reviews'=>$manager?task_reviews($a):[],'pending'=>task_pending($a),'support'=>support_pending($a),'can_manage'=>$manager,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
+  return [200,['rows'=>$rows,'reviews'=>$manager?task_reviews($a):[],'pending'=>task_pending($a),'support'=>support_pending($a),'can_manage'=>$manager,'group_chat'=>$manager&&function_exists('tg_group_chat')&&tg_group_chat($a)!==null,'decline_requests'=>$manager?task_decline_list($a,null):[],'my_declines'=>task_decline_list($a,$me),'decline_followups'=>$manager?task_decline_followups($a):[],'today'=>local_day(now_ms()),'templates'=>$manager?$a->all('SELECT d.id,d.user_id,d.title,d.require_photo,d.active,d.version,u.name FROM {{task_templates}} d JOIN {{users}} u ON u.id=d.user_id WHERE u.archived=0 ORDER BY u.name,d.created_at'):[],'people'=>$manager?array_map(fn($p)=>['id'=>$p['id'],'name'=>$p['name'],'role'=>$p['role']],finance_people($a)):[]]];
  }
  if($path==='/tasks'&&$method==='POST'){
   $a->requireManager();$r=task_create($a,$me,$b);
@@ -443,7 +443,7 @@ function log_telegram_command(App $a,Telegram $tg,array $m,string $args): bool {
   if($all&&($rule?$fixed:$extra['deduction']!==0))fail('Nhật ký chung studio (all) không trừ điểm. Ghi tên người liên quan để áp '.($rule?'luật '.$rule['code']:'điểm KPI').'.');
   $day=local_day(now_ms());$lines=[];
   foreach($all?[null]:array_keys($subjects) as $uid){
-   $id=uuid_v4();log_routes($a,'/event-log',['id'=>$id,'user_id'=>$uid,'event_date'=>$day,'category'=>'other','description'=>$text]+$extra,'POST');
+   $id=uuid_v4();log_routes($a,'/event-log',['id'=>$id,'user_id'=>$uid,'event_date'=>$day,'category'=>'other','description'=>$text,'notify_group'=>true]+$extra,'POST');
    $row=$a->one('SELECT points,offense FROM {{event_log}} WHERE id=?',[$id]);$pts=-(int)$row['points'];$n=$row['offense']===null?null:(int)$row['offense'];
    $a->run("UPDATE {{event_log_audit}} SET note=? WHERE event_log_id=? AND action='created'",['Ghi qua Telegram bởi người được cấp quyền chỉnh sửa Event log.'.log_points_note($pts,$n,$rule),$id]);
    if($pts)$lines[]=($uid!==null&&count($subjects)>1?$subjects[$uid]['name'].': ':'').($n?'Lần '.$n.' trong tháng ('.LOG_TIER_NAMES[$n].') · ':'').'Trừ '.$pts.' điểm KPI';
@@ -504,7 +504,7 @@ function task_telegram_command(App $a,Telegram $tg,array $m): bool {
   $all=count($targets)===1&&in_array(task_fold(ltrim($targets[0],'@')),['all','tat ca','ca studio','moi nguoi'],true);
   $ids=[];if(!$all)foreach($targets as $tk)$ids[]=task_find_person($a,$people,$tk)['id'];
   $title=mb_strlen($content)>150?mb_substr($content,0,147).'…':$content;
-  $r=task_create($a,$sender['id'],['kind'=>$kind,'title'=>$title,'body'=>mb_strlen($content)>150?$content:'','due_at'=>$kind==='task'?task_parse_due($dueText,now_ms()):null,'require_photo'=>$photo,'audience'=>$all?'all':'people','user_ids'=>array_values(array_unique($ids))],'Tạo qua Telegram');
+  $r=task_create($a,$sender['id'],['kind'=>$kind,'title'=>$title,'body'=>mb_strlen($content)>150?$content:'','due_at'=>$kind==='task'?task_parse_due($dueText,now_ms()):null,'require_photo'=>$photo,'audience'=>$all?'all':'people','user_ids'=>array_values(array_unique($ids)),'notify_group'=>true],'Tạo qua Telegram');
   $names=$all?'tất cả nhân viên ('.count($r['recipients']).' người)':implode(', ',array_column(array_filter($people,fn($p)=>in_array($p['id'],$r['recipients'],true)),'name'));
   $reply('✅ Đã giao '.($kind==='task'?'Task':'Nhắc nhở').' cho '.$names."\n«".$r['title'].'»'.($r['due_at']?"\nHạn: ".date('H:i d/m/Y',intdiv($r['due_at'],1000)):'').($r['require_photo']?"\n📷 Bắt buộc chụp ".($r['require_photo']>1?$r['require_photo'].' ':'')."ảnh khi báo xong":'')."\nNgười nhận đã liên kết Telegram sẽ được nhắn riêng. Xem tiến độ: ".$a->config['app_url'].'/#tasks');
  }catch(HttpError $e){$reply('⚠️ '.$e->getMessage());}
