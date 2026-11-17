@@ -23,10 +23,12 @@ const shiftList=keys=>{const by={};for(const k of keys)(by[k.slice(0,10)]??=[]).
 // Bổ sung công (chủ dự án yêu cầu 06/11/2026, VD khách cuối 13:30 chụp lấn sang Ca 2): Admin/Quản lý bấm từng ca của từng nhân viên trên phiếu lương,
 // ca đó tính công và rời khoản Ca làm không có khách. edit=false (nhân viên, tháng đã chốt) chỉ xem.
 const shiftName=k=>`${k.slice(8,10)}/${k.slice(5,7)} ${SHIFT_SHORT[k.slice(11)]||''}`;
-function emptyShiftInfo(p,empty,show=!!empty,edit=false){const credits=p.shiftCredits||[];if(!show&&!p.unbookedShifts&&!credits.length)return null;
+function emptyShiftInfo(p,empty,show=!!empty,edit=false){const credits=p.shiftCredits||[],notes=Object.entries(p.emptyNotes||{}),off=p.emptyOff||[],early=p.emptyEarly||[];if(!show&&!p.unbookedShifts&&!credits.length&&!off.length&&!early.length)return null;
  const days=p.unbookedDays||[],n=p.unbookedShifts??days.length;
  const mine=(edit&&days.length?`<span>Đã chấm công ${n} ca không khách:</span>${days.map(k=>`<span class="slip-credit">${shiftName(k)}<button type="button" class="secondary" data-credit="${k}">＋ Bổ sung công</button></span>`).join('')}`:`<span>${n?`Đã chấm công ${n} ca không khách${days.length?': '+shiftList(days):''}`:'Chưa chấm công ca nào không có khách'}</span>`)
-  +credits.map(c=>`<span class="slip-credit"><span>✓ Đã bổ sung công ${shiftName(c.key)}${c.by?' · '+esc(c.by):''}${c.note?' · '+esc(c.note):''}</span>${edit?`<button type="button" class="secondary" data-credit-off="${c.key}">Bỏ</button>`:''}</span>`).join('');
+  +credits.map(c=>`<span class="slip-credit"><span>✓ Đã bổ sung công ${shiftName(c.key)}${c.by?' · '+esc(c.by):''}${c.note?' · '+esc(c.note):''}</span>${edit?`<button type="button" class="secondary" data-credit-off="${c.key}">Bỏ</button>`:''}</span>`).join('')
+  // Ca không khách từ 18/11/2026: công việc đã làm (bắt buộc khi chấm ra), ca xin off, ca về trước 2 tiếng (không tính).
+  +notes.map(([k,n])=>`<span>🛠 ${shiftName(k)}: ${esc(n)}</span>`).join('')+(off.length?`<span>🏖 Xin off: ${shiftList(off)}</span>`:'')+(early.length?`<span class="out">🚪 Về trước 2 tiếng · không tính: ${shiftList(early)}</span>`:'');
  const studio=empty?`<details><summary>Lịch Sheet cả tháng: ${empty.past.length} ca không khách đã qua${empty.upcoming.length?` · ${empty.upcoming.length} ca sắp tới đang trống`:''}</summary>${empty.past.length?`<span>Đã qua: ${shiftList(empty.past)}</span>`:''}${empty.upcoming.length?`<span>Sắp tới (còn có thể thêm khách): ${shiftList(empty.upcoming)}</span>`:''}</details>`:'';
  return {label:`Ca làm không có khách (${n} ca)`,note:`<div class="slip-note">${mine}${studio}</div>`};}
 // Tiền khách Tips (chủ dự án yêu cầu 02/11/2026): tổng Tip các lịch khách trong tháng chia đều cho Nhân viên đang làm, tự điền vào ô;

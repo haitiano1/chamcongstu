@@ -29,6 +29,7 @@ function workflow_routes(App $a,string $path,array $b,string $method): ?array {
   $a->run("UPDATE {{attendance_requests}} SET status='deleted',deleted_by=?,deleted_at=?,delete_note=? WHERE status='approved' AND event_id IN (".$in.')',[$a->user['id'],now_ms(),'[Đã xóa cả ca chấm công] '.$note,...$ids]);
   if($shift==='day_first')$a->run('DELETE FROM {{full_days}} WHERE user_id=? AND work_date=?',[$uid,$day]);
   $a->run('DELETE FROM {{late_checkins}} WHERE user_id=? AND day=? AND shift=?',[$uid,$day,$shift]);
+  if(in_array($shift,['day_first','day_second'],true))$a->run("DELETE FROM {{empty_shifts}} WHERE user_id=? AND work_date=? AND shift=? AND choice<>'off'",[$uid,$day,$shift]);
   $a->audit($uid,'delete_shift:'.$day.':'.$shift.':'.count($ids).($note!==''?':'.mb_substr($note,0,60):''));return [200,['ok'=>true,'removed'=>count($ids)]];}
  // Sửa giờ một lượt chấm công (chủ dự án 09/11/2026: lượt OT của Tín ghi 22:57 → 08:56 hôm sau, không trùng khách). Admin/Quản lý, mọi nguồn
  // (tự chấm giữ ảnh, GPS); bắt buộc lý do, ghi giờ cũ → mới vào lý do lượt. Ca 1/Ca 2 chỉ sửa trong cùng ngày; OT đổi được ngày. Các lượt cùng ca

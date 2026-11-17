@@ -686,3 +686,90 @@ function booking_routes(App $a,string $path,array $b,string $method): ?array {
  }
  return null;
 }
+// Ca không có khách (chủ dự án yêu cầu 17/11/2026: "muốn off thì về, muốn chấm công phải giúp ích cho stu"). Ca mà cả studio không có lịch
+// đang hoạt động (đối chiếu lịch chụp, như booked_shifts) thì nhân viên chấm vào lần đầu phải chọn: Xin off ca đó (không chấm công, không tiền)
+// hoặc Ở lại làm cho studio tối thiểu 2 tiếng. Thứ 7, Chủ nhật bắt buộc đi làm: không có Xin off, không có Về trước.
+// Chấm ra ca không khách: chưa đủ 2 tiếng (tính từ lượt vào đầu tiên, tối đa tới hết ca) thì chặn, ngày thường được "Về luôn, không tính ca"
+// (choice 'early', ca đó không tính khoản Ca làm không có khách); đủ thì bắt ghi công việc đã làm (ghi cho mọi ca không khách hôm đó chưa có ghi chép,
+// VD Ca 1 làm cả ngày tự chấm ra 14:00). Ca có khách thêm vào sau thì tự thành ca thường (xét lại lịch lúc chấm ra). Chỉ role Nhân viên tự chấm;
+// chấm hộ / duyệt bổ sung công không áp. Cron empty_shift_telegram_tick báo Admin/Quản lý: xin off, về trước, công việc đã làm.
+const EMPTY_SHIFT_FROM='2026-11-18';const EMPTY_SHIFT_MIN_MS=7200000;const EMPTY_NOTE_MIN=10;
+function empty_shift_weekend(string $day): bool {return (int)gmdate('N',strtotime($day.'T00:00:00Z'))>=6;}
+function studio_shift_empty(App $a,string $day,string $shift): bool {
+ foreach(SHIFTS as $s)if($s['id']===$shift)return !$a->scalar("SELECT 1 FROM {{shoot_bookings}} WHERE status='active' AND shoot_day=? AND minutes>=? AND minutes<? LIMIT 1",[$day,$s['start']*60,$s['end']*60]);
+ return false;
+}
+function empty_shift_row(App $a,int $user,string $day,string $shift): ?array {return $a->one('SELECT * FROM {{empty_shifts}} WHERE user_id=? AND work_date=? AND shift=?',[$user,$day,$shift]);}
+function empty_shift_save(App $a,int $user,string $day,string $shift,array $set,bool $notify): void {
+ $now=now_ms();$old=empty_shift_row($a,$user,$day,$shift);$row=array_merge(['choice'=>$old['choice']??'stay','note'=>$old['note']??null,'note_at'=>$old['note_at']??null],$set);
+ $a->run('INSERT INTO {{empty_shifts}}(user_id,work_date,shift,choice,note,note_at,notified_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE choice=VALUES(choice),note=VALUES(note),note_at=VALUES(note_at),notified_at=VALUES(notified_at),updated_at=VALUES(updated_at)',
+  [$user,$day,$shift,$row['choice'],$row['note'],$row['note_at'],$notify?null:$now,$now,$now]);
+}
+function empty_shift_applies(array $user,string $day): bool {return $user['role']==='employee'&&$day>=EMPTY_SHIFT_FROM;}
+// Hạn được chấm ra: 2 tiếng sau lượt vào đầu tiên của ca, không quá giờ hết ca (14:00 / 19:00).
+function empty_shift_until(string $day,string $shift,int $firstIn): int {return min($firstIn+EMPTY_SHIFT_MIN_MS,bounds($day,$shift)['end']);}
+// Trạng thái hôm nay cho /me: app hỏi trước khi chụp ảnh (máy chủ kiểm tra lại khi chấm).
+function empty_shift_status(App $a,array $user,string $day): array {
+ $out=['active'=>empty_shift_applies($user,$day),'weekend'=>empty_shift_weekend($day),'minHours'=>EMPTY_SHIFT_MIN_MS/3600000,'noteMin'=>EMPTY_NOTE_MIN,'shifts'=>[]];if(!$out['active'])return $out;
+ foreach(SHIFTS as $s){$first=$a->scalar("SELECT MIN(time) FROM {{events}} WHERE user_id=? AND work_date=? AND shift=? AND type='in'",[$user['id'],$day,$s['id']]);$r=empty_shift_row($a,(int)$user['id'],$day,$s['id']);
+  $out['shifts'][$s['id']]=['empty'=>studio_shift_empty($a,$day,$s['id']),'first_in'=>$first!==null&&$first!==false?(int)$first:null,'until'=>$first?empty_shift_until($day,$s['id'],(int)$first):null,'choice'=>$r['choice']??null,'note'=>$r['note']??null];}
+ return $out;
+}
+// Gọi trong POST /attendance trước khi ghi lượt (trong giao dịch). Trả mảng phản hồi 409 khi cần nhân viên chọn / ghi việc; null là cho chấm.
+function empty_shift_guard(App $a,array $b,string $shift,int $now): ?array {
+ $user=$a->user;$type=$b['type']??'';
+ if($type==='in'){if(!in_array($shift,['day_first','day_second'],true)||($b['resume']??false)===true||($b['presence_only']??false)===true)return null;$day=local_day($now);if(!empty_shift_applies($user,$day))return null;
+  if($a->one('SELECT id FROM {{events}} WHERE user_id=? AND work_date=? AND shift=? LIMIT 1',[$user['id'],$day,$shift]))return null;
+  if(!studio_shift_empty($a,$day,$shift)){$a->run("DELETE FROM {{empty_shifts}} WHERE user_id=? AND work_date=? AND shift=? AND choice='off'",[$user['id'],$day,$shift]);return null;}
+  if(($b['empty_choice']??null)!=='stay'){$weekend=empty_shift_weekend($day);return [409,['error'=>'Cả studio không có khách '.($shift==='day_first'?'Ca 1':'Ca 2').' hôm nay. '.($weekend?'Thứ 7, Chủ nhật bắt buộc đi làm: chọn Ở lại làm cho studio (tối thiểu 2 tiếng).':'Chọn Xin off ca này hoặc Ở lại làm cho studio (tối thiểu 2 tiếng).'),'empty_shift'=>['shift'=>$shift,'weekend'=>$weekend]]];}
+  empty_shift_save($a,(int)$user['id'],$day,$shift,['choice'=>'stay'],false);return null;}
+ if($type!=='out'||!in_array($shift,['day_first','day_second','ot'],true))return null;
+ $events=$a->events((int)$user['id']);$day=local_day($now);
+ if($shift==='ot'){$open=null;foreach(pairs($events)['pending'] as $e)if($e['shift']==='ot')$open=$e;if(!$open)return null;$day=$open['work_date'];}
+ if(!empty_shift_applies($user,$day))return null;
+ $weekend=empty_shift_weekend($day);$own=fn($s)=>array_values(array_filter($events,fn($e)=>$e['work_date']===$day&&$e['shift']===$s));$leave=false;
+ if($shift!=='ot'&&studio_shift_empty($a,$day,$shift)){$ins=array_filter($own($shift),fn($e)=>$e['type']==='in');
+  if($ins){$until=empty_shift_until($day,$shift,min(array_column($ins,'time')));
+   if($now<$until){if(($b['empty_leave']??false)===true&&!$weekend){empty_shift_save($a,(int)$user['id'],$day,$shift,['choice'=>'early'],true);$leave=true;}
+    else return [409,['error'=>'Ca không có khách: ở lại làm tối thiểu 2 tiếng, được chấm ra từ '.late_hm($until).'.'.($weekend?' Thứ 7, Chủ nhật bắt buộc đi làm.':' Muốn về ngay thì chọn Về luôn, không tính ca này.'),'empty_checkout'=>['until'=>$until,'can_leave'=>!$weekend]]];}}}
+ // Ghi công việc đã làm: ca đang chấm ra (nếu không khách) và ca không khách khác của hôm đó đã kết thúc mà chưa ghi (VD Ca 1 tự chấm ra lúc 14:00).
+ $need=[];foreach(SHIFTS as $s){$id=$s['id'];if($leave&&$id===$shift)continue;$list=$own($id);if(!array_filter($list,fn($e)=>$e['type']==='in'&&in_array($e['source'],['self','auto'],true)))continue;
+  if($id!==$shift&&end($list)['type']!=='out')continue;if(!studio_shift_empty($a,$day,$id))continue;$r=empty_shift_row($a,(int)$user['id'],$day,$id);if(($r['choice']??'')==='early'||trim((string)($r['note']??''))!=='')continue;$need[]=$id;}
+ if(!$need)return null;
+ $note=is_string($b['work_note']??null)?trim(preg_replace('/\s+/u',' ',$b['work_note'])):'';
+ if(text_length($note)<EMPTY_NOTE_MIN)return [409,['error'=>'Ca không có khách: ghi rõ công việc đã làm (ít nhất '.EMPTY_NOTE_MIN.' ký tự) rồi mới chấm ra.','empty_note'=>['shifts'=>$need]]];
+ $note=input_text($note,'Công việc đã làm',EMPTY_NOTE_MIN,1000);
+ foreach($need as $id)empty_shift_save($a,(int)$user['id'],$day,$id,['note'=>$note,'note_at'=>$now],true);
+ return null;
+}
+// Xin off ca không khách: không ghi lượt chấm công, chỉ ghi lại lựa chọn để Admin/Quản lý biết (Telegram) và hiện trên phiếu lương.
+function empty_shift_off(App $a,array $b): array {
+ $user=$a->user;$now=now_ms();$day=local_day($now);$shift=$b['shift']??'';
+ if(!in_array($shift,['day_first','day_second'],true))fail('Ca làm không hợp lệ.');if($user['role']!=='employee')fail('Chỉ nhân viên xin off ca không có khách.',403);if(!empty_shift_applies($user,$day))fail('Quy định ca không có khách áp dụng từ '.implode('/',array_reverse(explode('-',EMPTY_SHIFT_FROM))).'.',409);
+ if(empty_shift_weekend($day))fail('Thứ 7, Chủ nhật bắt buộc đi làm, không xin off ca được.',409);
+ if($now>=bounds($day,$shift)['end'])fail('Ca này đã hết giờ.',409);
+ if($a->one('SELECT id FROM {{events}} WHERE user_id=? AND work_date=? AND shift=? LIMIT 1',[$user['id'],$day,$shift]))fail('Bạn đã chấm công ca này hôm nay.',409);
+ if(!studio_shift_empty($a,$day,$shift))fail('Ca này đã có khách trên lịch. Hãy chấm công như thường.',409);
+ empty_shift_save($a,(int)$user['id'],$day,$shift,['choice'=>'off'],true);
+ return ['ok'=>true,'day'=>$day,'shift'=>$shift];
+}
+// Phiếu lương: các ca xin off, về trước 2 tiếng (không tính) và công việc đã làm, theo từng nhân viên trong tháng.
+function empty_shift_marks(App $a,string $month): array {
+ $out=[];foreach($a->all('SELECT user_id,work_date,shift,choice,note FROM {{empty_shifts}} WHERE work_date>=? AND work_date<=? ORDER BY work_date,shift',[$month.'-01',$month.'-31']) as $r){$k=$r['work_date'].':'.$r['shift'];$u=(int)$r['user_id'];
+  if($r['choice']==='off')$out[$u]['off'][]=$k;elseif($r['choice']==='early')$out[$u]['early'][$k]=true;if(trim((string)$r['note'])!=='')$out[$u]['notes'][$k]=$r['note'];}
+ return $out;
+}
+function empty_shift_telegram_tick(App $a,?Telegram $tg=null): void {
+ if(!class_exists('Telegram'))return;$tg??=new Telegram($a);if(!$tg->configured())return;$now=now_ms();
+ $rows=$a->all('SELECT x.*,u.name FROM {{empty_shifts}} x JOIN {{users}} u ON u.id=x.user_id WHERE x.notified_at IS NULL AND x.updated_at>=? ORDER BY x.updated_at LIMIT 20',[$now-86400000]);if(!$rows)return;
+ $managers=$a->all("SELECT u.id,l.chat_id FROM {{users}} u JOIN {{telegram_links}} l ON l.user_id=u.id WHERE u.role IN ('admin','manager') AND u.archived=0 AND u.status!='inactive' ORDER BY u.id");
+ foreach($rows as $r){if(!$a->run('UPDATE {{empty_shifts}} SET notified_at=? WHERE user_id=? AND work_date=? AND shift=? AND notified_at IS NULL',[$now,$r['user_id'],$r['work_date'],$r['shift']])->rowCount())continue;
+  $sname=$r['shift']==='day_first'?'Ca 1':'Ca 2';$label=late_day_label($r['work_date']);
+  $ev=$a->all('SELECT type,time FROM {{events}} WHERE user_id=? AND work_date=? AND shift=? ORDER BY time,id',[$r['user_id'],$r['work_date'],$r['shift']]);$in=$ev?late_hm((int)$ev[0]['time']):'';$out=$ev&&end($ev)['type']==='out'?late_hm((int)end($ev)['time']):'';
+  $text=$r['choice']==='off'?"🏖 Anh Gấu Studio · Xin off ca không khách\n".$r['name'].' xin off '.$sname.' · '.$label."\nCả studio không có khách ca này. Không chấm công, không tính tiền ca."
+   :($r['choice']==='early'?"🚪 Anh Gấu Studio · Về trước 2 tiếng\n".$r['name'].' ở lại '.$sname.' không khách '.$in.($out?'–'.$out:'').' · '.$label."\nChưa đủ 2 tiếng nên ca này không tính."
+   :"🛠 Anh Gấu Studio · Ca không khách đã làm\n".$r['name'].' ở lại '.$sname.' không khách '.$in.($out?'–'.$out:'').' · '.$label."\nCông việc đã làm: ".trim((string)$r['note']));
+  if($r['choice']==='stay'&&trim((string)$r['note'])==='')continue;
+  foreach($managers as $m){if((int)$m['id']===(int)$r['user_id'])continue;try{$tg->call('sendMessage',['chat_id'=>$m['chat_id'],'text'=>$text,'disable_web_page_preview'=>true]+$tg->button('Mở Chấm công',$a->config['app_url'].'/#attendance'));}catch(Throwable $x){$a->meta('telegram_error',$x->getMessage());}}
+ }
+}
