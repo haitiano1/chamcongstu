@@ -11,7 +11,7 @@ const st={queue:[],acks:[],tabs:{}},server=body=>{if(body.poll)return [200,{queu
 const ctx=load(gs,b,server,{AG_ENDPOINT:'https://x/api.php?route=%2Fsheet-sync%2Freceive',AG_SYNC_KEY:'k'.repeat(64),AG_SHEET_ID:'SHEETID'});
 const run=()=>{try{ctx.dongBoAnhGau();return null;}catch(err){return err.message;}};
 const s=b.getSheetByName('Tháng 11'),head=()=>s.rows()[0],col=name=>head().indexOf(name)+1,find=id=>s.rows().findIndex(r=>r.includes(id))+1;
-const upd=(n,id,day,time,changed,v)=>({id:ID(700+n),booking_id:id,action:'update',tab:'Tháng 11',day,time,length:60,changed,from_day:day,values:Object.assign({customer_name:'',customer_phone:'',package_label:'699',main_alias:'HUY',support_alias:'CƯỜNG',deposit_label:'',note:'',makeup:'',special:'',surcharge:'',tip:''},v)});
+const upd=(n,id,day,time,changed,v)=>({id:ID(700+n),booking_id:id,action:'update',tab:'Tháng 11',day,time,length:60,changed,from_day:day,values:Object.assign({customer_name:'',customer_phone:'',package_label:'699',main_alias:'HUY',support_alias:'CƯỜNG',deposit_label:'',note:'',makeup:'',special:'',surcharge:'',tip:'',payment:''},v)});
 
 console.log('1. Đọc Sheet: có cột Tip thì gửi Tip, chưa có cột Phụ thu thì không gửi');
 ok(run()===null,'chạy không lỗi');const r1=st.tabs['Tháng 11'];
@@ -40,4 +40,15 @@ console.log('5. Đổi giờ và nhập Tip cùng lúc');
 st.queue=[upd(4,ID(3),'2026-11-09','08:00',['time','tip'],{customer_name:'An',tip:'30k'})];ok(run()===null,'chạy không lỗi');
 ok(s.cell(find(ID(3)),col('Tip')).v===30000,'Tip mới 30000 ghi ở dòng mới');
 ok(st.acks.every(a=>a.ok),'mọi việc báo xong: '+JSON.stringify(st.acks.filter(a=>!a.ok)));
+console.log('6. Khách trả tiền bằng (17/11/2026): chưa có cột Thanh toán thì thêm ở cuối kèm danh sách chọn, đọc về web');
+ok(!('payment_label' in st.tabs['Tháng 11'][0]),'chưa có cột thì không gửi khóa payment_label');
+st.queue=[upd(5,ID(2),'2026-11-05','13:00',['payment'],{customer_name:'Mai',surcharge:'100k',payment:'Chuyển khoản'})];ok(run()===null,'chạy không lỗi');
+ok(col('Thanh toán')>col('_AG_BOOKING_ID'),'thêm cột Thanh toán ở cuối: '+JSON.stringify(head()));
+const pay=s.cell(find(ID(2)),col('Thanh toán'));ok(pay.v==='Chuyển khoản','ghi Chuyển khoản: '+JSON.stringify(pay));
+ok(s.cell(find(ID(3)),col('Thanh toán')).dv&&s.cell(find(ID(3)),col('Thanh toán')).dv.values.join()==='Tiền mặt,Chuyển khoản','cột có danh sách chọn Tiền mặt / Chuyển khoản');
+ok(s.cell(find(ID(2)),col('Phụ thu')).v===100000,'Phụ thu giữ nguyên');
+ok(run()===null,'đồng bộ lại không lỗi');ok(st.tabs['Tháng 11'].find(r=>r.id===ID(2)).payment_label==='Chuyển khoản'&&st.tabs['Tháng 11'].find(r=>r.id===ID(3)).payment_label==='','web đọc lại Thanh toán');
+st.queue=[upd(6,ID(2),'2026-11-05','13:00',['payment'],{customer_name:'Mai',surcharge:'100k',payment:''})];ok(run()===null,'bỏ chọn không lỗi');ok(s.cell(find(ID(2)),col('Thanh toán')).v==='','bỏ chọn thì ô trống');
+st.queue=[upd(8,ID(1),'2026-11-05','15:00',['payment'],{customer_name:'Lan',tip:'20000',payment:'Tiền mặt'})];run();st.queue=[upd(7,ID(1),'2026-11-05','08:00',['time'],{customer_name:'Lan',tip:'20000',payment:'Tiền mặt'})];ok(run()===null,'chuyển dòng không lỗi');ok(s.cell(find(ID(1)),col('Thanh toán')).v==='Tiền mặt','chuyển dòng: Thanh toán đi theo');
+ok(st.acks.every(a=>a.ok),'mọi việc báo xong');
 console.log(`\n${pass} đạt, ${fail} lỗi`);process.exit(fail?1:0);

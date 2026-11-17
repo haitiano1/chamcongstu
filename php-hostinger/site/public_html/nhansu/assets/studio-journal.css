@@ -128,3 +128,9 @@
 .booking-team-step input{width:40px!important;min-height:32px;height:32px;padding:0!important;margin:0!important;text-align:center;font-size:16px;font-weight:700;border:0!important;background:transparent;box-shadow:none}
 .booking-team-total{margin:0;font-size:13px;color:#334155}.booking-team-total b{color:#14233a}
 @media(max-width:420px){.booking-team-rows{grid-template-columns:1fr}}
+/* Khách trả tiền bằng (17/11/2026) */
+.booking-card-pay{display:block;margin-top:3px;font-size:11px;font-weight:700;color:#b54708}
+.booking-pay-due{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:14px 0 0;padding:10px 12px;border:1px solid #fedf89;border-radius:10px;background:#fffaeb}.booking-pay-due p{margin:0;flex:1 1 200px;font-size:13px;color:#93370d}.booking-pay-due button{min-height:44px}
+.booking-payment{margin:14px 0 0}.booking-payment>div{display:grid;grid-template-columns:1fr 1fr;gap:8px}.booking-payment .booking-chip span{width:100%;justify-content:center;padding:0 6px}.booking-payment .booking-chip input:checked+span{border-color:#039855;background:#ecfdf3;color:#027a48}
+.booking-payment.attention{padding:10px;border-radius:10px;outline:2px solid #f79009;background:#fffaeb}
+.booking-side-summary .booking-stat.unpaid strong{color:#b54708}

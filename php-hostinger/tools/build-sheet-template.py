@@ -32,6 +32,7 @@ COLUMNS = [
     ('Phụ thu', 10, '#,##0', True, 'Phụ thu (nếu có), VD 100000. Nhập ở Sửa lịch trên web (script tự ghi) hoặc gõ ở đây.'),
     ('Makeup', 12, '@', True, 'Không bắt buộc. Chọn 1: Nam / Nữ / Làm Tóc.'),
     ('Tip', 10, '#,##0', True, 'Tiền tip khách cho (nếu có), VD 50000. Nhập ở Sửa lịch trên web (script tự ghi) hoặc gõ ở đây.'),
+    ('Thanh toán', 13, '@', True, 'Khách trả tiền bằng: chọn Tiền mặt hoặc Chuyển khoản. Chọn ở Sửa lịch trên web (script tự ghi) hoặc chọn ở đây.'),
     ('Ghi chú', 34, '@', False, 'Ghi chú tự do. Team ghi "Giữ 3 tiếng" để khóa đủ giờ.'),
     ('Trạng thái', 11, '@', True, 'Khách hủy: chọn Hủy. Không xóa dòng (xóa dòng không xóa lịch trên web).'),
     ('_AG_BOOKING_ID', 38, '@', False, 'Cột ẩn: script tự ghi mã lịch. Không sửa, không xóa.'),
@@ -71,7 +72,7 @@ def data_sheet(wb, title, rows, blank_rows, explain=None, rule_rows=0):
     end = max(total + 1, rule_rows)  # dropdown phủ rộng hơn vùng kẻ sẵn để dòng thêm sau vẫn có
     rules = [('Gói', PACKAGES, 'Chọn gói trong danh sách (để trống nếu khách chưa chọn 399/699).'),
              ('Đặc Biệt', SPECIAL, 'Ô TÔ / Ngoại Cảnh / Nhóm tại Stu / Sản Phẩm.'),
-             ('Makeup', MAKEUP, 'Nam / Nữ / Làm Tóc.'), ('Trạng thái', ['Hủy'], 'Chỉ chọn Hủy khi khách hủy.')]
+             ('Makeup', MAKEUP, 'Nam / Nữ / Làm Tóc.'), ('Thanh toán', ['Tiền mặt', 'Chuyển khoản'], 'Tiền mặt / Chuyển khoản.'), ('Trạng thái', ['Hủy'], 'Chỉ chọn Hủy khi khách hủy.')]
     for name, options, message in rules:
         col = COL[name]
         dv = DataValidation(type='list', formula1='"' + ','.join(options) + '"', allow_blank=True,
@@ -103,7 +104,7 @@ def build(path, example_json=None):
     examples = [
         {'Ngày': d1, 'Thứ': 'T5', 'Time': t(9, 0), 'Tên khách': 'Chị Lan cọc 200k', 'SĐT': '0901234567', 'Makeup': 'Nữ'},
         {'Time': t(10, 0), 'Tên khách': 'Anh Minh & chị Thảo cọc 500k', 'SĐT': '0912345678', 'Gói': 'Couple 999', 'Đặc Biệt': 'Ngoại Cảnh', 'Makeup': 'Nữ', 'Ghi chú': 'Chụp áo dài'},
-        {'Time': t(13, 0), 'Tên khách': 'Chị Hoa cọc 300k', 'SĐT': '0987654321', 'Gói': '1499', 'Phụ thu': 100000, 'Makeup': 'Làm Tóc', 'Tip': 50000},
+        {'Time': t(13, 0), 'Tên khách': 'Chị Hoa cọc 300k', 'SĐT': '0987654321', 'Gói': '1499', 'Phụ thu': 100000, 'Makeup': 'Làm Tóc', 'Tip': 50000, 'Thanh toán': 'Chuyển khoản'},
         {'Time': t(15, 30), 'Tên khách': 'Chị Vy', 'SĐT': '0934567890', 'Trạng thái': 'Hủy', 'Ghi chú': 'Khách dời sang tháng sau'},
         {'Ngày': d2, 'Thứ': 'T6', 'Time': t(9, 0), 'Tên khách': 'Team công ty ABC cọc 1tr', 'SĐT': '0909888777', 'Gói': 'Team 349', 'Đặc Biệt': 'Nhóm tại Stu', 'Ghi chú': 'Giữ 3 tiếng'},
         {'Time': t(9, 0), 'Tên khách': 'Thành viên 2 · team ABC', 'Gói': 'Team 349', 'Đặc Biệt': 'Nhóm tại Stu', 'Makeup': 'Nữ'},
@@ -176,6 +177,7 @@ def build(path, example_json=None):
         ('Phụ thu', '', 'Số tiền phụ thu (VD 100000). Chụp xong nhập ở Sửa lịch trên web hoặc gõ ở đây.', 'Số nhập ở Sửa lịch'),
         ('Makeup', '', 'Chọn 1: Nam / Nữ / Làm Tóc, hoặc để trống.', 'Lựa chọn đã chọn (hoặc trống)'),
         ('Tip', '', 'Số tiền tip (VD 50000). Chụp xong nhập ở Sửa lịch trên web hoặc gõ ở đây.', 'Số nhập ở Sửa lịch'),
+        ('Thanh toán', '', 'Khách trả tiền bằng: Tiền mặt hoặc Chuyển khoản. Chụp xong chọn ở Sửa lịch trên web hoặc chọn ở đây.', 'Lựa chọn ở Sửa lịch'),
         ('Ghi chú', '', 'Ghi chú tự do. Team: ghi "Giữ 3 tiếng" để khóa đủ giờ.', 'Ghi chú + "Giữ N tiếng" (Team)'),
         ('Trạng thái', '', 'Chọn Hủy khi khách hủy. Không xóa dòng.', 'Hủy, khi hủy trên web'),
         ('_AG_BOOKING_ID', '', 'Cột ẩn, script tự ghi mã lịch. Không sửa, không xóa.', 'Mã lịch'),

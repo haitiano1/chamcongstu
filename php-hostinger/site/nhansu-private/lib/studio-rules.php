@@ -75,13 +75,13 @@ const GUIDE_ITEMS=[
   'Bấm "Mở Telegram, nhấn Start" → Telegram mở bot của studio → bấm Start. Quay lại app là khung xanh tự ẩn.',
   'Bot nhắc chấm vào ca, nhắc chấm ra, báo việc mới, kết quả duyệt, trả lời hỗ trợ và biên bản họp.',
   'Không liên kết thì không nhận được nhắc. Quên chấm công vẫn tính theo quy định.']],
- 'checkin'=>['v'=>2,'page'=>'attendance','title'=>'Chấm công vào ca','steps'=>[
+ 'checkin'=>['v'=>3,'page'=>'attendance','title'=>'Chấm công vào ca','steps'=>[
   'Vào trang Chấm công. Ca 1: 09:00–14:00, Ca 2: 14:00–19:00.',
   'Bấm đúng ca mình làm: Ca 1, Ca 2 hoặc Làm cả ngày. Chưa chọn ca thì nút chấm công bị khóa.',
   'Bấm nút Chấm công vào, cho phép camera và vị trí (GPS), chụp rõ mặt tại studio.',
   'Mốc đi muộn là khách đầu tiên của ca: tới sau giờ khách đầu tiên quá 30 phút là muộn. Trong tháng: lần 1 miễn, lần 2 trừ 20, lần 3 trừ 100, từ lần 4 trừ 300 điểm KPI.',
   'Đóng điểm danh: quá 1 tiếng sau khách đầu tiên (VD khách 10:00, 11:01 mới tới) thì ca đó không tính công. Bấm Ghi có mặt (chụp ảnh, GPS như thường) để khách bạn chụp vẫn tính hoa hồng.',
-  'Ca mà cả studio không có khách vẫn chấm công, không tính công nhưng được thưởng "Ca làm không có khách" (xem Phiếu thưởng).']],
+  'Ca mà cả studio không có khách (theo lịch chụp): chấm vào phải chọn Xin off (không chấm công, không tính tiền) hoặc Ở lại làm cho studio tối thiểu 2 tiếng. Chấm ra phải ghi rõ công việc đã làm; về trước 2 tiếng thì ca không tính. Thứ 7, Chủ nhật bắt buộc đi làm, không xin off. Ở lại đủ thì được thưởng "Ca làm không có khách" (xem Phiếu thưởng).']],
  'fullday'=>['v'=>1,'page'=>'attendance','title'=>'Làm cả ngày','steps'=>[
   'Chỉ chọn Làm cả ngày khi chấm vào lần đầu trong ngày, trong giờ Ca 1 (09:00–14:00).',
   'Bấm Làm cả ngày → tick "Hôm nay bạn làm cả ngày đúng không?" → chấm công vào.',
