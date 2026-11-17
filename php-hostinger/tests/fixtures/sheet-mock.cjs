@@ -72,7 +72,7 @@ class Book{
 function load(gsPath,book,server,props={}){
  const store={...props};
  const ctx={console,
-  SpreadsheetApp:{openById:()=>book,getActive:()=>book,DataValidationCriteria:{VALUE_IN_LIST:'VALUE_IN_LIST',VALUE_IN_RANGE:'VALUE_IN_RANGE'}},
+  SpreadsheetApp:{openById:()=>book,getActive:()=>book,newDataValidation:()=>{const b={requireValueInList(values){b.values=values;return b},setAllowInvalid(){return b},build:()=>ruleOf({type:'VALUE_IN_LIST',values:b.values})};return b},DataValidationCriteria:{VALUE_IN_LIST:'VALUE_IN_LIST',VALUE_IN_RANGE:'VALUE_IN_RANGE'}},
   PropertiesService:{getScriptProperties:()=>({getProperties:()=>({...store}),getProperty:k=>store[k]??null,setProperty:(k,v)=>{store[k]=String(v)},setProperties:o=>Object.assign(store,o),deleteProperty:k=>{delete store[k]}})},
   LockService:{getScriptLock:()=>({tryLock:()=>true,releaseLock:()=>{}})},
   Utilities:{getUuid:()=>crypto.randomUUID(),Charset:{UTF_8:'utf8'},DigestAlgorithm:{SHA_256:'sha256'},computeDigest:(a,t)=>[...crypto.createHash('sha256').update(t).digest()].map(b=>b>127?b-256:b),computeHmacSha256Signature:(t,k)=>[...crypto.createHmac('sha256',k).update(t).digest()].map(b=>b>127?b-256:b)},

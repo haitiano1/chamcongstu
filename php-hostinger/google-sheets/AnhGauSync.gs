@@ -51,7 +51,7 @@ function agTabs_(book,cfg){
 }
 // Đọc một tab: hàng tiêu đề, các dòng lịch và vị trí từng ngày. ids dùng chung mọi tab: dòng sao chép mang theo mã của dòng khác thì cấp mã mới.
 function agHeader_(values){
- for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0)return {header:i,columns:{date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),weekday:agFindHeader_(r,['thu','thu trong tuan','weekday']),surcharge:agFindHeader_(r,['phu thu','phu phi']),tip:agFindHeader_(r,['tip','tips','tien tip']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))}};}
+ for(let i=0;i<Math.min(values.length,40);i++){const r=values[i],date=agFindHeader_(r,['ngay','date']),time=agFindHeader_(r,['time','gio','gio chup']),name=agFindHeader_(r,['ten khach','khach','khach hang']);if(date>=0&&time>=0&&name>=0)return {header:i,columns:{date:date,time:time,customer_name:name,package_label:agFindHeader_(r,['goi','package']),customer_phone:agFindHeader_(r,['sdt','so dien thoai']),main_alias:agFindHeader_(r,['tho chinh']),support_alias:agFindHeader_(r,['tho phu']),note:agFindHeader_(r,['ghi chu']),deposit_label:agFindHeader_(r,['da coc','coc','tien coc']),received_label:agFindHeader_(r,['da nhan','tien da nhan']),status:agFindHeader_(r,['trang thai']),special:agFindHeader_(r,['dac biet']),weekday:agFindHeader_(r,['thu','thu trong tuan','weekday']),surcharge:agFindHeader_(r,['phu thu','phu phi']),tip:agFindHeader_(r,['tip','tips','tien tip']),payment:agFindHeader_(r,['thanh toan','hinh thuc thanh toan','hinh thuc tt','phuong thuc thanh toan']),makeup:r.findIndex(v=>/^(make ?up|trang diem)\b/.test(agNormalize_(v)))}};}
  return null;
 }
 function agParse_(values,year,tabMonth,ids){
@@ -65,7 +65,7 @@ function agParse_(values,year,tabMonth,ids){
   let id=String(r[idCol]||'').trim().toLowerCase();if(!/^[a-f0-9-]{36}$/.test(id)||ids[id]){id=Utilities.getUuid().toLowerCase();newIds.push({row:i,id:id});}ids[id]=true;
   const item={id:id,day:lastDay,time:agTime_(time),source_row:i+1};['customer_name','package_label','customer_phone','main_alias','support_alias','note','deposit_label','received_label'].forEach(k=>{item[k]=columns[k]>=0?String(r[columns[k]]||'').trim():'';});
   // Phụ thu, Tip: chỉ gửi khi Sheet có cột (không có cột thì web giữ số đã nhập).
-  [['surcharge','surcharge_label'],['tip','tip_label']].forEach(([k,f])=>{if(columns[k]>=0)item[f]=String(r[columns[k]]||'').trim();});
+  [['surcharge','surcharge_label'],['tip','tip_label'],['payment','payment_label']].forEach(([k,f])=>{if(columns[k]>=0)item[f]=String(r[columns[k]]||'').trim();});
   // Gửi đủ mọi ô có dữ liệu theo tiêu đề cột để popup hiện nguyên thông tin Sheet; ô trống bỏ qua.
   item.sheet_fields=[];r.forEach((v,c)=>{const value=String(v||'').trim();if(c===idCol||c===columns.weekday||!value)return;item.sheet_fields.push({label:String(values[header][c]||'').trim()||agColumn_(c),value:value});});
   const state=columns.status>=0?agNormalize_(r[columns.status]):'';item.status=['huy','da huy','cancel','cancelled'].indexOf(state)!==-1?'cancelled':'active';rows.push(item);
@@ -182,6 +182,11 @@ function agWriteValues_(t,r,q,samples,keys){
   written[c[k]]=true;const target=sheet.getRange(r,c[k]+1);if(!value){target.setValue('');return;}
   const m=value.replace(/\s/g,'').match(/^(\d[\d.,]*)(k|đ|d|vnđ)?$/i),amount=m?Number(m[1].replace(/[.,]/g,''))*(/^k$/i.test(m[2]||'')?1000:1):NaN;
   if(!isNaN(amount)){if(samples[k]&&samples[k].format&&samples[k].format!=='@')target.setNumberFormat(samples[k].format);else if(target.getNumberFormat()==='@')target.setNumberFormat('#,##0');target.setValue(amount);}else target.setNumberFormat('@').setValue(value);});
+ // Thanh toán (Tiền mặt / Chuyển khoản, chọn ở Sửa lịch trên web): Sheet chưa có cột thì thêm cột "Thanh toán" ở cuối kèm danh sách chọn.
+ if(!keys||keys.indexOf('payment')!==-1){const value=String(v.payment||'').trim();
+  if(c.payment<0&&value){c.payment=Math.max(sheet.getLastColumn(),p.idCol+1);sheet.getRange(p.header+1,c.payment+1).setValue('Thanh toán');
+   const rows=Math.max(sheet.getMaxRows()-p.header-1,1);try{sheet.getRange(p.header+2,c.payment+1,rows,1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Tiền mặt','Chuyển khoản'],true).setAllowInvalid(true).build());}catch(e){}}
+  if(c.payment>=0&&(value||keys)){written[c.payment]=true;sheet.getRange(r,c.payment+1).setNumberFormat('@').setValue(value);}}
  if(!keys){sheet.getRange(r,p.idCol+1).setValue(q.booking_id);written[p.idCol]=true;}
  return written;
 }
